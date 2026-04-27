@@ -30,7 +30,7 @@
                                   Langfuse ◀──traces── Bifrost gateway
                                                               │
                                                               ▼
-                                                   OpenAI / Anthropic / …
+                                                   Moonshot Kimi / OpenAI
 
    Storage:
    ├─ Postgres + pgvector  (RAG, app state, Langfuse metadata)

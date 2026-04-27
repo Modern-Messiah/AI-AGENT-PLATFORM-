@@ -1,25 +1,25 @@
 {
   "providers": {
-    "openai": {
+    "moonshot": {
       "keys": [
         {
-          "value": "env.OPENAI_API_KEY",
-          "models": ["gpt-4o", "gpt-4o-mini", "gpt-4.1-mini"],
+          "value": "env.MOONSHOT_API_KEY",
+          "models": ["kimi-k2-turbo-preview"],
           "weight": 1.0
         }
       ]
     },
-    "anthropic": {
+    "openai": {
       "keys": [
         {
-          "value": "env.ANTHROPIC_API_KEY",
-          "models": ["claude-sonnet-4-6", "claude-haiku-4-5-20251001"],
+          "value": "env.OPENAI_API_KEY",
+          "models": ["gpt-4o-mini"],
           "weight": 1.0
         }
       ]
     }
   },
   "fallbacks": {
-    "openai/gpt-4o-mini": ["anthropic/claude-haiku-4-5-20251001"]
+    "moonshot/kimi-k2-turbo-preview": ["openai/gpt-4o-mini"]
   }
 }

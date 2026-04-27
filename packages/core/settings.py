@@ -12,7 +12,7 @@ class Settings(BaseSettings):
 
     bifrost_base_url: str = "http://localhost:8088/openai/v1"
     bifrost_api_key: str = "not-used"
-    default_model: str = "openai/gpt-4o-mini"
+    default_model: str = "moonshot/kimi-k2-turbo-preview"
 
     langfuse_public_key: str = ""
     langfuse_secret_key: str = ""

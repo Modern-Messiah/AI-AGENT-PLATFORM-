@@ -177,8 +177,8 @@ services:
     image: maximhq/bifrost:latest
     container_name: aap-bifrost
     environment:
+      MOONSHOT_API_KEY: ${MOONSHOT_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
     ports:
       - "8088:8080"
     volumes:

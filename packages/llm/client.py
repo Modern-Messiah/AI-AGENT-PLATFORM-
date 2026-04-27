@@ -14,7 +14,7 @@ def build_model(model_name: str | None = None) -> OpenAIModel:
 
     Bifrost exposes an OpenAI-compatible endpoint and forwards to the
     underlying provider based on the `provider/model` prefix (e.g.
-    `anthropic/claude-...`). The OpenAI SDK is happy with that as long as
+    `moonshot/kimi-k2-...`). The OpenAI SDK is happy with that as long as
     base_url and api_key are set.
     """
     client = AsyncOpenAI(
