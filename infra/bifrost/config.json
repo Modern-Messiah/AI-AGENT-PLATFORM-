@@ -1,0 +1,25 @@
+{
+  "providers": {
+    "openai": {
+      "keys": [
+        {
+          "value": "env.OPENAI_API_KEY",
+          "models": ["gpt-4o", "gpt-4o-mini", "gpt-4.1-mini"],
+          "weight": 1.0
+        }
+      ]
+    },
+    "anthropic": {
+      "keys": [
+        {
+          "value": "env.ANTHROPIC_API_KEY",
+          "models": ["claude-sonnet-4-6", "claude-haiku-4-5-20251001"],
+          "weight": 1.0
+        }
+      ]
+    }
+  },
+  "fallbacks": {
+    "openai/gpt-4o-mini": ["anthropic/claude-haiku-4-5-20251001"]
+  }
+}
