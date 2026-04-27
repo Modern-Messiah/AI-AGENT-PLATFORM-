@@ -35,6 +35,12 @@ class Settings(BaseSettings):
     minio_secret_key: str = "minioadmin"
     minio_bucket: str = "app-files"
 
+    embedding_model: str = "BAAI/bge-m3"
+    embedding_dim: int = 1024
+    chunk_size: int = 2000
+    chunk_overlap: int = 200
+    retrieval_top_k: int = 5
+
 
 @lru_cache
 def _get_settings() -> Settings:

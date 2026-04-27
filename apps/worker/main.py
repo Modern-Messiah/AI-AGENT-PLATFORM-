@@ -12,8 +12,16 @@ import logging
 from temporalio.client import Client
 from temporalio.worker import Worker
 
-from apps.worker.activities import run_agent_step
-from apps.worker.workflows import AgentRunWorkflow
+from apps.worker.activities import (
+    chunk_and_embed,
+    mark_done,
+    mark_failed,
+    mark_processing,
+    parse_document,
+    run_agent_step,
+    store_chunks,
+)
+from apps.worker.workflows import AgentRunWorkflow, IngestionWorkflow
 from packages.core import settings
 from packages.observability import setup_tracing
 
@@ -34,8 +42,16 @@ async def main() -> None:
     worker = Worker(
         client,
         task_queue=settings.temporal_task_queue,
-        workflows=[AgentRunWorkflow],
-        activities=[run_agent_step],
+        workflows=[AgentRunWorkflow, IngestionWorkflow],
+        activities=[
+            run_agent_step,
+            mark_processing,
+            parse_document,
+            chunk_and_embed,
+            store_chunks,
+            mark_done,
+            mark_failed,
+        ],
     )
     await worker.run()
 

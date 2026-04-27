@@ -1,0 +1,3 @@
+{"query": "Что такое durable execution?", "expected_doc_substrings": ["durable", "Temporal"]}
+{"query": "Как настроить Bifrost?", "expected_doc_substrings": ["Bifrost", "config"]}
+{"query": "Какая модель используется по умолчанию?", "expected_doc_substrings": ["Kimi", "K2"]}
