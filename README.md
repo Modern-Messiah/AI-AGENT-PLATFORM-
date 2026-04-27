@@ -30,7 +30,7 @@
                                   Langfuse ◀──traces── Bifrost gateway
                                                               │
                                                               ▼
-                                                   Moonshot Kimi / OpenAI
+                                                Moonshot Kimi / DeepSeek
 
    Storage:
    ├─ Postgres + pgvector  (RAG, app state, Langfuse metadata)
@@ -164,7 +164,7 @@ ai-agent-platform/
 ```bash
 # 1. Настроить env
 cp .env.example .env
-# впиши OPENAI_API_KEY (минимум) в .env
+# впиши MOONSHOT_API_KEY и DEEPSEEK_API_KEY в .env
 # сгенери ключ: openssl rand -hex 32 → LANGFUSE_ENCRYPTION_KEY
 
 # 2. Поднять инфру

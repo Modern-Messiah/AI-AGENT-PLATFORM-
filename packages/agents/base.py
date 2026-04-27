@@ -1,6 +1,7 @@
 from pydantic_ai import Agent
 
 from packages.agents.schemas import AgentRunOutput
+from packages.core import settings
 from packages.llm import build_model
 
 SYSTEM_PROMPT = """\
@@ -16,3 +17,13 @@ def build_research_agent(model_name: str | None = None) -> Agent[None, AgentRunO
         output_type=AgentRunOutput,
         system_prompt=SYSTEM_PROMPT,
     )
+
+
+def build_strong_agent() -> Agent[None, AgentRunOutput]:
+    """Kimi K2 — сложные шаги: reasoning, tool-calling, основные ответы."""
+    return build_research_agent(settings.strong_model)
+
+
+def build_weak_agent() -> Agent[None, AgentRunOutput]:
+    """DeepSeek — дешёвые шаги: классификация, парсинг, summarization."""
+    return build_research_agent(settings.weak_model)

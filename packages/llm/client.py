@@ -22,4 +22,4 @@ def build_model(model_name: str | None = None) -> OpenAIModel:
         api_key=settings.bifrost_api_key,
     )
     provider = OpenAIProvider(openai_client=client)
-    return OpenAIModel(model_name or settings.default_model, provider=provider)
+    return OpenAIModel(model_name or settings.strong_model, provider=provider)

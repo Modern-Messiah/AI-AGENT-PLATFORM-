@@ -12,7 +12,9 @@ class Settings(BaseSettings):
 
     bifrost_base_url: str = "http://localhost:8088/openai/v1"
     bifrost_api_key: str = "not-used"
-    default_model: str = "moonshot/kimi-k2-turbo-preview"
+    # strong = сложные шаги агента; weak = дешёвые вспомогательные.
+    strong_model: str = "moonshot/kimi-k2-turbo-preview"
+    weak_model: str = "deepseek/deepseek-chat"
 
     langfuse_public_key: str = ""
     langfuse_secret_key: str = ""

@@ -9,17 +9,18 @@
         }
       ]
     },
-    "openai": {
+    "deepseek": {
       "keys": [
         {
-          "value": "env.OPENAI_API_KEY",
-          "models": ["gpt-4o-mini"],
+          "value": "env.DEEPSEEK_API_KEY",
+          "models": ["deepseek-chat"],
           "weight": 1.0
         }
       ]
     }
   },
   "fallbacks": {
-    "moonshot/kimi-k2-turbo-preview": ["openai/gpt-4o-mini"]
+    "moonshot/kimi-k2-turbo-preview": ["deepseek/deepseek-chat"],
+    "deepseek/deepseek-chat": ["moonshot/kimi-k2-turbo-preview"]
   }
 }
