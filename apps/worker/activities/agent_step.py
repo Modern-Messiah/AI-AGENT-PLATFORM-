@@ -2,17 +2,39 @@
 
 from __future__ import annotations
 
+import logging
 import time
 
 from temporalio import activity
 
 from packages.agents import AgentDeps, AgentRunInput, AgentRunOutput, build_research_agent
 from packages.analytics.events import UsageEvent, record_usage
+from packages.cache.semantic import semantic_cache
 from packages.core import settings
+
+log = logging.getLogger(__name__)
 
 
 @activity.defn
 async def run_agent_step(payload: AgentRunInput) -> AgentRunOutput:
+    info = activity.info()
+
+    # ── Semantic cache lookup ────────────────────────────────────────────────
+    cached = await semantic_cache.get(payload.user_query, payload.tenant_id)
+    if cached is not None:
+        await record_usage(UsageEvent(
+            tenant_id=payload.tenant_id,
+            workflow_id=info.workflow_id,
+            run_id=info.workflow_run_id,
+            model=payload.model or settings.strong_model,
+            prompt_tokens=0,
+            completion_tokens=0,
+            latency_ms=0,
+            status="cache_hit",
+        ))
+        return cached
+
+    # ── LLM call ─────────────────────────────────────────────────────────────
     agent = build_research_agent(model_name=payload.model)
     deps = AgentDeps(tenant_id=payload.tenant_id)
 
@@ -22,9 +44,19 @@ async def run_agent_step(payload: AgentRunInput) -> AgentRunOutput:
 
     usage = result.usage()
     resolved_model = payload.model or settings.strong_model
-    info = activity.info()
 
-    event = UsageEvent(
+    # Moonshot / OpenAI return cached_tokens in usage.details when prompt
+    # caching fires. Log it so we can verify cache hit rate in production.
+    cached_tokens = (usage.details or {}).get("cached_tokens", 0)
+    if cached_tokens:
+        log.info(
+            "prompt cache hit | tenant=%s model=%s cached_tokens=%d",
+            payload.tenant_id,
+            resolved_model,
+            cached_tokens,
+        )
+
+    await record_usage(UsageEvent(
         tenant_id=payload.tenant_id,
         workflow_id=info.workflow_id,
         run_id=info.workflow_run_id,
@@ -32,7 +64,10 @@ async def run_agent_step(payload: AgentRunInput) -> AgentRunOutput:
         prompt_tokens=usage.request_tokens or 0,
         completion_tokens=usage.response_tokens or 0,
         latency_ms=latency_ms,
-    )
-    await record_usage(event)
+    ))
 
-    return result.output
+    # Store result for future semantic cache hits.
+    output = result.output
+    await semantic_cache.set(payload.user_query, payload.tenant_id, output)
+
+    return output
