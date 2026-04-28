@@ -205,7 +205,6 @@ services:
 
   migrate:
     build: .
-    image: aap-app
     container_name: aap-migrate
     depends_on:
       postgres:
@@ -217,7 +216,6 @@ services:
 
   api:
     build: .
-    image: aap-app
     container_name: aap-api
     depends_on:
       migrate:
@@ -258,7 +256,6 @@ services:
 
   worker:
     build: .
-    image: aap-app
     container_name: aap-worker
     depends_on:
       migrate:

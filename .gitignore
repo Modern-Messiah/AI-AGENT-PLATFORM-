@@ -16,3 +16,6 @@ build/
 node_modules/
 .idea/
 .vscode/
+
+STATUS.md
+NOTES.local.md
