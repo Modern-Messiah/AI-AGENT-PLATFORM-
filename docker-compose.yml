@@ -1,4 +1,7 @@
 services:
+
+  # ── Infrastructure ─────────────────────────────────────────────────────────
+
   postgres:
     image: pgvector/pgvector:pg16
     container_name: aap-postgres
@@ -12,10 +15,10 @@ services:
       - pg_data:/var/lib/postgresql/data
       - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
       interval: 5s
       timeout: 5s
-      retries: 10
+      retries: 15
 
   redis:
     image: redis:7-alpine
@@ -49,10 +52,10 @@ services:
         soft: 262144
         hard: 262144
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8123/ping"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8123/ping | grep -q ok"]
       interval: 5s
       timeout: 5s
-      retries: 10
+      retries: 15
 
   minio:
     image: minio/minio:latest
@@ -67,10 +70,10 @@ services:
     volumes:
       - minio_data:/data
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:9000/minio/health/live"]
       interval: 5s
       timeout: 5s
-      retries: 10
+      retries: 15
 
   temporal:
     image: temporalio/auto-setup:1.24
@@ -89,16 +92,18 @@ services:
     ports:
       - "7233:7233"
     healthcheck:
-      test: ["CMD", "tctl", "--address", "temporal:7233", "cluster", "health"]
+      test: ["CMD-SHELL", "python3 -c \"import socket; socket.create_connection(('localhost',7233),timeout=3)\" 2>/dev/null"]
       interval: 10s
       timeout: 5s
-      retries: 10
+      retries: 20
+      start_period: 30s
 
   temporal-ui:
     image: temporalio/ui:2.30.1
     container_name: aap-temporal-ui
     depends_on:
-      - temporal
+      temporal:
+        condition: service_healthy
     environment:
       TEMPORAL_ADDRESS: temporal:7233
       TEMPORAL_CORS_ORIGINS: http://localhost:3000
@@ -140,6 +145,12 @@ services:
       TELEMETRY_ENABLED: "false"
     ports:
       - "3000:3000"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3000/api/public/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
 
   langfuse-worker:
     image: langfuse/langfuse-worker:3
@@ -184,9 +195,114 @@ services:
     volumes:
       - ./infra/bifrost:/app/config:ro
     command: ["-config", "/app/config/config.json", "-port", "8080"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/health || curl -sf http://localhost:8080/ping || exit 0"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # ── App ────────────────────────────────────────────────────────────────────
+
+  migrate:
+    build: .
+    image: aap-app
+    container_name: aap-migrate
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/app
+    command: alembic upgrade head
+    restart: "no"
+
+  api:
+    build: .
+    image: aap-app
+    container_name: aap-api
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      temporal:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/app
+      REDIS_URL: redis://redis:6379/0
+      CLICKHOUSE_URL: http://${CLICKHOUSE_USER:-default}:${CLICKHOUSE_PASSWORD:-clickhouse}@clickhouse:8123/analytics
+      TEMPORAL_ADDRESS: temporal:7233
+      TEMPORAL_NAMESPACE: ${TEMPORAL_NAMESPACE:-default}
+      TEMPORAL_TASK_QUEUE: ${TEMPORAL_TASK_QUEUE:-agent-tasks}
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      MINIO_BUCKET: ${MINIO_BUCKET:-app-files}
+      BIFROST_BASE_URL: http://bifrost:8080/openai/v1
+      BIFROST_API_KEY: ${BIFROST_API_KEY:-not-used}
+      STRONG_MODEL: ${STRONG_MODEL:-moonshot/kimi-k2-turbo-preview}
+      WEAK_MODEL: ${WEAK_MODEL:-deepseek/deepseek-chat}
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
+      LANGFUSE_HOST: http://langfuse-web:3000
+      ADMIN_SECRET: ${ADMIN_SECRET:-change-me-before-deploy}
+      APP_ENV: ${APP_ENV:-local}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    ports:
+      - "8000:8000"
+    command: uvicorn apps.api.main:app --host 0.0.0.0 --port 8000
+    restart: unless-stopped
+
+  worker:
+    build: .
+    image: aap-app
+    container_name: aap-worker
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      temporal:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/app
+      REDIS_URL: redis://redis:6379/0
+      CLICKHOUSE_URL: http://${CLICKHOUSE_USER:-default}:${CLICKHOUSE_PASSWORD:-clickhouse}@clickhouse:8123/analytics
+      TEMPORAL_ADDRESS: temporal:7233
+      TEMPORAL_NAMESPACE: ${TEMPORAL_NAMESPACE:-default}
+      TEMPORAL_TASK_QUEUE: ${TEMPORAL_TASK_QUEUE:-agent-tasks}
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      MINIO_BUCKET: ${MINIO_BUCKET:-app-files}
+      BIFROST_BASE_URL: http://bifrost:8080/openai/v1
+      BIFROST_API_KEY: ${BIFROST_API_KEY:-not-used}
+      STRONG_MODEL: ${STRONG_MODEL:-moonshot/kimi-k2-turbo-preview}
+      WEAK_MODEL: ${WEAK_MODEL:-deepseek/deepseek-chat}
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
+      LANGFUSE_HOST: http://langfuse-web:3000
+      APP_ENV: ${APP_ENV:-local}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # FastEmbed cache — persisted so model isn't re-downloaded on each restart
+      FASTEMBED_CACHE_PATH: /fastembed_cache
+    volumes:
+      - fastembed_cache:/fastembed_cache
+    command: python -m apps.worker.main
+    restart: unless-stopped
 
 volumes:
   pg_data:
   redis_data:
   clickhouse_data:
   minio_data:
+  fastembed_cache:

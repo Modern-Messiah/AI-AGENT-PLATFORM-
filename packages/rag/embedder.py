@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import threading
 
 from fastembed import TextEmbedding
@@ -18,7 +19,11 @@ def _get_embedder() -> TextEmbedding:
     if _embedder is None:
         with _lock:
             if _embedder is None:
-                _embedder = TextEmbedding(model_name=settings.embedding_model)
+                kwargs: dict = {"model_name": settings.embedding_model}
+                cache_dir = os.environ.get("FASTEMBED_CACHE_PATH")
+                if cache_dir:
+                    kwargs["cache_dir"] = cache_dir
+                _embedder = TextEmbedding(**kwargs)
     return _embedder
 
 
