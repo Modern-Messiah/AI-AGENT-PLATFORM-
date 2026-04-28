@@ -41,6 +41,9 @@ class Settings(BaseSettings):
     chunk_overlap: int = 200
     retrieval_top_k: int = 5
 
+    # Log a WARNING when a single LLM call costs more than this amount.
+    budget_alert_usd_per_call: float = 0.10
+
 
 @lru_cache
 def _get_settings() -> Settings:

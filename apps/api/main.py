@@ -15,7 +15,7 @@ import uuid
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import select
 from temporalio.client import Client
@@ -25,6 +25,7 @@ from apps.worker.workflows.agent_run import AgentRunWorkflow
 from apps.worker.workflows.ingestion import IngestionWorkflow
 from apps.worker.workflows.multi_step import MultiStepResearchWorkflow
 from packages.agents import AgentRunInput, AgentRunOutput, MultiStepResearchInput
+from packages.analytics.clickhouse import ch_client
 from packages.core import settings
 from packages.observability import setup_tracing
 from packages.storage import Document, DocumentStatus, async_session, object_store
@@ -118,6 +119,44 @@ async def reject_workflow(workflow_id: str) -> WorkflowSignalResponse:
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=404, detail=str(e)) from e
     return WorkflowSignalResponse(workflow_id=workflow_id, action="rejected")
+
+
+# ── Analytics ────────────────────────────────────────────────────────────────
+
+@app.get("/analytics/usage")
+async def get_usage(
+    tenant_id: str = Query(..., description="Tenant to query"),
+    days: int = Query(default=30, ge=1, le=365, description="Lookback window in days"),
+) -> dict:
+    """Aggregate LLM cost and token usage for a tenant over the last N days."""
+    sql = """
+        SELECT
+            model,
+            provider,
+            sum(prompt_tokens)      AS total_prompt_tokens,
+            sum(completion_tokens)  AS total_completion_tokens,
+            sum(total_tokens)       AS total_tokens,
+            round(sum(cost_usd), 6) AS total_cost_usd,
+            round(avg(latency_ms))  AS avg_latency_ms,
+            count()                 AS call_count
+        FROM analytics.llm_usage_events
+        WHERE tenant_id = {tenant_id:String}
+          AND event_time >= now() - toIntervalDay({days:UInt32})
+        GROUP BY model, provider
+        ORDER BY total_cost_usd DESC
+    """
+    try:
+        rows = await ch_client.query(sql, {"tenant_id": tenant_id, "days": days})
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"ClickHouse error: {e}") from e
+
+    total_cost = sum(r.get("total_cost_usd") or 0 for r in rows)
+    return {
+        "tenant_id": tenant_id,
+        "days": days,
+        "total_cost_usd": round(total_cost, 6),
+        "breakdown": rows,
+    }
 
 
 # ── Documents ─────────────────────────────────────────────────────────────────
