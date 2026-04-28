@@ -1,21 +1,28 @@
 """FastAPI entrypoint.
 
+Auth: every endpoint (except /health and /auth/keys) requires
+  X-API-Key: <raw key>
+Keys are created via POST /auth/keys (protected by X-Admin-Secret header).
+
 Endpoints:
   POST /agent/run                    — single agent run (optional require_approval)
   POST /agent/research               — multi-step research via child workflows
   POST /workflows/{id}/approve       — send approve signal (HITL)
   POST /workflows/{id}/reject        — send reject signal (HITL)
   POST /documents                    — upload file, kick off IngestionWorkflow
+  POST /documents/bulk               — upload multiple files
   GET  /documents/{id}               — ingestion status
+  GET  /analytics/usage              — cost/token aggregate for a tenant
+  POST /auth/keys                    — create an API key (admin only)
 """
 
 from __future__ import annotations
 
 import uuid
 from contextlib import asynccontextmanager
-from typing import AsyncIterator
+from typing import Annotated, AsyncIterator
 
-from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import select
 from temporalio.client import Client
@@ -26,10 +33,15 @@ from apps.worker.workflows.ingestion import IngestionWorkflow
 from apps.worker.workflows.multi_step import MultiStepResearchWorkflow
 from packages.agents import AgentRunInput, AgentRunOutput, MultiStepResearchInput
 from packages.analytics.clickhouse import ch_client
+from packages.auth import generate_key, require_tenant
 from packages.core import settings
 from packages.observability import setup_tracing
-from packages.storage import Document, DocumentStatus, async_session, object_store
+from packages.storage import ApiKey, Document, DocumentStatus, async_session, object_store
 
+TenantID = Annotated[str, Depends(require_tenant)]
+
+
+# ── Pydantic schemas ──────────────────────────────────────────────────────────
 
 class DocumentResponse(BaseModel):
     id: str
@@ -44,6 +56,20 @@ class WorkflowSignalResponse(BaseModel):
     action: str
 
 
+class CreateKeyRequest(BaseModel):
+    tenant_id: str
+    name: str | None = None
+
+
+class CreateKeyResponse(BaseModel):
+    id: str
+    tenant_id: str
+    name: str | None
+    raw_key: str  # shown once — store it now
+
+
+# ── App lifecycle ─────────────────────────────────────────────────────────────
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     setup_tracing("aap-api")
@@ -56,18 +82,51 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 app = FastAPI(title="AI Agent Platform", lifespan=lifespan)
 
 
+# ── Public ────────────────────────────────────────────────────────────────────
+
 @app.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-# ── Agent ────────────────────────────────────────────────────────────────────
+# ── Auth management ───────────────────────────────────────────────────────────
+
+@app.post("/auth/keys", response_model=CreateKeyResponse, status_code=201)
+async def create_api_key(
+    body: CreateKeyRequest,
+    x_admin_secret: str = Header(..., alias="X-Admin-Secret"),
+) -> CreateKeyResponse:
+    """Create an API key for a tenant. Protected by X-Admin-Secret header."""
+    if x_admin_secret != settings.admin_secret:
+        raise HTTPException(status_code=403, detail="invalid admin secret")
+
+    raw_key, key_hash = generate_key()
+    key_id = uuid.uuid4()
+
+    async with async_session() as s, s.begin():
+        s.add(ApiKey(
+            id=key_id,
+            tenant_id=body.tenant_id,
+            key_hash=key_hash,
+            name=body.name,
+        ))
+
+    return CreateKeyResponse(
+        id=str(key_id),
+        tenant_id=body.tenant_id,
+        name=body.name,
+        raw_key=raw_key,
+    )
+
+
+# ── Agent ─────────────────────────────────────────────────────────────────────
 
 @app.post("/agent/run", response_model=AgentRunOutput)
-async def run_agent(payload: AgentRunInput) -> AgentRunOutput:
+async def run_agent(payload: AgentRunInput, tenant_id: TenantID) -> AgentRunOutput:
     """Single agent run. Set require_approval=true to pause for HITL review."""
+    payload = payload.model_copy(update={"tenant_id": tenant_id})
     client: Client = app.state.temporal
-    workflow_id = f"agent-run-{payload.tenant_id}-{uuid.uuid4()}"
+    workflow_id = f"agent-run-{tenant_id}-{uuid.uuid4()}"
     try:
         return await client.execute_workflow(
             AgentRunWorkflow.run,
@@ -80,10 +139,11 @@ async def run_agent(payload: AgentRunInput) -> AgentRunOutput:
 
 
 @app.post("/agent/research", response_model=AgentRunOutput)
-async def run_research(payload: MultiStepResearchInput) -> AgentRunOutput:
+async def run_research(payload: MultiStepResearchInput, tenant_id: TenantID) -> AgentRunOutput:
     """Multi-step research: fan-out sub-queries as child workflows, then synthesise."""
+    payload = payload.model_copy(update={"tenant_id": tenant_id})
     client: Client = app.state.temporal
-    workflow_id = f"research-{payload.tenant_id}-{uuid.uuid4()}"
+    workflow_id = f"research-{tenant_id}-{uuid.uuid4()}"
     try:
         return await client.execute_workflow(
             MultiStepResearchWorkflow.run,
@@ -95,40 +155,36 @@ async def run_research(payload: MultiStepResearchInput) -> AgentRunOutput:
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
-# ── HITL signals ─────────────────────────────────────────────────────────────
+# ── HITL signals ──────────────────────────────────────────────────────────────
 
 @app.post("/workflows/{workflow_id}/approve", response_model=WorkflowSignalResponse)
-async def approve_workflow(workflow_id: str) -> WorkflowSignalResponse:
-    """Send an 'approve' signal to a paused AgentRunWorkflow."""
+async def approve_workflow(workflow_id: str, _: TenantID) -> WorkflowSignalResponse:
     client: Client = app.state.temporal
     try:
-        handle = client.get_workflow_handle(workflow_id)
-        await handle.signal(AgentRunWorkflow.approve)
+        await client.get_workflow_handle(workflow_id).signal(AgentRunWorkflow.approve)
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=404, detail=str(e)) from e
     return WorkflowSignalResponse(workflow_id=workflow_id, action="approved")
 
 
 @app.post("/workflows/{workflow_id}/reject", response_model=WorkflowSignalResponse)
-async def reject_workflow(workflow_id: str) -> WorkflowSignalResponse:
-    """Send a 'reject' signal to a paused AgentRunWorkflow."""
+async def reject_workflow(workflow_id: str, _: TenantID) -> WorkflowSignalResponse:
     client: Client = app.state.temporal
     try:
-        handle = client.get_workflow_handle(workflow_id)
-        await handle.signal(AgentRunWorkflow.reject)
+        await client.get_workflow_handle(workflow_id).signal(AgentRunWorkflow.reject)
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=404, detail=str(e)) from e
     return WorkflowSignalResponse(workflow_id=workflow_id, action="rejected")
 
 
-# ── Analytics ────────────────────────────────────────────────────────────────
+# ── Analytics ─────────────────────────────────────────────────────────────────
 
 @app.get("/analytics/usage")
 async def get_usage(
-    tenant_id: str = Query(..., description="Tenant to query"),
-    days: int = Query(default=30, ge=1, le=365, description="Lookback window in days"),
+    tenant_id: TenantID,
+    days: int = Query(default=30, ge=1, le=365),
 ) -> dict:
-    """Aggregate LLM cost and token usage for a tenant over the last N days."""
+    """Aggregate LLM cost and token usage for the authenticated tenant over N days."""
     sql = """
         SELECT
             model,
@@ -163,7 +219,7 @@ async def get_usage(
 
 @app.post("/documents", response_model=DocumentResponse, status_code=202)
 async def upload_document(
-    tenant_id: str = Form(...),
+    tenant_id: TenantID,
     file: UploadFile = File(...),
 ) -> DocumentResponse:
     data = await file.read()
@@ -175,15 +231,14 @@ async def upload_document(
     object_store.put(object_key, data, content_type=file.content_type or "application/octet-stream")
 
     async with async_session() as s, s.begin():
-        doc = Document(
+        s.add(Document(
             id=document_id,
             tenant_id=tenant_id,
             filename=file.filename or "unnamed",
             mime_type=file.content_type or "application/octet-stream",
             object_key=object_key,
             status=DocumentStatus.pending,
-        )
-        s.add(doc)
+        ))
 
     client: Client = app.state.temporal
     await client.start_workflow(
@@ -208,7 +263,7 @@ async def upload_document(
 
 @app.post("/documents/bulk", response_model=list[DocumentResponse], status_code=202)
 async def upload_documents_bulk(
-    tenant_id: str = Form(...),
+    tenant_id: TenantID,
     files: list[UploadFile] = File(...),
 ) -> list[DocumentResponse]:
     """Upload multiple documents at once. Each gets its own IngestionWorkflow."""
@@ -229,15 +284,14 @@ async def upload_documents_bulk(
             content_type=file.content_type or "application/octet-stream",
         )
         async with async_session() as s, s.begin():
-            doc = Document(
+            s.add(Document(
                 id=document_id,
                 tenant_id=tenant_id,
                 filename=file.filename or "unnamed",
                 mime_type=file.content_type or "application/octet-stream",
                 object_key=object_key,
                 status=DocumentStatus.pending,
-            )
-            s.add(doc)
+            ))
         await client.start_workflow(
             IngestionWorkflow.run,
             IngestionInput(
@@ -260,7 +314,7 @@ async def upload_documents_bulk(
 
 
 @app.get("/documents/{document_id}", response_model=DocumentResponse)
-async def get_document(document_id: uuid.UUID) -> DocumentResponse:
+async def get_document(document_id: uuid.UUID, _: TenantID) -> DocumentResponse:
     async with async_session() as s:
         doc = (
             await s.execute(select(Document).where(Document.id == document_id))

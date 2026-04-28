@@ -50,6 +50,9 @@ format: ## Format code
 	uv run ruff format .
 	uv run ruff check --fix .
 
+backup: ## Dump Postgres → MinIO (requires running services)
+	uv run python scripts/backup.py
+
 clean: ## Remove caches
 	find . -type d -name __pycache__ -exec rm -rf {} +
 	find . -type d -name .pytest_cache -exec rm -rf {} +

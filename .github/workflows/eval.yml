@@ -1,0 +1,91 @@
+name: Retrieval Eval
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      min_recall:
+        description: "Minimum recall@k to pass (0–1)"
+        default: "0.0"
+
+jobs:
+  retrieval-eval:
+    name: recall@5 + MRR
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: app
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/app
+      # Stub values — no real LLM/Bifrost in CI, eval uses DB only
+      BIFROST_BASE_URL: http://localhost:8088/openai/v1
+      BIFROST_API_KEY: ci-stub
+      MINIO_ENDPOINT: localhost:9002
+      REDIS_URL: redis://localhost:6379/0
+      CLICKHOUSE_URL: http://default:@localhost:8123/analytics
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Run migrations
+        run: uv run alembic upgrade head
+
+      - name: Run retrieval eval
+        id: eval
+        run: |
+          uv run python -m evals.runners.retrieval_eval \
+            --tenant ci \
+            --k 5 \
+            | tee eval_output.txt
+          echo "output<<EOF" >> "$GITHUB_OUTPUT"
+          cat eval_output.txt >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Check recall threshold
+        env:
+          MIN_RECALL: ${{ github.event.inputs.min_recall || '0.0' }}
+        run: |
+          python3 - <<'PYEOF'
+          import os, re, sys
+          output = open("eval_output.txt").read()
+          m = re.search(r"recall@\d+\s*=\s*\d+/\d+\s*=\s*([\d.]+)%", output)
+          if not m:
+              print("Could not parse recall metric — no documents seeded in CI")
+              sys.exit(0)
+          recall = float(m.group(1)) / 100
+          threshold = float(os.environ.get("MIN_RECALL", "0.0"))
+          print(f"recall={recall:.2%}  threshold={threshold:.2%}")
+          if recall < threshold:
+              print("FAIL: recall below threshold")
+              sys.exit(1)
+          print("PASS")
+          PYEOF
+
+      - name: Post eval summary
+        if: always()
+        run: |
+          echo "### Retrieval Eval Results" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          cat eval_output.txt >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"

@@ -1,6 +1,7 @@
 from pydantic_ai import Agent
 
 from packages.agents.deps import AgentDeps
+from packages.agents.prompts import get_system_prompt
 from packages.agents.schemas import AgentRunOutput
 from packages.agents.tools import (
     register_code_exec_tool,
@@ -10,25 +11,6 @@ from packages.agents.tools import (
 )
 from packages.core import settings
 from packages.llm import build_model
-
-SYSTEM_PROMPT = """\
-You are a helpful research assistant grounded in the user's knowledge base.
-
-Available tools:
-- retrieve      : search the vector knowledge base for relevant chunks
-- sql_query     : run a SELECT against the documents/chunks tables
-- http_fetch    : fetch content from an external URL
-- code_exec     : run a Python snippet for computation or data transformation
-
-When answering:
-1. Call retrieve first for knowledge-base questions.
-2. Use sql_query to look up document metadata or counts.
-3. Use http_fetch only when you need fresh external content.
-4. Use code_exec for calculations or non-trivial data wrangling.
-
-Always set confidence in [0,1]. Put the document_id of every retrieved chunk
-you actually used into sources — never invent ids.
-"""
 
 
 def _register_tools(agent: Agent[AgentDeps, AgentRunOutput]) -> None:
@@ -43,7 +25,7 @@ def build_research_agent(model_name: str | None = None) -> Agent[AgentDeps, Agen
         model=build_model(model_name),
         deps_type=AgentDeps,
         output_type=AgentRunOutput,
-        system_prompt=SYSTEM_PROMPT,
+        system_prompt=get_system_prompt(),
     )
     _register_tools(agent)
     return agent

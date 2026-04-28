@@ -44,6 +44,9 @@ class Settings(BaseSettings):
     # Log a WARNING when a single LLM call costs more than this amount.
     budget_alert_usd_per_call: float = 0.10
 
+    # Protect POST /auth/keys — change before deploying.
+    admin_secret: str = "change-me-before-deploy"
+
 
 @lru_cache
 def _get_settings() -> Settings:
