@@ -5,9 +5,20 @@ class AgentRunInput(BaseModel):
     tenant_id: str = Field(..., description="Tenant identifier for multi-tenancy")
     user_query: str
     model: str | None = None
+    require_approval: bool = Field(
+        default=False,
+        description="Pause after generating an answer and wait for human approve/reject signal",
+    )
 
 
 class AgentRunOutput(BaseModel):
     answer: str = Field(..., description="Final answer to the user")
     confidence: float = Field(..., ge=0.0, le=1.0)
     sources: list[str] = Field(default_factory=list)
+
+
+class MultiStepResearchInput(BaseModel):
+    tenant_id: str
+    main_query: str
+    sub_queries: list[str] = Field(..., min_length=1, max_length=10)
+    model: str | None = None

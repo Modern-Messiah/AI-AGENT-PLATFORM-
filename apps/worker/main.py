@@ -18,10 +18,11 @@ from apps.worker.activities import (
     mark_failed,
     mark_processing,
     parse_document,
+    request_human_approval,
     run_agent_step,
     store_chunks,
 )
-from apps.worker.workflows import AgentRunWorkflow, IngestionWorkflow
+from apps.worker.workflows import AgentRunWorkflow, IngestionWorkflow, MultiStepResearchWorkflow
 from packages.core import settings
 from packages.observability import setup_tracing
 
@@ -42,9 +43,10 @@ async def main() -> None:
     worker = Worker(
         client,
         task_queue=settings.temporal_task_queue,
-        workflows=[AgentRunWorkflow, IngestionWorkflow],
+        workflows=[AgentRunWorkflow, IngestionWorkflow, MultiStepResearchWorkflow],
         activities=[
             run_agent_step,
+            request_human_approval,
             mark_processing,
             parse_document,
             chunk_and_embed,
