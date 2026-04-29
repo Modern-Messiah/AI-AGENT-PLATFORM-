@@ -636,14 +636,40 @@ const SettingsModal = ({ config, onSave, onClose }) => {
 
 // ─── CHAT SCREEN ──────────────────────────────────────────────────────────────
 
+const CHAT_STORAGE_KEY = 'aap_chat';
+
+function loadChat() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(CHAT_STORAGE_KEY) || 'null');
+    if (saved && saved.sessions && saved.sessions.length > 0) return saved;
+  } catch {}
+  const defaultSession = { id: 's1', title: 'Новый чат', time: 'сейчас' };
+  return {
+    sessions: [defaultSession],
+    activeId: 's1',
+    messages: { s1: [{ id: 1, role: 'agent', text: 'Привет! Я готов отвечать на вопросы о вашей кодовой базе и документах. Что хотите узнать?', time: '—', sources: [] }] },
+  };
+}
+
+function persistChat(sessions, activeId, messagesMap) {
+  try {
+    localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify({ sessions, activeId, messages: messagesMap }));
+  } catch {}
+}
+
 const ChatScreen = ({ apiKey }) => {
-  const [sessions, setSessions] = useState([
-    { id: 's1', title: 'Новый чат', time: 'сейчас', messages: [] },
-  ]);
-  const [activeId, setActiveId] = useState('s1');
-  const [messages, setMessages] = useState([
-    { id: 1, role: 'agent', text: 'Привет! Я готов отвечать на вопросы о вашей кодовой базе и документах. Что хотите узнать?', time: now(), sources: [], cached: false },
-  ]);
+  const init = loadChat();
+  const [sessions, setSessions] = useState(init.sessions);
+  const [activeId, setActiveId] = useState(init.activeId);
+  const [messagesMap, setMessagesMap] = useState(init.messages || {});
+  const messages = messagesMap[activeId] || [];
+  const setMessages = (updater) => {
+    setMessagesMap(prev => {
+      const next = typeof updater === 'function' ? updater(prev[activeId] || []) : updater;
+      const updated = { ...prev, [activeId]: next };
+      return updated;
+    });
+  };
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [model, setModel] = useState(MODELS[0]);
@@ -655,6 +681,11 @@ const ChatScreen = ({ apiKey }) => {
   function now() {
     return new Date().toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' });
   }
+
+  // Persist sessions + messages on every change
+  useEffect(() => {
+    persistChat(sessions, activeId, messagesMap);
+  }, [sessions, activeId, messagesMap]);
 
   useEffect(() => {
     if (bottomRef.current) {
@@ -724,9 +755,10 @@ const ChatScreen = ({ apiKey }) => {
 
   const newChat = () => {
     const id = 'session-' + Date.now();
-    setSessions(s => [{ id, title: 'Новый чат', time: 'сейчас', messages: [] }, ...s]);
+    const welcome = { id: 1, role: 'agent', text: 'Готов к работе. Задайте вопрос.', time: now(), sources: [] };
+    setSessions(s => [{ id, title: 'Новый чат', time: now() }, ...s]);
+    setMessagesMap(prev => ({ ...prev, [id]: [welcome] }));
     setActiveId(id);
-    setMessages([{ id: 1, role: 'agent', text: 'Готов к работе. Задайте вопрос.', time: now(), sources: [] }]);
   };
 
   return (
@@ -740,9 +772,27 @@ const ChatScreen = ({ apiKey }) => {
         </div>
         <div className="chat-sessions">
           {sessions.map(s => (
-            <div key={s.id} className={`chat-session-item ${activeId === s.id ? 'active' : ''}`} onClick={() => setActiveId(s.id)}>
-              <div className="session-title">{s.title}</div>
-              <div className="session-meta">{s.time}</div>
+            <div key={s.id} className={`chat-session-item ${activeId === s.id ? 'active' : ''}`}
+              style={{ display: 'flex', alignItems: 'center', gap: 4 }}
+              onClick={() => setActiveId(s.id)}
+            >
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="session-title">{s.title}</div>
+                <div className="session-meta">{s.time}</div>
+              </div>
+              <button
+                className="btn btn-ghost btn-sm"
+                style={{ padding: '2px 5px', opacity: 0.5, flexShrink: 0 }}
+                onClick={e => {
+                  e.stopPropagation();
+                  const remaining = sessions.filter(x => x.id !== s.id);
+                  if (remaining.length === 0) { newChat(); return; }
+                  setSessions(remaining);
+                  setMessagesMap(prev => { const n = { ...prev }; delete n[s.id]; return n; });
+                  if (activeId === s.id) setActiveId(remaining[0].id);
+                }}
+                title="Удалить сессию"
+              >✕</button>
             </div>
           ))}
         </div>
