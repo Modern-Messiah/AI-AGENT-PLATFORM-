@@ -33,7 +33,7 @@ class ClickHouseClient:
         result = await asyncio.to_thread(
             self._client.query, sql, parameters=parameters or {}
         )
-        return result.named_results()
+        return list(result.named_results())
 
 
 ch_client = ClickHouseClient()
