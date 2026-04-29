@@ -181,6 +181,9 @@ html, body, #root { height: 100%; background: var(--bg); color: var(--text); fon
 }
 .chat-session-item:hover { background: var(--s2); }
 .chat-session-item.active { background: var(--s3); }
+.chat-session-item .del-btn { opacity: 0; transition: opacity 0.15s; }
+.chat-session-item:hover .del-btn { opacity: 0.6; }
+.chat-session-item .del-btn:hover { opacity: 1 !important; color: var(--red); }
 .session-title { font-size: 12.5px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .session-meta { font-size: 11px; color: var(--muted); margin-top: 2px; font-family: var(--mono); }
 
@@ -803,7 +806,7 @@ const ChatScreen = ({ apiKey }) => {
                 <div className="session-title">{s.title}</div>
                 <div className="session-meta">{s.updated_at ? new Date(s.updated_at).toLocaleDateString('ru') : ''}</div>
               </div>
-              <button className="btn btn-ghost btn-sm" style={{ padding: '2px 5px', opacity: 0.4, flexShrink: 0 }} onClick={e => deleteSession(s.id, e)} title="Удалить">✕</button>
+              <button className="btn btn-ghost btn-sm del-btn" style={{ padding: '2px 5px', flexShrink: 0 }} onClick={e => deleteSession(s.id, e)} title="Удалить">✕</button>
             </div>
           ))}
           {apiKey && sessions.length === 0 && !sessLoading && (
