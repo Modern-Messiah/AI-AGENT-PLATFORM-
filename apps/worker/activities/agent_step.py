@@ -46,7 +46,7 @@ async def run_agent_step(payload: AgentRunInput) -> AgentRunOutput:
     # tool_choice='required' that PydanticAI sends when tools are registered.
     # Disable thinking via extra_body so tools work normally.
     ms: ModelSettings = {}
-    if "kimi" in model_name:
+    if "kimi" in model_name or "v4-pro" in model_name:
         ms = {"extra_body": {"thinking": {"type": "disabled"}}}
 
     t0 = time.monotonic()
