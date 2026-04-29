@@ -775,6 +775,8 @@ const ChatScreen = ({ apiKey }) => {
 
   const deleteSession = async (id, e) => {
     e.stopPropagation();
+    const sess = sessions.find(s => s.id === id);
+    if (!confirm(`Удалить сессию "${sess?.title || id}"?\nВсе сообщения будут удалены.`)) return;
     try {
       await apiFetch(`/sessions/${id}`, { method: 'DELETE' }, apiKey);
       const remaining = sessions.filter(s => s.id !== id);
