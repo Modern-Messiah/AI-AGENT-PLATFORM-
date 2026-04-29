@@ -636,56 +636,51 @@ const SettingsModal = ({ config, onSave, onClose }) => {
 
 // ─── CHAT SCREEN ──────────────────────────────────────────────────────────────
 
-const CHAT_STORAGE_KEY = 'aap_chat';
-
-function loadChat() {
-  try {
-    const saved = JSON.parse(localStorage.getItem(CHAT_STORAGE_KEY) || 'null');
-    if (saved && saved.sessions && saved.sessions.length > 0) return saved;
-  } catch {}
-  const defaultSession = { id: 's1', title: 'Новый чат', time: 'сейчас' };
-  return {
-    sessions: [defaultSession],
-    activeId: 's1',
-    messages: { s1: [{ id: 1, role: 'agent', text: 'Привет! Я готов отвечать на вопросы о вашей кодовой базе и документах. Что хотите узнать?', time: '—', sources: [] }] },
-  };
-}
-
-function persistChat(sessions, activeId, messagesMap) {
-  try {
-    localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify({ sessions, activeId, messages: messagesMap }));
-  } catch {}
-}
+const WELCOME = 'Привет! Я готов отвечать на вопросы о вашей кодовой базе и документах. Что хотите узнать?';
 
 const ChatScreen = ({ apiKey }) => {
-  const init = loadChat();
-  const [sessions, setSessions] = useState(init.sessions);
-  const [activeId, setActiveId] = useState(init.activeId);
-  const [messagesMap, setMessagesMap] = useState(init.messages || {});
-  const messages = messagesMap[activeId] || [];
-  const setMessages = (updater) => {
-    setMessagesMap(prev => {
-      const next = typeof updater === 'function' ? updater(prev[activeId] || []) : updater;
-      const updated = { ...prev, [activeId]: next };
-      return updated;
-    });
-  };
+  const [sessions, setSessions] = useState([]);
+  const [activeId, setActiveId] = useState(null);
+  const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [sessLoading, setSessLoading] = useState(false);
   const [model, setModel] = useState(MODELS[0]);
   const [requireApproval, setRequireApproval] = useState(false);
   const [pendingHITL, setPendingHITL] = useState(null);
   const [toast, setToast] = useState(null);
   const bottomRef = useRef(null);
 
-  function now() {
-    return new Date().toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' });
+  function fmtTime(iso) {
+    if (!iso) return '—';
+    try { return new Date(iso).toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' }); } catch { return '—'; }
   }
+  function now() { return new Date().toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' }); }
 
-  // Persist sessions + messages on every change
+  // Load sessions on mount / key change
   useEffect(() => {
-    persistChat(sessions, activeId, messagesMap);
-  }, [sessions, activeId, messagesMap]);
+    if (!apiKey) { setSessions([]); setActiveId(null); setMessages([]); return; }
+    setSessLoading(true);
+    apiFetch('/sessions', {}, apiKey)
+      .then(data => {
+        setSessions(data);
+        if (data.length > 0) selectSession(data[0].id);
+        else setSessLoading(false);
+      })
+      .catch(() => setSessLoading(false));
+  }, [apiKey]);
+
+  const selectSession = async (id) => {
+    setActiveId(id);
+    setMessages([]);
+    setSessLoading(true);
+    try {
+      const msgs = await apiFetch(`/sessions/${id}/messages`, {}, apiKey);
+      const welcome = { id: 'w', role: 'agent', text: WELCOME, time: '—', sources: [] };
+      setMessages(msgs.length > 0 ? msgs.map(m => ({ id: m.id, role: m.role, text: m.content, time: fmtTime(m.created_at), sources: m.sources, cached: m.cached })) : [welcome]);
+    } catch {}
+    setSessLoading(false);
+  };
 
   useEffect(() => {
     if (bottomRef.current) {
@@ -699,9 +694,32 @@ const ChatScreen = ({ apiKey }) => {
     if (!apiKey) { setToast({ msg: 'Задайте X-API-Key в настройках', type: 'error' }); return; }
     setInput('');
 
-    const userMsg = { id: Date.now(), role: 'user', text: q, time: now() };
-    setMessages(m => [...m, userMsg]);
+    // Create session on first message if none active
+    let sessId = activeId;
+    if (!sessId) {
+      try {
+        const sess = await apiFetch('/sessions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: q.slice(0, 40), model }) }, apiKey);
+        sessId = sess.id;
+        setSessions(s => [sess, ...s]);
+        setActiveId(sessId);
+      } catch (e) { setToast({ msg: `Ошибка создания сессии: ${e.message}`, type: 'error' }); return; }
+    }
+
+    const userMsg = { id: 'u' + Date.now(), role: 'user', text: q, time: now(), sources: [] };
+    setMessages(m => m.filter(x => x.id !== 'w').concat(userMsg));
     setLoading(true);
+
+    // Save user message to DB
+    apiFetch(`/sessions/${sessId}/messages`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ role: 'user', content: q }) }, apiKey).catch(() => {});
+
+    // Update session title if it's still "New Chat"
+    const curSess = sessions.find(s => s.id === sessId);
+    if (curSess && curSess.title === 'New Chat') {
+      const newTitle = q.slice(0, 40) + (q.length > 40 ? '…' : '');
+      apiFetch(`/sessions/${sessId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: newTitle }) }, apiKey)
+        .then(() => setSessions(s => s.map(x => x.id === sessId ? { ...x, title: newTitle } : x)))
+        .catch(() => {});
+    }
 
     try {
       const data = await apiFetch('/agent/run', {
@@ -711,32 +729,20 @@ const ChatScreen = ({ apiKey }) => {
       }, apiKey);
 
       setLoading(false);
+      const agentMsg = { id: 'a' + Date.now(), role: 'agent', text: data.answer, time: now(), sources: data.sources || [], cached: data.cached || false };
 
-      const agentMsg = {
-        id: Date.now() + 1,
-        role: 'agent',
-        text: data.answer,
-        time: now(),
-        sources: data.sources || [],
-        cached: data.cached || false,
-      };
+      // Save agent message to DB
+      apiFetch(`/sessions/${sessId}/messages`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ role: 'agent', content: data.answer, sources: data.sources || [], cached: data.cached || false }) }, apiKey).catch(() => {});
 
       if (requireApproval) {
         setPendingHITL(agentMsg);
-        setMessages(m => [...m, { id: Date.now() + 2, role: 'hitl', pendingId: agentMsg.id, time: now() }]);
+        setMessages(m => [...m, { id: 'h' + Date.now(), role: 'hitl', time: now() }]);
       } else {
         setMessages(m => [...m, agentMsg]);
       }
-
-      // Update session title from first user message
-      setSessions(s => s.map(sess =>
-        sess.id === activeId && sess.title === 'Новый чат'
-          ? { ...sess, title: q.slice(0, 32) + (q.length > 32 ? '…' : '') }
-          : sess
-      ));
     } catch (e) {
       setLoading(false);
-      setMessages(m => [...m, { id: Date.now() + 1, role: 'agent', text: `Ошибка: ${e.message}`, time: now(), sources: [], error: true }]);
+      setMessages(m => [...m, { id: 'e' + Date.now(), role: 'agent', text: `Ошибка: ${e.message}`, time: now(), sources: [], error: true }]);
     }
   };
 
@@ -753,12 +759,27 @@ const ChatScreen = ({ apiKey }) => {
     setToast({ msg: 'Ответ отклонён', type: 'error' });
   };
 
-  const newChat = () => {
-    const id = 'session-' + Date.now();
-    const welcome = { id: 1, role: 'agent', text: 'Готов к работе. Задайте вопрос.', time: now(), sources: [] };
-    setSessions(s => [{ id, title: 'Новый чат', time: now() }, ...s]);
-    setMessagesMap(prev => ({ ...prev, [id]: [welcome] }));
-    setActiveId(id);
+  const newChat = async () => {
+    if (!apiKey) return;
+    try {
+      const sess = await apiFetch('/sessions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: 'New Chat', model }) }, apiKey);
+      setSessions(s => [sess, ...s]);
+      setActiveId(sess.id);
+      setMessages([{ id: 'w', role: 'agent', text: WELCOME, time: now(), sources: [] }]);
+    } catch (e) { setToast({ msg: `Ошибка: ${e.message}`, type: 'error' }); }
+  };
+
+  const deleteSession = async (id, e) => {
+    e.stopPropagation();
+    try {
+      await apiFetch(`/sessions/${id}`, { method: 'DELETE' }, apiKey);
+      const remaining = sessions.filter(s => s.id !== id);
+      setSessions(remaining);
+      if (activeId === id) {
+        if (remaining.length > 0) selectSession(remaining[0].id);
+        else { setActiveId(null); setMessages([]); }
+      }
+    } catch (err) { setToast({ msg: `Ошибка: ${err.message}`, type: 'error' }); }
   };
 
   return (
@@ -771,30 +792,23 @@ const ChatScreen = ({ apiKey }) => {
           </button>
         </div>
         <div className="chat-sessions">
+          {sessLoading && sessions.length === 0 && <div style={{ padding: '12px 16px', fontSize: 12, color: 'var(--muted)' }}>Загрузка…</div>}
+          {!apiKey && <div style={{ padding: '12px 16px', fontSize: 12, color: 'var(--muted)' }}>Нет API-ключа</div>}
           {sessions.map(s => (
             <div key={s.id} className={`chat-session-item ${activeId === s.id ? 'active' : ''}`}
               style={{ display: 'flex', alignItems: 'center', gap: 4 }}
-              onClick={() => setActiveId(s.id)}
+              onClick={() => selectSession(s.id)}
             >
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div className="session-title">{s.title}</div>
-                <div className="session-meta">{s.time}</div>
+                <div className="session-meta">{s.updated_at ? new Date(s.updated_at).toLocaleDateString('ru') : ''}</div>
               </div>
-              <button
-                className="btn btn-ghost btn-sm"
-                style={{ padding: '2px 5px', opacity: 0.5, flexShrink: 0 }}
-                onClick={e => {
-                  e.stopPropagation();
-                  const remaining = sessions.filter(x => x.id !== s.id);
-                  if (remaining.length === 0) { newChat(); return; }
-                  setSessions(remaining);
-                  setMessagesMap(prev => { const n = { ...prev }; delete n[s.id]; return n; });
-                  if (activeId === s.id) setActiveId(remaining[0].id);
-                }}
-                title="Удалить сессию"
-              >✕</button>
+              <button className="btn btn-ghost btn-sm" style={{ padding: '2px 5px', opacity: 0.4, flexShrink: 0 }} onClick={e => deleteSession(s.id, e)} title="Удалить">✕</button>
             </div>
           ))}
+          {apiKey && sessions.length === 0 && !sessLoading && (
+            <div style={{ padding: '12px 16px', fontSize: 12, color: 'var(--muted)' }}>Нет сессий — нажми New</div>
+          )}
         </div>
       </div>
 

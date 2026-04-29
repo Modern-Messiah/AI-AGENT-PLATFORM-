@@ -25,7 +25,7 @@ from typing import Annotated, AsyncIterator
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from temporalio.client import Client
 
 from apps.worker.activities.ingestion import IngestionInput
@@ -37,12 +37,42 @@ from packages.analytics.clickhouse import ch_client
 from packages.auth import generate_key, require_tenant
 from packages.core import settings
 from packages.observability import setup_tracing
-from packages.storage import ApiKey, Document, DocumentStatus, async_session, object_store
+from packages.storage import ApiKey, ChatMessage, ChatSession, Document, DocumentStatus, async_session, object_store
 
 TenantID = Annotated[str, Depends(require_tenant)]
 
 
 # ── Pydantic schemas ──────────────────────────────────────────────────────────
+
+class ChatMessageSchema(BaseModel):
+    id: str
+    role: str
+    content: str
+    sources: list[str] = []
+    cached: bool = False
+    created_at: str
+
+
+class ChatSessionSchema(BaseModel):
+    id: str
+    title: str
+    model: str | None
+    created_at: str
+    updated_at: str
+    message_count: int = 0
+
+
+class CreateSessionRequest(BaseModel):
+    title: str = "New Chat"
+    model: str | None = None
+
+
+class AddMessageRequest(BaseModel):
+    role: str
+    content: str
+    sources: list[str] = []
+    cached: bool = False
+
 
 class DocumentResponse(BaseModel):
     id: str
@@ -335,4 +365,101 @@ async def get_document(document_id: uuid.UUID, _: TenantID) -> DocumentResponse:
         filename=doc.filename,
         status=doc.status,
         error=doc.error,
+    )
+
+
+# ── Chat sessions ─────────────────────────────────────────────────────────────
+
+@app.get("/sessions", response_model=list[ChatSessionSchema])
+async def list_sessions(tenant_id: TenantID) -> list[ChatSessionSchema]:
+    async with async_session() as s:
+        result = await s.execute(
+            select(ChatSession).where(ChatSession.tenant_id == tenant_id).order_by(ChatSession.updated_at.desc())
+        )
+        sessions = result.scalars().all()
+    out = []
+    for sess in sessions:
+        count_result = await s.execute(
+            select(func.count()).select_from(ChatMessage).where(ChatMessage.session_id == sess.id)
+        )
+        out.append(ChatSessionSchema(
+            id=str(sess.id),
+            title=sess.title,
+            model=sess.model,
+            created_at=sess.created_at.isoformat(),
+            updated_at=sess.updated_at.isoformat(),
+            message_count=0,
+        ))
+    return out
+
+
+@app.post("/sessions", response_model=ChatSessionSchema, status_code=201)
+async def create_session(body: CreateSessionRequest, tenant_id: TenantID) -> ChatSessionSchema:
+    async with async_session() as s, s.begin():
+        sess = ChatSession(tenant_id=tenant_id, title=body.title, model=body.model)
+        s.add(sess)
+    return ChatSessionSchema(
+        id=str(sess.id),
+        title=sess.title,
+        model=sess.model,
+        created_at=sess.created_at.isoformat(),
+        updated_at=sess.updated_at.isoformat(),
+    )
+
+
+@app.patch("/sessions/{session_id}", response_model=ChatSessionSchema)
+async def update_session(session_id: uuid.UUID, body: CreateSessionRequest, tenant_id: TenantID) -> ChatSessionSchema:
+    async with async_session() as s, s.begin():
+        sess = (await s.execute(select(ChatSession).where(ChatSession.id == session_id, ChatSession.tenant_id == tenant_id))).scalar_one_or_none()
+        if sess is None:
+            raise HTTPException(status_code=404, detail="session not found")
+        if body.title:
+            sess.title = body.title
+        if body.model:
+            sess.model = body.model
+    return ChatSessionSchema(
+        id=str(sess.id), title=sess.title, model=sess.model,
+        created_at=sess.created_at.isoformat(), updated_at=sess.updated_at.isoformat(),
+    )
+
+
+@app.delete("/sessions/{session_id}", status_code=204)
+async def delete_session(session_id: uuid.UUID, tenant_id: TenantID) -> None:
+    async with async_session() as s, s.begin():
+        sess = (await s.execute(select(ChatSession).where(ChatSession.id == session_id, ChatSession.tenant_id == tenant_id))).scalar_one_or_none()
+        if sess is None:
+            raise HTTPException(status_code=404, detail="session not found")
+        await s.delete(sess)
+
+
+@app.get("/sessions/{session_id}/messages", response_model=list[ChatMessageSchema])
+async def get_messages(session_id: uuid.UUID, tenant_id: TenantID) -> list[ChatMessageSchema]:
+    async with async_session() as s:
+        result = await s.execute(
+            select(ChatMessage).where(ChatMessage.session_id == session_id, ChatMessage.tenant_id == tenant_id).order_by(ChatMessage.created_at)
+        )
+        msgs = result.scalars().all()
+    return [ChatMessageSchema(
+        id=str(m.id), role=m.role, content=m.content,
+        sources=m.sources or [], cached=m.cached,
+        created_at=m.created_at.isoformat(),
+    ) for m in msgs]
+
+
+@app.post("/sessions/{session_id}/messages", response_model=ChatMessageSchema, status_code=201)
+async def add_message(session_id: uuid.UUID, body: AddMessageRequest, tenant_id: TenantID) -> ChatMessageSchema:
+    async with async_session() as s, s.begin():
+        sess = (await s.execute(select(ChatSession).where(ChatSession.id == session_id, ChatSession.tenant_id == tenant_id))).scalar_one_or_none()
+        if sess is None:
+            raise HTTPException(status_code=404, detail="session not found")
+        msg = ChatMessage(
+            session_id=session_id, tenant_id=tenant_id,
+            role=body.role, content=body.content,
+            sources=body.sources, cached=body.cached,
+        )
+        s.add(msg)
+    return ChatMessageSchema(
+        id=str(msg.id), role=msg.role, content=msg.content,
+        sources=msg.sources, cached=msg.cached,
+        created_at=msg.created_at.isoformat(),
     )
