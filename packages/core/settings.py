@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     deepseek_api_key: str = ""
     # strong = сложные шаги агента; weak = дешёвые вспомогательные.
     strong_model: str = "moonshot/kimi-k2.6"
-    weak_model: str = "deepseek/deepseek-chat"
+    weak_model: str = "deepseek/deepseek-v4-flash"
 
     langfuse_public_key: str = ""
     langfuse_secret_key: str = ""
