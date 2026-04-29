@@ -23,6 +23,7 @@ from contextlib import asynccontextmanager
 from typing import Annotated, AsyncIterator
 
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy import select
 from temporalio.client import Client
@@ -80,6 +81,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="AI Agent Platform", lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 # ── Public ────────────────────────────────────────────────────────────────────
