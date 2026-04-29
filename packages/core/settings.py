@@ -10,8 +10,8 @@ class Settings(BaseSettings):
     app_env: str = "local"
     log_level: str = "INFO"
 
-    bifrost_base_url: str = "http://localhost:8088/openai/v1"
-    bifrost_api_key: str = "not-used"
+    moonshot_api_key: str = ""
+    deepseek_api_key: str = ""
     # strong = сложные шаги агента; weak = дешёвые вспомогательные.
     strong_model: str = "moonshot/kimi-k2-turbo-preview"
     weak_model: str = "deepseek/deepseek-chat"
@@ -35,8 +35,8 @@ class Settings(BaseSettings):
     minio_secret_key: str = "minioadmin"
     minio_bucket: str = "app-files"
 
-    embedding_model: str = "BAAI/bge-m3"
-    embedding_dim: int = 1024
+    embedding_model: str = "BAAI/bge-small-en-v1.5"
+    embedding_dim: int = 384
     chunk_size: int = 2000
     chunk_overlap: int = 200
     retrieval_top_k: int = 5

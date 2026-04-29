@@ -52,7 +52,7 @@ services:
         soft: 262144
         hard: 262144
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8123/ping | grep -q ok"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8123/ping | grep -qi ok"]
       interval: 5s
       timeout: 5s
       retries: 15
@@ -92,7 +92,7 @@ services:
     ports:
       - "7233:7233"
     healthcheck:
-      test: ["CMD-SHELL", "python3 -c \"import socket; socket.create_connection(('localhost',7233),timeout=3)\" 2>/dev/null"]
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/$(hostname)/7233' 2>/dev/null"]
       interval: 10s
       timeout: 5s
       retries: 20
@@ -146,7 +146,7 @@ services:
     ports:
       - "3000:3000"
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:3000/api/public/health"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/public/health | grep -q '\"status\"'"]
       interval: 10s
       timeout: 5s
       retries: 20
@@ -183,23 +183,6 @@ services:
       SALT: ${LANGFUSE_SALT:-changeme-salt}
       ENCRYPTION_KEY: ${LANGFUSE_ENCRYPTION_KEY:-0000000000000000000000000000000000000000000000000000000000000000}
       TELEMETRY_ENABLED: "false"
-
-  bifrost:
-    image: maximhq/bifrost:latest
-    container_name: aap-bifrost
-    environment:
-      MOONSHOT_API_KEY: ${MOONSHOT_API_KEY:-}
-      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
-    ports:
-      - "8088:8080"
-    volumes:
-      - ./infra/bifrost:/app/config:ro
-    command: ["-config", "/app/config/config.json", "-port", "8080"]
-    healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8080/health || curl -sf http://localhost:8080/ping || exit 0"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
 
   # ── App ────────────────────────────────────────────────────────────────────
 
@@ -239,8 +222,8 @@ services:
       MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
       MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
       MINIO_BUCKET: ${MINIO_BUCKET:-app-files}
-      BIFROST_BASE_URL: http://bifrost:8080/openai/v1
-      BIFROST_API_KEY: ${BIFROST_API_KEY:-not-used}
+      MOONSHOT_API_KEY: ${MOONSHOT_API_KEY:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       STRONG_MODEL: ${STRONG_MODEL:-moonshot/kimi-k2-turbo-preview}
       WEAK_MODEL: ${WEAK_MODEL:-deepseek/deepseek-chat}
       LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
@@ -281,8 +264,8 @@ services:
       MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
       MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
       MINIO_BUCKET: ${MINIO_BUCKET:-app-files}
-      BIFROST_BASE_URL: http://bifrost:8080/openai/v1
-      BIFROST_API_KEY: ${BIFROST_API_KEY:-not-used}
+      MOONSHOT_API_KEY: ${MOONSHOT_API_KEY:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       STRONG_MODEL: ${STRONG_MODEL:-moonshot/kimi-k2-turbo-preview}
       WEAK_MODEL: ${WEAK_MODEL:-deepseek/deepseek-chat}
       LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
@@ -290,7 +273,6 @@ services:
       LANGFUSE_HOST: http://langfuse-web:3000
       APP_ENV: ${APP_ENV:-local}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      # FastEmbed cache — persisted so model isn't re-downloaded on each restart
       FASTEMBED_CACHE_PATH: /fastembed_cache
     volumes:
       - fastembed_cache:/fastembed_cache

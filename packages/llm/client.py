@@ -1,4 +1,4 @@
-"""Model factory — points PydanticAI at Bifrost over the OpenAI-compatible API."""
+"""Model factory — routes provider/model to the right OpenAI-compatible API."""
 
 from __future__ import annotations
 
@@ -8,18 +8,31 @@ from pydantic_ai.providers.openai import OpenAIProvider
 
 from packages.core import settings
 
+_PROVIDER_CONFIG: dict[str, tuple[str, str]] = {
+    "moonshot": ("https://api.moonshot.cn/v1", settings.moonshot_api_key),
+    "deepseek": ("https://api.deepseek.com/v1", settings.deepseek_api_key),
+}
+
 
 def build_model(model_name: str | None = None) -> OpenAIModel:
-    """Return a PydanticAI model that routes through Bifrost.
+    """Return a PydanticAI model for the given provider/model string.
 
-    Bifrost exposes an OpenAI-compatible endpoint and forwards to the
-    underlying provider based on the `provider/model` prefix (e.g.
-    `moonshot/kimi-k2-...`). The OpenAI SDK is happy with that as long as
-    base_url and api_key are set.
+    Format: "provider/model-name"  e.g. "deepseek/deepseek-chat"
+    Falls back to settings.strong_model when model_name is None.
     """
-    client = AsyncOpenAI(
-        base_url=settings.bifrost_base_url,
-        api_key=settings.bifrost_api_key,
-    )
+    full_name = model_name or settings.strong_model
+    parts = full_name.split("/", 1)
+
+    if len(parts) == 2:
+        provider_key, model_id = parts
+        base_url, api_key = _PROVIDER_CONFIG.get(
+            provider_key,
+            ("https://api.openai.com/v1", ""),
+        )
+    else:
+        model_id = full_name
+        base_url, api_key = "https://api.openai.com/v1", ""
+
+    client = AsyncOpenAI(base_url=base_url, api_key=api_key or "not-set")
     provider = OpenAIProvider(openai_client=client)
-    return OpenAIModel(model_name or settings.strong_model, provider=provider)
+    return OpenAIModel(model_id, provider=provider)

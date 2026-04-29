@@ -48,7 +48,7 @@ class AgentRunWorkflow:
         result: AgentRunOutput = await workflow.execute_activity(
             run_agent_step,
             payload,
-            start_to_close_timeout=timedelta(minutes=5),
+            start_to_close_timeout=timedelta(minutes=15),
             retry_policy=_RETRY,
         )
 

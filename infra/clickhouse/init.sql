@@ -21,4 +21,4 @@ CREATE TABLE IF NOT EXISTS analytics.llm_usage_events (
 ENGINE = MergeTree
 PARTITION BY toYYYYMM(event_time)
 ORDER BY (tenant_id, event_time)
-TTL event_time + INTERVAL 90 DAY;
+TTL toDateTime(event_time) + INTERVAL 90 DAY;

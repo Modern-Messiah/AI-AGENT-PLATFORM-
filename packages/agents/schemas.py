@@ -2,7 +2,7 @@ from pydantic import BaseModel, Field
 
 
 class AgentRunInput(BaseModel):
-    tenant_id: str = Field(..., description="Tenant identifier for multi-tenancy")
+    tenant_id: str = Field(default="", description="Overridden from API key — do not set manually")
     user_query: str
     model: str | None = None
     require_approval: bool = Field(
@@ -18,7 +18,7 @@ class AgentRunOutput(BaseModel):
 
 
 class MultiStepResearchInput(BaseModel):
-    tenant_id: str
+    tenant_id: str = ""
     main_query: str
     sub_queries: list[str] = Field(..., min_length=1, max_length=10)
     model: str | None = None

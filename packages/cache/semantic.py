@@ -54,7 +54,7 @@ class SemanticCache:
             pipe.get(self._entry_key(tenant_id, eid))
         raw_values = await pipe.execute()
 
-        query_vec = (await embed_texts([query]))[0].astype(np.float32)
+        query_vec = np.array((await embed_texts([query]))[0], dtype=np.float32)
         query_norm = np.linalg.norm(query_vec)
 
         best_sim = _THRESHOLD
@@ -85,7 +85,7 @@ class SemanticCache:
 
     async def set(self, query: str, tenant_id: str, result: AgentRunOutput) -> None:
         r = get_redis()
-        vec = (await embed_texts([query]))[0].astype(np.float32)
+        vec = np.array((await embed_texts([query]))[0], dtype=np.float32)
         entry_id = str(uuid.uuid4())
 
         data = json.dumps({"vec": vec.tolist(), "result": result.model_dump()})

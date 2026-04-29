@@ -50,7 +50,9 @@ def get_system_prompt(
     label: str = "production",
 ) -> str:
     """Return the compiled prompt from Langfuse, or the fallback if unavailable."""
-    if not _langfuse().public_key:
+    from packages.core import settings
+
+    if not settings.langfuse_public_key or not settings.langfuse_secret_key:
         return FALLBACK_SYSTEM_PROMPT
 
     try:
