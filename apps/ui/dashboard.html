@@ -535,6 +535,7 @@ async function apiFetch(path, opts = {}, apiKey = '') {
     const text = await res.text().catch(() => res.statusText);
     throw new Error(`${res.status}: ${text}`);
   }
+  if (res.status === 204 || res.headers.get('content-length') === '0') return null;
   return res.json();
 }
 
