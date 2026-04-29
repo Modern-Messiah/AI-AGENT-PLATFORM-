@@ -1,0 +1,1403 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AI Agent Platform</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:       #0c0e12;
+  --s1:       #13161e;
+  --s2:       #1a1e2a;
+  --s3:       #222737;
+  --border:   #2a2f42;
+  --border2:  #333952;
+  --text:     #dde2f0;
+  --muted:    #6070a0;
+  --muted2:   #8899cc;
+  --accent:   oklch(64% 0.19 205);
+  --accent-d: oklch(55% 0.19 205);
+  --purple:   oklch(64% 0.18 278);
+  --green:    oklch(64% 0.16 148);
+  --yellow:   oklch(72% 0.16 68);
+  --red:      oklch(60% 0.20 22);
+  --font:     'Space Grotesk', sans-serif;
+  --mono:     'JetBrains Mono', monospace;
+}
+
+html, body, #root { height: 100%; background: var(--bg); color: var(--text); font-family: var(--font); font-size: 14px; }
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+
+.layout { display: flex; height: 100vh; overflow: hidden; }
+
+/* SIDEBAR */
+.sidebar {
+  width: 220px; flex-shrink: 0;
+  background: var(--s1);
+  border-right: 1px solid var(--border);
+  display: flex; flex-direction: column;
+  padding: 0 0 16px 0;
+}
+.sidebar-logo {
+  padding: 20px 18px 16px;
+  display: flex; align-items: center; gap: 10px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 8px;
+}
+.logo-mark {
+  width: 28px; height: 28px;
+  background: linear-gradient(135deg, var(--accent), var(--purple));
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; font-weight: 600; color: #fff; flex-shrink: 0;
+}
+.logo-text { font-size: 13px; font-weight: 600; color: var(--text); letter-spacing: -0.2px; }
+.logo-sub { font-size: 10px; color: var(--muted); font-family: var(--mono); }
+
+.nav-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 18px;
+  margin: 1px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  color: var(--muted2);
+  font-size: 13.5px; font-weight: 500;
+  transition: background 0.12s, color 0.12s;
+  user-select: none;
+}
+.nav-item:hover { background: var(--s2); color: var(--text); }
+.nav-item.active { background: var(--s3); color: var(--text); }
+.nav-item .nav-icon { width: 16px; height: 16px; opacity: 0.85; flex-shrink: 0; }
+.nav-badge {
+  margin-left: auto;
+  background: var(--accent);
+  color: #fff;
+  font-size: 10px; font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 10px;
+  font-family: var(--mono);
+}
+.nav-badge.warn { background: var(--yellow); color: #111; }
+
+.sidebar-section { padding: 8px 18px 4px; font-size: 10px; font-weight: 600; color: var(--muted); letter-spacing: 0.08em; text-transform: uppercase; margin-top: 8px; }
+
+.sidebar-bottom { margin-top: auto; border-top: 1px solid var(--border); padding-top: 12px; }
+.tenant-pill {
+  margin: 0 8px 8px;
+  padding: 8px 12px;
+  background: var(--s2);
+  border-radius: 8px;
+  display: flex; align-items: center; gap: 8px;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.tenant-pill:hover { background: var(--s3); }
+.tenant-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); flex-shrink: 0; box-shadow: 0 0 6px var(--green); }
+.tenant-dot.off { background: var(--muted); box-shadow: none; }
+.tenant-info { font-size: 12px; flex: 1; min-width: 0; }
+.tenant-name { color: var(--text); font-weight: 500; }
+.tenant-key { color: var(--muted); font-family: var(--mono); font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* MAIN */
+.main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+.topbar {
+  height: 52px; flex-shrink: 0;
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; padding: 0 24px;
+  gap: 12px;
+  background: var(--s1);
+}
+.topbar-title { font-size: 15px; font-weight: 600; }
+.topbar-sub { font-size: 12px; color: var(--muted); margin-left: 4px; }
+.topbar-right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+
+.content { flex: 1; overflow: hidden; display: flex; }
+
+/* BUTTONS */
+.btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 14px;
+  border-radius: 8px;
+  font-size: 13px; font-weight: 500;
+  border: none; cursor: pointer;
+  font-family: var(--font);
+  transition: opacity 0.12s, background 0.12s;
+}
+.btn:hover { opacity: 0.85; }
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-ghost { background: transparent; color: var(--muted2); border: 1px solid var(--border); }
+.btn-ghost:hover { background: var(--s2); color: var(--text); opacity: 1; }
+.btn-danger { background: var(--red); color: #fff; }
+.btn-success { background: var(--green); color: #0c1208; }
+.btn-sm { padding: 5px 10px; font-size: 12px; }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* BADGES */
+.badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 8px; border-radius: 20px;
+  font-size: 11px; font-weight: 500;
+  font-family: var(--mono);
+}
+.badge-green { background: color-mix(in oklch, var(--green) 15%, transparent); color: var(--green); }
+.badge-yellow { background: color-mix(in oklch, var(--yellow) 15%, transparent); color: var(--yellow); }
+.badge-red { background: color-mix(in oklch, var(--red) 15%, transparent); color: var(--red); }
+.badge-blue { background: color-mix(in oklch, var(--accent) 15%, transparent); color: var(--accent); }
+.badge-purple { background: color-mix(in oklch, var(--purple) 15%, transparent); color: var(--purple); }
+.badge-muted { background: var(--s3); color: var(--muted2); }
+.dot-pulse { width: 6px; height: 6px; border-radius: 50%; background: currentColor; animation: pulse 1.4s infinite; flex-shrink: 0; }
+@keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
+
+/* ═══════════════════════════════════════
+   CHAT SCREEN
+═══════════════════════════════════════ */
+.chat-layout { display: flex; width: 100%; height: 100%; }
+
+.chat-history {
+  width: 220px; flex-shrink: 0;
+  border-right: 1px solid var(--border);
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+.chat-history-header { padding: 14px 16px 10px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); display: flex; align-items: center; justify-content: space-between; }
+.chat-sessions { flex: 1; overflow-y: auto; padding: 4px 8px; }
+.chat-session-item {
+  padding: 9px 10px;
+  border-radius: 7px;
+  cursor: pointer;
+  margin-bottom: 2px;
+  transition: background 0.1s;
+}
+.chat-session-item:hover { background: var(--s2); }
+.chat-session-item.active { background: var(--s3); }
+.session-title { font-size: 12.5px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.session-meta { font-size: 11px; color: var(--muted); margin-top: 2px; font-family: var(--mono); }
+
+.chat-main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+.chat-toolbar {
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 10px;
+  background: var(--s1);
+}
+.model-select {
+  background: var(--s2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-family: var(--mono); font-size: 11.5px;
+  padding: 5px 10px;
+  border-radius: 7px;
+  cursor: pointer;
+  outline: none;
+}
+.model-select:focus { border-color: var(--accent); }
+
+.toggle-wrap { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted2); cursor: pointer; user-select: none; }
+.toggle {
+  width: 30px; height: 17px;
+  background: var(--s3);
+  border-radius: 20px;
+  position: relative;
+  transition: background 0.2s;
+  flex-shrink: 0;
+}
+.toggle.on { background: var(--accent); }
+.toggle::after {
+  content: ''; position: absolute;
+  width: 13px; height: 13px;
+  background: #fff; border-radius: 50%;
+  top: 2px; left: 2px;
+  transition: transform 0.2s;
+}
+.toggle.on::after { transform: translateX(13px); }
+
+.chat-messages {
+  flex: 1; overflow-y: auto;
+  padding: 24px 20px;
+  display: flex; flex-direction: column;
+  gap: 20px;
+}
+
+.msg { display: flex; gap: 12px; max-width: 800px; }
+.msg.user { flex-direction: row-reverse; align-self: flex-end; }
+.msg-avatar {
+  width: 30px; height: 30px; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 600; flex-shrink: 0;
+}
+.msg.user .msg-avatar { background: var(--purple); color: #fff; }
+.msg.agent .msg-avatar { background: linear-gradient(135deg, var(--accent), var(--purple)); color: #fff; }
+
+.msg-body { display: flex; flex-direction: column; gap: 6px; max-width: 640px; }
+.msg.user .msg-body { align-items: flex-end; }
+
+.msg-bubble {
+  padding: 11px 15px;
+  border-radius: 12px;
+  line-height: 1.6;
+  font-size: 13.5px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.msg.user .msg-bubble { background: var(--s3); border-bottom-right-radius: 4px; }
+.msg.agent .msg-bubble { background: var(--s2); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
+
+.msg-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.msg-time { font-size: 10px; color: var(--muted); font-family: var(--mono); }
+
+.sources-list { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 2px; }
+.source-chip {
+  background: color-mix(in oklch, var(--accent) 10%, transparent);
+  border: 1px solid color-mix(in oklch, var(--accent) 30%, transparent);
+  color: var(--accent);
+  padding: 2px 8px; border-radius: 5px;
+  font-size: 10.5px; font-family: var(--mono);
+  cursor: pointer;
+}
+
+.hitl-card {
+  background: color-mix(in oklch, var(--yellow) 8%, transparent);
+  border: 1px solid color-mix(in oklch, var(--yellow) 30%, transparent);
+  border-radius: 10px;
+  padding: 14px 16px;
+  display: flex; align-items: flex-start; gap: 12px;
+  max-width: 640px;
+}
+.hitl-icon { font-size: 20px; flex-shrink: 0; margin-top: 1px; }
+.hitl-title { font-size: 13px; font-weight: 600; color: var(--yellow); margin-bottom: 4px; }
+.hitl-desc { font-size: 12px; color: var(--muted2); margin-bottom: 10px; }
+.hitl-actions { display: flex; gap: 8px; }
+
+.typing-bubble {
+  background: var(--s2);
+  border: 1px solid var(--border);
+  border-radius: 12px; border-bottom-left-radius: 4px;
+  padding: 14px 18px;
+  display: flex; gap: 5px; align-items: center;
+}
+.typing-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--muted2); animation: typing 1.2s infinite; }
+.typing-dot:nth-child(2) { animation-delay: 0.2s; }
+.typing-dot:nth-child(3) { animation-delay: 0.4s; }
+@keyframes typing { 0%,80%,100% { transform: scale(0.7); opacity:0.4; } 40% { transform: scale(1); opacity:1; } }
+
+.chat-input-area {
+  padding: 16px 20px;
+  border-top: 1px solid var(--border);
+  background: var(--s1);
+}
+.input-box {
+  background: var(--s2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  display: flex; align-items: flex-end; gap: 10px;
+  padding: 10px 12px;
+  transition: border-color 0.2s;
+}
+.input-box:focus-within { border-color: var(--accent); }
+.chat-textarea {
+  flex: 1; background: transparent; border: none; outline: none;
+  color: var(--text); font-family: var(--font); font-size: 14px;
+  resize: none; min-height: 24px; max-height: 160px; line-height: 1.5;
+}
+.chat-textarea::placeholder { color: var(--muted); }
+.send-btn {
+  width: 32px; height: 32px; border-radius: 8px;
+  background: var(--accent); border: none; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: opacity 0.15s; flex-shrink: 0;
+}
+.send-btn:hover { opacity: 0.85; }
+.send-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+/* ═══════════════════════════════════════
+   DOCUMENTS SCREEN
+═══════════════════════════════════════ */
+.screen-body { flex: 1; overflow-y: auto; padding: 24px; display: flex; flex-direction: column; gap: 20px; }
+
+.drop-zone {
+  border: 2px dashed var(--border2);
+  border-radius: 14px;
+  padding: 36px 24px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+  background: var(--s1);
+}
+.drop-zone:hover, .drop-zone.drag-over { border-color: var(--accent); background: color-mix(in oklch, var(--accent) 5%, var(--s1)); }
+.drop-icon { font-size: 32px; margin-bottom: 12px; opacity: 0.7; }
+.drop-title { font-size: 15px; font-weight: 600; margin-bottom: 6px; }
+.drop-sub { font-size: 12.5px; color: var(--muted); }
+.drop-types { margin-top: 10px; display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; }
+.type-chip { background: var(--s3); color: var(--muted2); padding: 3px 9px; border-radius: 5px; font-size: 11px; font-family: var(--mono); }
+
+.card {
+  background: var(--s1);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.card-header { padding: 14px 18px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+.card-title { font-size: 13.5px; font-weight: 600; }
+.card-sub { font-size: 12px; color: var(--muted); }
+
+table { width: 100%; border-collapse: collapse; }
+th { text-align: left; padding: 10px 18px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); border-bottom: 1px solid var(--border); }
+td { padding: 12px 18px; border-bottom: 1px solid var(--border); font-size: 13px; }
+tr:last-child td { border-bottom: none; }
+tr:hover td { background: color-mix(in oklch, var(--s2) 60%, transparent); }
+.td-mono { font-family: var(--mono); font-size: 11.5px; color: var(--muted2); }
+.file-name { font-weight: 500; display: flex; align-items: center; gap: 8px; }
+.file-icon { width: 28px; height: 28px; border-radius: 6px; background: var(--s3); display: flex; align-items: center; justify-content: center; font-size: 13px; flex-shrink: 0; }
+
+/* ═══════════════════════════════════════
+   ANALYTICS SCREEN
+═══════════════════════════════════════ */
+.stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+.stat-card {
+  background: var(--s1);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 18px 20px;
+}
+.stat-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); margin-bottom: 10px; }
+.stat-value { font-size: 26px; font-weight: 600; letter-spacing: -0.5px; font-family: var(--mono); }
+.stat-delta { font-size: 11.5px; color: var(--muted); margin-top: 5px; }
+.stat-delta span { color: var(--green); }
+
+.chart-area { height: 180px; position: relative; display: flex; align-items: flex-end; gap: 6px; padding: 0 4px; }
+.bar-group { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.bar { width: 100%; border-radius: 4px 4px 0 0; transition: opacity 0.2s; cursor: pointer; }
+.bar:hover { opacity: 0.8; }
+.bar-label { font-size: 10px; color: var(--muted); font-family: var(--mono); }
+
+/* ═══════════════════════════════════════
+   WORKFLOWS SCREEN
+═══════════════════════════════════════ */
+.wf-list { display: flex; flex-direction: column; gap: 10px; }
+.wf-card {
+  background: var(--s1);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px 20px;
+  display: flex; align-items: flex-start; gap: 16px;
+  transition: border-color 0.15s;
+}
+.wf-card.hitl-pending { border-color: color-mix(in oklch, var(--yellow) 35%, transparent); }
+.wf-status-col { display: flex; flex-direction: column; align-items: center; gap: 6px; padding-top: 2px; }
+.wf-status-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.wf-main { flex: 1; min-width: 0; }
+.wf-title { font-size: 14px; font-weight: 600; margin-bottom: 5px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.wf-query { font-size: 12.5px; color: var(--muted2); margin-bottom: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wf-meta { display: flex; gap: 16px; flex-wrap: wrap; }
+.wf-meta-item { font-size: 11px; color: var(--muted); font-family: var(--mono); display: flex; align-items: center; gap: 4px; }
+.wf-actions { display: flex; flex-direction: column; gap: 8px; align-items: flex-end; flex-shrink: 0; }
+
+.timeline {
+  background: var(--s2);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted2);
+  line-height: 1.8;
+  margin-top: 8px;
+}
+.timeline-step { display: flex; gap: 10px; align-items: flex-start; }
+.timeline-step .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); margin-top: 5px; flex-shrink: 0; }
+.timeline-step.done .dot { background: var(--green); }
+.timeline-step.active .dot { background: var(--accent); animation: pulse 1.2s infinite; }
+.timeline-step.done { color: var(--muted2); }
+.timeline-step.active { color: var(--text); }
+
+/* EMPTY STATE */
+.empty { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 60px 20px; gap: 12px; color: var(--muted); text-align: center; }
+.empty-icon { font-size: 40px; opacity: 0.5; }
+.empty-title { font-size: 15px; font-weight: 600; color: var(--muted2); }
+.empty-sub { font-size: 13px; max-width: 280px; line-height: 1.5; }
+
+/* MISC */
+.divider { height: 1px; background: var(--border); }
+.tag { background: var(--s3); color: var(--muted2); padding: 2px 7px; border-radius: 5px; font-size: 11px; font-family: var(--mono); }
+.progress { height: 4px; background: var(--s3); border-radius: 2px; overflow: hidden; }
+.progress-fill { height: 100%; background: var(--accent); border-radius: 2px; transition: width 0.4s; }
+
+.select {
+  background: var(--s2); border: 1px solid var(--border);
+  color: var(--text); font-family: var(--font); font-size: 13px;
+  padding: 7px 12px; border-radius: 8px; outline: none; cursor: pointer;
+}
+.select:focus { border-color: var(--accent); }
+
+.spinner {
+  width: 14px; height: 14px;
+  border: 2px solid var(--border2);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Notification toast */
+.toast {
+  position: fixed; bottom: 24px; right: 24px;
+  background: var(--s2); border: 1px solid var(--border2);
+  border-radius: 10px; padding: 12px 16px;
+  font-size: 13px; max-width: 300px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+  display: flex; align-items: center; gap: 10px;
+  z-index: 999;
+  animation: slideUp 0.25s ease;
+}
+@keyframes slideUp { from { transform: translateY(12px); opacity: 0; } }
+.toast.success { border-left: 3px solid var(--green); }
+.toast.error { border-left: 3px solid var(--red); }
+.toast.info { border-left: 3px solid var(--accent); }
+
+/* SETTINGS MODAL */
+.modal-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.6);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 100;
+  animation: fadeIn 0.15s ease;
+}
+@keyframes fadeIn { from { opacity: 0; } }
+.modal {
+  background: var(--s1);
+  border: 1px solid var(--border2);
+  border-radius: 14px;
+  padding: 24px;
+  width: 420px;
+  max-width: calc(100vw - 32px);
+  box-shadow: 0 24px 80px rgba(0,0,0,0.6);
+}
+.modal-title { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+.modal-sub { font-size: 12px; color: var(--muted); margin-bottom: 20px; }
+.form-group { margin-bottom: 16px; }
+.form-label { font-size: 12px; font-weight: 500; color: var(--muted2); margin-bottom: 6px; display: block; }
+.form-input {
+  width: 100%;
+  background: var(--s2); border: 1px solid var(--border);
+  color: var(--text); font-family: var(--mono); font-size: 12px;
+  padding: 9px 12px; border-radius: 8px; outline: none;
+}
+.form-input:focus { border-color: var(--accent); }
+.form-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useRef, useEffect, useCallback } = React;
+
+// ─── CONFIG ───────────────────────────────────────────────────────────────────
+
+const API_BASE = 'http://localhost:8000';
+
+function loadConfig() {
+  try {
+    return JSON.parse(localStorage.getItem('aap_config') || '{}');
+  } catch {
+    return {};
+  }
+}
+
+function saveConfig(cfg) {
+  localStorage.setItem('aap_config', JSON.stringify(cfg));
+}
+
+// ─── API HELPERS ─────────────────────────────────────────────────────────────
+
+async function apiFetch(path, opts = {}, apiKey = '') {
+  const res = await fetch(`${API_BASE}${path}`, {
+    ...opts,
+    headers: {
+      'X-API-Key': apiKey,
+      ...(opts.headers || {}),
+    },
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => res.statusText);
+    throw new Error(`${res.status}: ${text}`);
+  }
+  return res.json();
+}
+
+// ─── MODELS ───────────────────────────────────────────────────────────────────
+
+const MODELS = ['deepseek/deepseek-chat', 'moonshot/kimi-k2-turbo', 'deepseek/deepseek-reasoner'];
+
+// ─── ICONS ────────────────────────────────────────────────────────────────────
+
+const Icon = ({ name, size = 16 }) => {
+  const icons = {
+    chat: <svg width={size} height={size} viewBox="0 0 16 16" fill="none"><path d="M14 2H2a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h2v3l3-3h7a1 1 0 0 0 1-1V3a1 1 0 0 0-1-1z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/></svg>,
+    docs: <svg width={size} height={size} viewBox="0 0 16 16" fill="none"><path d="M9 1H4a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V5L9 1z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/><path d="M9 1v4h4M5 9h6M5 11.5h4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>,
+    analytics: <svg width={size} height={size} viewBox="0 0 16 16" fill="none"><rect x="1" y="9" width="3" height="6" rx="1" stroke="currentColor" strokeWidth="1.3"/><rect x="6" y="5" width="3" height="10" rx="1" stroke="currentColor" strokeWidth="1.3"/><rect x="11" y="2" width="3" height="13" rx="1" stroke="currentColor" strokeWidth="1.3"/></svg>,
+    workflows: <svg width={size} height={size} viewBox="0 0 16 16" fill="none"><circle cx="3" cy="3" r="2" stroke="currentColor" strokeWidth="1.3"/><circle cx="13" cy="8" r="2" stroke="currentColor" strokeWidth="1.3"/><circle cx="3" cy="13" r="2" stroke="currentColor" strokeWidth="1.3"/><path d="M5 3.5l6 3.5M5 12.5l6-3.5" stroke="currentColor" strokeWidth="1.3"/></svg>,
+    settings: <svg width={size} height={size} viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="2.5" stroke="currentColor" strokeWidth="1.3"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.05 3.05l1.42 1.42M11.53 11.53l1.42 1.42M3.05 12.95l1.42-1.42M11.53 4.47l1.42-1.42" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>,
+    send: <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M12.5 1.5L6.5 7.5M12.5 1.5L8.5 12.5L6.5 7.5L1.5 5.5L12.5 1.5Z" stroke="white" strokeWidth="1.4" strokeLinejoin="round"/></svg>,
+    upload: <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M10 13V4M6 8l4-4 4 4M4 16h12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>,
+    plus: <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M6.5 1v11M1 6.5h11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>,
+    check: <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>,
+    trash: <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M2 3h9M5 3V2h3v1M3 3l.7 8h5.6L10 3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>,
+    copy: <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><rect x="4" y="4" width="8" height="8" rx="1.5" stroke="currentColor" strokeWidth="1.3"/><path d="M4 4V2.5A1.5 1.5 0 0 0 2.5 1H2a1 1 0 0 0-1 1v7.5A1.5 1.5 0 0 0 2.5 11H4" stroke="currentColor" strokeWidth="1.3"/></svg>,
+    refresh: <svg width={size} height={size} viewBox="0 0 16 16" fill="none"><path d="M13.5 8A5.5 5.5 0 1 1 8 2.5c1.8 0 3.4.87 4.4 2.2M13.5 2v3h-3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>,
+    agent: 'A',
+    user: 'U',
+  };
+  return icons[name] || null;
+};
+
+// ─── STATUS BADGE ─────────────────────────────────────────────────────────────
+
+const StatusBadge = ({ status }) => {
+  const map = {
+    done: { cls: 'badge-green', label: 'done' },
+    completed: { cls: 'badge-green', label: 'completed' },
+    processing: { cls: 'badge-blue', label: 'processing', pulse: true },
+    running: { cls: 'badge-blue', label: 'running', pulse: true },
+    pending: { cls: 'badge-muted', label: 'pending', pulse: true },
+    failed: { cls: 'badge-red', label: 'failed' },
+    hitl: { cls: 'badge-yellow', label: 'awaiting approval', pulse: true },
+    cache_hit: { cls: 'badge-purple', label: 'cache hit' },
+  };
+  const s = map[status] || { cls: 'badge-muted', label: status };
+  return <span className={`badge ${s.cls}`}>{s.pulse && <span className="dot-pulse"></span>}{s.label}</span>;
+};
+
+// ─── TOAST ────────────────────────────────────────────────────────────────────
+
+const Toast = ({ msg, type, onDone }) => {
+  useEffect(() => { const t = setTimeout(onDone, 3200); return () => clearTimeout(t); }, []);
+  const icon = type === 'success' ? '✓' : type === 'error' ? '✕' : 'ℹ';
+  return <div className={`toast ${type}`}><span>{icon}</span><span>{msg}</span></div>;
+};
+
+// ─── SETTINGS MODAL ───────────────────────────────────────────────────────────
+
+const SettingsModal = ({ config, onSave, onClose }) => {
+  const [apiKey, setApiKey] = useState(config.apiKey || '');
+  const [base, setBase] = useState(config.base || API_BASE);
+
+  const save = () => {
+    onSave({ apiKey: apiKey.trim(), base: base.trim() || API_BASE });
+    onClose();
+  };
+
+  return (
+    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal">
+        <div className="modal-title">Настройки подключения</div>
+        <div className="modal-sub">API-ключ хранится в localStorage браузера</div>
+
+        <div className="form-group">
+          <label className="form-label">API Base URL</label>
+          <input
+            className="form-input"
+            value={base}
+            onChange={e => setBase(e.target.value)}
+            placeholder="http://localhost:8000"
+          />
+        </div>
+
+        <div className="form-group">
+          <label className="form-label">X-API-Key</label>
+          <input
+            className="form-input"
+            type="password"
+            value={apiKey}
+            onChange={e => setApiKey(e.target.value)}
+            placeholder="Вставьте raw_key из POST /auth/keys"
+            autoFocus
+          />
+        </div>
+
+        <div className="form-actions">
+          <button className="btn btn-ghost" onClick={onClose}>Отмена</button>
+          <button className="btn btn-primary" onClick={save}>Сохранить</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─── CHAT SCREEN ──────────────────────────────────────────────────────────────
+
+const ChatScreen = ({ apiKey }) => {
+  const [sessions, setSessions] = useState([
+    { id: 's1', title: 'Новый чат', time: 'сейчас', messages: [] },
+  ]);
+  const [activeId, setActiveId] = useState('s1');
+  const [messages, setMessages] = useState([
+    { id: 1, role: 'agent', text: 'Привет! Я готов отвечать на вопросы о вашей кодовой базе и документах. Что хотите узнать?', time: now(), sources: [], cached: false },
+  ]);
+  const [input, setInput] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [model, setModel] = useState(MODELS[0]);
+  const [requireApproval, setRequireApproval] = useState(false);
+  const [pendingHITL, setPendingHITL] = useState(null);
+  const [toast, setToast] = useState(null);
+  const bottomRef = useRef(null);
+
+  function now() {
+    return new Date().toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' });
+  }
+
+  useEffect(() => {
+    if (bottomRef.current) {
+      bottomRef.current.parentElement.scrollTop = bottomRef.current.offsetTop;
+    }
+  }, [messages, loading]);
+
+  const send = async () => {
+    const q = input.trim();
+    if (!q || loading) return;
+    if (!apiKey) { setToast({ msg: 'Задайте X-API-Key в настройках', type: 'error' }); return; }
+    setInput('');
+
+    const userMsg = { id: Date.now(), role: 'user', text: q, time: now() };
+    setMessages(m => [...m, userMsg]);
+    setLoading(true);
+
+    try {
+      const data = await apiFetch('/agent/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_query: q, model }),
+      }, apiKey);
+
+      setLoading(false);
+
+      const agentMsg = {
+        id: Date.now() + 1,
+        role: 'agent',
+        text: data.answer,
+        time: now(),
+        sources: data.sources || [],
+        cached: data.cached || false,
+      };
+
+      if (requireApproval) {
+        setPendingHITL(agentMsg);
+        setMessages(m => [...m, { id: Date.now() + 2, role: 'hitl', pendingId: agentMsg.id, time: now() }]);
+      } else {
+        setMessages(m => [...m, agentMsg]);
+      }
+
+      // Update session title from first user message
+      setSessions(s => s.map(sess =>
+        sess.id === activeId && sess.title === 'Новый чат'
+          ? { ...sess, title: q.slice(0, 32) + (q.length > 32 ? '…' : '') }
+          : sess
+      ));
+    } catch (e) {
+      setLoading(false);
+      setMessages(m => [...m, { id: Date.now() + 1, role: 'agent', text: `Ошибка: ${e.message}`, time: now(), sources: [], error: true }]);
+    }
+  };
+
+  const approve = () => {
+    if (!pendingHITL) return;
+    setMessages(m => m.map(msg => msg.role === 'hitl' ? { ...pendingHITL, id: msg.id, role: 'agent' } : msg));
+    setPendingHITL(null);
+    setToast({ msg: 'Ответ подтверждён', type: 'success' });
+  };
+
+  const reject = () => {
+    setMessages(m => m.filter(msg => msg.role !== 'hitl'));
+    setPendingHITL(null);
+    setToast({ msg: 'Ответ отклонён', type: 'error' });
+  };
+
+  const newChat = () => {
+    const id = 'session-' + Date.now();
+    setSessions(s => [{ id, title: 'Новый чат', time: 'сейчас', messages: [] }, ...s]);
+    setActiveId(id);
+    setMessages([{ id: 1, role: 'agent', text: 'Готов к работе. Задайте вопрос.', time: now(), sources: [] }]);
+  };
+
+  return (
+    <div className="chat-layout">
+      <div className="chat-history">
+        <div className="chat-history-header">
+          <span>Сессии</span>
+          <button className="btn btn-ghost btn-sm" onClick={newChat} style={{ padding: '3px 7px', gap: 4 }}>
+            <Icon name="plus" size={11} /> New
+          </button>
+        </div>
+        <div className="chat-sessions">
+          {sessions.map(s => (
+            <div key={s.id} className={`chat-session-item ${activeId === s.id ? 'active' : ''}`} onClick={() => setActiveId(s.id)}>
+              <div className="session-title">{s.title}</div>
+              <div className="session-meta">{s.time}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="chat-main">
+        <div className="chat-toolbar">
+          <select className="model-select" value={model} onChange={e => setModel(e.target.value)}>
+            {MODELS.map(m => <option key={m} value={m}>{m}</option>)}
+          </select>
+          <div style={{ width: 1, height: 20, background: 'var(--border)', margin: '0 4px' }}></div>
+          <label className="toggle-wrap" onClick={() => setRequireApproval(r => !r)}>
+            <div className={`toggle ${requireApproval ? 'on' : ''}`}></div>
+            <span>Human approval</span>
+          </label>
+          {requireApproval && <span className="badge badge-yellow" style={{ marginLeft: 4 }}>HITL on</span>}
+          <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--muted)', fontFamily: 'var(--mono)' }}>
+            {apiKey ? `key: …${apiKey.slice(-6)}` : 'no key'}
+          </span>
+        </div>
+
+        <div className="chat-messages">
+          {messages.map(msg => {
+            if (msg.role === 'hitl') return (
+              <div key={msg.id} className="hitl-card">
+                <div className="hitl-icon">⏳</div>
+                <div>
+                  <div className="hitl-title">Ожидает подтверждения</div>
+                  <div className="hitl-desc">Агент сформировал ответ. Подтвердите или отклоните перед показом.</div>
+                  <div className="hitl-actions">
+                    <button className="btn btn-success btn-sm" onClick={approve}>✓ Approve</button>
+                    <button className="btn btn-danger btn-sm" onClick={reject}>✕ Reject</button>
+                  </div>
+                </div>
+              </div>
+            );
+
+            return (
+              <div key={msg.id} className={`msg ${msg.role}`}>
+                <div className="msg-avatar"><Icon name={msg.role} /></div>
+                <div className="msg-body">
+                  <div className="msg-bubble" style={msg.error ? { borderColor: 'var(--red)' } : {}}>
+                    {msg.text}
+                  </div>
+                  <div className="msg-meta">
+                    <span className="msg-time">{msg.time}</span>
+                    {msg.cached && <span className="badge badge-purple" style={{ fontSize: 10, padding: '1px 6px' }}>cache hit</span>}
+                  </div>
+                  {msg.sources && msg.sources.length > 0 && (
+                    <div className="sources-list">
+                      {msg.sources.map(s => <span key={s} className="source-chip">📄 {s.slice(0, 12)}…</span>)}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+
+          {loading && (
+            <div className="msg agent">
+              <div className="msg-avatar"><Icon name="agent" /></div>
+              <div className="msg-body">
+                <div className="typing-bubble">
+                  <div className="typing-dot"></div><div className="typing-dot"></div><div className="typing-dot"></div>
+                </div>
+              </div>
+            </div>
+          )}
+          <div ref={bottomRef}></div>
+        </div>
+
+        <div className="chat-input-area">
+          <div className="input-box">
+            <textarea
+              className="chat-textarea"
+              placeholder={apiKey ? 'Задайте вопрос агенту…' : 'Настройте API-ключ в боковой панели…'}
+              rows={1}
+              value={input}
+              disabled={!apiKey}
+              onChange={e => {
+                setInput(e.target.value);
+                e.target.style.height = 'auto';
+                e.target.style.height = Math.min(e.target.scrollHeight, 160) + 'px';
+              }}
+              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
+            />
+            <button className="send-btn" onClick={send} disabled={!input.trim() || loading || !apiKey}>
+              <Icon name="send" />
+            </button>
+          </div>
+          <div style={{ display: 'flex', gap: 12, marginTop: 8, fontSize: 11, color: 'var(--muted)' }}>
+            <span>Enter — отправить · Shift+Enter — новая строка</span>
+            {requireApproval && <span style={{ color: 'var(--yellow)' }}>⚠ HITL on — ответы требуют подтверждения</span>}
+          </div>
+        </div>
+      </div>
+
+      {toast && <Toast {...toast} onDone={() => setToast(null)} />}
+    </div>
+  );
+};
+
+// ─── DOCUMENTS SCREEN ─────────────────────────────────────────────────────────
+
+const DOCS_STORAGE_KEY = 'aap_docs';
+
+function loadDocs() {
+  try { return JSON.parse(localStorage.getItem(DOCS_STORAGE_KEY) || '[]'); } catch { return []; }
+}
+function persistDocs(docs) {
+  localStorage.setItem(DOCS_STORAGE_KEY, JSON.stringify(docs));
+}
+
+const DocumentsScreen = ({ apiKey }) => {
+  const [docs, setDocs] = useState(loadDocs);
+  const [dragging, setDragging] = useState(false);
+  const [toast, setToast] = useState(null);
+  const inputRef = useRef(null);
+
+  const mimeIcon = name => {
+    const ext = (name || '').split('.').pop().toLowerCase();
+    return ({ pdf: '📄', md: '📝', txt: '📃', csv: '📊', html: '🌐', docx: '📘' })[ext] || '📁';
+  };
+
+  const updateDoc = (id, patch) => setDocs(d => {
+    const updated = d.map(doc => doc.id === id ? { ...doc, ...patch } : doc);
+    persistDocs(updated);
+    return updated;
+  });
+
+  const pollStatus = async (docId, apiKey) => {
+    const maxAttempts = 30;
+    for (let i = 0; i < maxAttempts; i++) {
+      await new Promise(r => setTimeout(r, 3000));
+      try {
+        const data = await apiFetch(`/documents/${docId}`, {}, apiKey);
+        if (data.status === 'done') {
+          updateDoc(docId, { status: 'done' });
+          return;
+        }
+        if (data.status === 'failed') {
+          updateDoc(docId, { status: 'failed', error: data.error || 'Processing failed' });
+          return;
+        }
+      } catch {}
+    }
+    updateDoc(docId, { status: 'failed', error: 'Timeout' });
+  };
+
+  const uploadFile = async (file) => {
+    if (!apiKey) { setToast({ msg: 'Задайте X-API-Key в настройках', type: 'error' }); return; }
+    const tempId = 'upload-' + Date.now();
+    const newDoc = {
+      id: tempId,
+      name: file.name,
+      size: file.size < 1024 * 1024
+        ? (file.size / 1024).toFixed(0) + ' KB'
+        : (file.size / 1024 / 1024).toFixed(1) + ' MB',
+      status: 'processing',
+      time: 'сейчас',
+      error: null,
+    };
+    setDocs(d => { const u = [newDoc, ...d]; persistDocs(u); return u; });
+    setToast({ msg: `Загрузка: ${file.name}`, type: 'info' });
+
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      const data = await apiFetch('/documents', { method: 'POST', body: form }, apiKey);
+      // Replace temp entry with real doc id
+      setDocs(d => {
+        const u = d.map(doc => doc.id === tempId ? { ...doc, id: data.id, status: 'processing' } : doc);
+        persistDocs(u);
+        return u;
+      });
+      pollStatus(data.id, apiKey);
+    } catch (e) {
+      updateDoc(tempId, { status: 'failed', error: e.message });
+      setToast({ msg: `Ошибка: ${e.message}`, type: 'error' });
+    }
+  };
+
+  const handleDrop = e => {
+    e.preventDefault(); setDragging(false);
+    Array.from(e.dataTransfer.files).forEach(uploadFile);
+  };
+
+  const handleFileInput = e => {
+    Array.from(e.target.files).forEach(uploadFile);
+    e.target.value = '';
+  };
+
+  const deleteDoc = id => {
+    setDocs(d => { const u = d.filter(doc => doc.id !== id); persistDocs(u); return u; });
+    setToast({ msg: 'Документ удалён из списка', type: 'success' });
+  };
+
+  const copyId = id => {
+    navigator.clipboard.writeText(id).catch(() => {});
+    setToast({ msg: `ID скопирован: ${id}`, type: 'info' });
+  };
+
+  return (
+    <div className="screen-body">
+      <div
+        className={`drop-zone ${dragging ? 'drag-over' : ''}`}
+        onDragOver={e => { e.preventDefault(); setDragging(true); }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={handleDrop}
+        onClick={() => inputRef.current.click()}
+      >
+        <div className="drop-icon"><Icon name="upload" size={32} /></div>
+        <div className="drop-title">Перетащите файлы или нажмите для выбора</div>
+        <div className="drop-sub">Файлы загружаются в MinIO и обрабатываются через IngestionWorkflow</div>
+        <div className="drop-types">
+          {['PDF', 'DOCX', 'TXT', 'MD', 'CSV', 'HTML'].map(t => <span key={t} className="type-chip">.{t.toLowerCase()}</span>)}
+        </div>
+        <input ref={inputRef} type="file" multiple style={{ display: 'none' }} onChange={handleFileInput} />
+      </div>
+
+      <div className="card">
+        <div className="card-header">
+          <div>
+            <div className="card-title">Документы</div>
+            <div className="card-sub">{docs.filter(d => d.status === 'done').length} из {docs.length} проиндексировано</div>
+          </div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            {docs.length > 0 && (
+              <div className="progress" style={{ width: 100 }}>
+                <div className="progress-fill" style={{ width: `${docs.filter(d => d.status === 'done').length / docs.length * 100}%` }}></div>
+              </div>
+            )}
+            <button className="btn btn-ghost btn-sm" title="Очистить список" onClick={() => { setDocs([]); persistDocs([]); }}>
+              <Icon name="trash" size={11} />
+            </button>
+          </div>
+        </div>
+
+        {docs.length === 0 ? (
+          <div className="empty" style={{ padding: 40 }}>
+            <div className="empty-icon">📂</div>
+            <div className="empty-title">Нет документов</div>
+            <div className="empty-sub">Загрузите файл выше для начала RAG-индексации</div>
+          </div>
+        ) : (
+          <table>
+            <thead>
+              <tr>
+                <th>Файл</th>
+                <th>Статус</th>
+                <th>Размер</th>
+                <th>Загружен</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {docs.map(doc => (
+                <tr key={doc.id}>
+                  <td>
+                    <div className="file-name">
+                      <div className="file-icon">{mimeIcon(doc.name)}</div>
+                      <div>
+                        <div>{doc.name}</div>
+                        {doc.error && <div style={{ fontSize: 11, color: 'var(--red)', marginTop: 2 }}>{doc.error}</div>}
+                        <div style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'var(--mono)', marginTop: 1 }}>{doc.id}</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <StatusBadge status={doc.status} />
+                      {doc.status === 'processing' && <div className="spinner"></div>}
+                    </div>
+                  </td>
+                  <td className="td-mono">{doc.size}</td>
+                  <td className="td-mono">{doc.time}</td>
+                  <td>
+                    <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                      <button className="btn btn-ghost btn-sm" title="Копировать ID" onClick={() => copyId(doc.id)}>
+                        <Icon name="copy" />
+                      </button>
+                      <button className="btn btn-ghost btn-sm" title="Удалить" onClick={() => deleteDoc(doc.id)}>
+                        <Icon name="trash" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      <div style={{ fontSize: 12, color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span style={{ fontFamily: 'var(--mono)' }}>pgvector</span> · bge-small-en-v1.5 (384-dim) · HNSW index · cosine similarity
+      </div>
+      {toast && <Toast {...toast} onDone={() => setToast(null)} />}
+    </div>
+  );
+};
+
+// ─── ANALYTICS SCREEN ─────────────────────────────────────────────────────────
+
+const AnalyticsScreen = ({ apiKey }) => {
+  const [days, setDays] = useState(7);
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  const load = async () => {
+    if (!apiKey) return;
+    setLoading(true); setError(null);
+    try {
+      const res = await apiFetch(`/analytics/usage?days=${days}`, {}, apiKey);
+      setData(res);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { load(); }, [days, apiKey]);
+
+  const fmtTokens = n => n >= 1e6 ? (n / 1e6).toFixed(2) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(0) + 'K' : String(n || 0);
+  const fmtCost = n => '$' + (n || 0).toFixed(4);
+  const fmtMs = n => (n || 0).toFixed(0) + 'ms';
+
+  const totalTokens = data?.breakdown?.reduce((a, r) => a + (r.total_tokens || 0), 0) || 0;
+  const totalCalls = data?.breakdown?.reduce((a, r) => a + (r.call_count || 0), 0) || 0;
+  const avgLatency = data?.breakdown?.length
+    ? data.breakdown.reduce((a, r) => a + (r.avg_latency_ms || 0), 0) / data.breakdown.length
+    : 0;
+
+  return (
+    <div className="screen-body">
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <span style={{ fontSize: 13, color: 'var(--muted)' }}>Период:</span>
+        {[7, 14, 30].map(d => (
+          <button key={d} className={`btn btn-ghost btn-sm ${days === d ? 'btn-primary' : ''}`} onClick={() => setDays(d)}>
+            {d}д
+          </button>
+        ))}
+        <button className="btn btn-ghost btn-sm" onClick={load} disabled={loading} style={{ marginLeft: 4 }}>
+          {loading ? <div className="spinner"></div> : <Icon name="refresh" size={13} />}
+        </button>
+        <span style={{ marginLeft: 'auto', fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)' }}>
+          {data ? `tenant: ${data.tenant_id}` : 'нет данных'}
+        </span>
+      </div>
+
+      {!apiKey && (
+        <div className="empty">
+          <div className="empty-icon">🔑</div>
+          <div className="empty-title">Нет API-ключа</div>
+          <div className="empty-sub">Настройте ключ в боковой панели чтобы загрузить аналитику</div>
+        </div>
+      )}
+
+      {error && (
+        <div style={{ padding: '12px 16px', background: 'color-mix(in oklch, var(--red) 10%, transparent)', border: '1px solid color-mix(in oklch, var(--red) 30%, transparent)', borderRadius: 10, fontSize: 12, color: 'var(--red)' }}>
+          Ошибка ClickHouse: {error}
+        </div>
+      )}
+
+      {apiKey && data && (
+        <>
+          <div className="stats-grid">
+            {[
+              { label: 'Общая стоимость', value: fmtCost(data.total_cost_usd) },
+              { label: 'Токены', value: fmtTokens(totalTokens) },
+              { label: 'Avg latency', value: fmtMs(avgLatency) },
+              { label: 'Запросов', value: String(totalCalls) },
+            ].map(s => (
+              <div className="stat-card" key={s.label}>
+                <div className="stat-label">{s.label}</div>
+                <div className="stat-value">{s.value}</div>
+              </div>
+            ))}
+          </div>
+
+          <div className="card">
+            <div className="card-header">
+              <div className="card-title">Разбивка по моделям</div>
+              <span className="badge badge-muted">last {days}d</span>
+            </div>
+            {data.breakdown.length === 0 ? (
+              <div className="empty" style={{ padding: 32 }}>
+                <div className="empty-icon">📊</div>
+                <div className="empty-title">Нет данных</div>
+                <div className="empty-sub">Сделайте запросы к агенту, чтобы увидеть аналитику</div>
+              </div>
+            ) : (
+              <table>
+                <thead>
+                  <tr>
+                    <th>Модель</th>
+                    <th>Провайдер</th>
+                    <th>Вызовов</th>
+                    <th>Токены</th>
+                    <th>Стоимость</th>
+                    <th>Avg latency</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.breakdown.map((row, i) => (
+                    <tr key={i}>
+                      <td><span className="tag">{row.model}</span></td>
+                      <td className="td-mono">{row.provider}</td>
+                      <td className="td-mono">{row.call_count}</td>
+                      <td className="td-mono">{fmtTokens(row.total_tokens)}</td>
+                      <td><span style={{ fontFamily: 'var(--mono)', fontWeight: 600 }}>{fmtCost(row.total_cost_usd)}</span></td>
+                      <td className="td-mono">{fmtMs(row.avg_latency_ms)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </>
+      )}
+
+      <div style={{ display: 'flex', gap: 16, fontSize: 12, color: 'var(--muted)' }}>
+        <span>📊 ClickHouse · analytics.llm_usage_events · TTL 90d</span>
+      </div>
+    </div>
+  );
+};
+
+// ─── WORKFLOWS SCREEN ─────────────────────────────────────────────────────────
+
+const WorkflowsScreen = ({ apiKey }) => {
+  const [workflows, setWorkflows] = useState([]);
+  const [expanded, setExpanded] = useState(null);
+  const [toast, setToast] = useState(null);
+  const [filter, setFilter] = useState('all');
+  const [wfId, setWfId] = useState('');
+  const [acting, setActing] = useState(null);
+
+  const statusDot = { running: 'var(--accent)', completed: 'var(--green)', failed: 'var(--red)', hitl: 'var(--yellow)', pending: 'var(--muted)' };
+
+  const signalWorkflow = async (id, action) => {
+    if (!apiKey) { setToast({ msg: 'Задайте X-API-Key', type: 'error' }); return; }
+    setActing(id + action);
+    try {
+      await apiFetch(`/workflows/${id}/${action}`, { method: 'POST' }, apiKey);
+      setToast({ msg: `Workflow ${action === 'approve' ? 'одобрен' : 'отклонён'}`, type: action === 'approve' ? 'success' : 'error' });
+      setWorkflows(wf => wf.map(w => w.id === id
+        ? { ...w, status: action === 'approve' ? 'completed' : 'failed' }
+        : w
+      ));
+    } catch (e) {
+      setToast({ msg: `Ошибка: ${e.message}`, type: 'error' });
+    } finally {
+      setActing(null);
+    }
+  };
+
+  const addManual = () => {
+    const id = wfId.trim();
+    if (!id) return;
+    if (workflows.find(w => w.id === id)) { setToast({ msg: 'Уже добавлен', type: 'info' }); return; }
+    setWorkflows(wf => [{ id, type: 'AgentRun', status: 'hitl', query: '(manually added)', model: '—', started: 'сейчас', duration: '—', steps: [] }, ...wf]);
+    setWfId('');
+    setToast({ msg: `Добавлен workflow: ${id}`, type: 'success' });
+  };
+
+  const filtered = filter === 'all' ? workflows : workflows.filter(w => w.status === filter);
+
+  return (
+    <div className="screen-body">
+      {/* Manual HITL control */}
+      <div className="card">
+        <div className="card-header">
+          <div className="card-title">HITL управление</div>
+          <div className="card-sub">Approve / Reject Temporal workflow по ID</div>
+        </div>
+        <div style={{ padding: '14px 18px', display: 'flex', gap: 8 }}>
+          <input
+            className="form-input"
+            style={{ flex: 1, fontFamily: 'var(--mono)', fontSize: 12, background: 'var(--s2)', border: '1px solid var(--border)', color: 'var(--text)', padding: '8px 12px', borderRadius: 8, outline: 'none' }}
+            placeholder="agent-run-tenant-uuid"
+            value={wfId}
+            onChange={e => setWfId(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && addManual()}
+          />
+          <button className="btn btn-ghost" onClick={addManual}>Добавить</button>
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        {[
+          { key: 'all', label: 'Все', count: workflows.length },
+          { key: 'hitl', label: 'HITL', count: workflows.filter(w => w.status === 'hitl').length },
+          { key: 'completed', label: 'Completed', count: workflows.filter(w => w.status === 'completed').length },
+          { key: 'failed', label: 'Failed', count: workflows.filter(w => w.status === 'failed').length },
+        ].map(f => (
+          <button key={f.key} className={`btn btn-ghost btn-sm ${filter === f.key ? 'btn-primary' : ''}`} onClick={() => setFilter(f.key)}>
+            {f.label}
+            {f.count > 0 && <span style={{ fontFamily: 'var(--mono)', fontSize: 10, opacity: 0.8 }}>{f.count}</span>}
+          </button>
+        ))}
+        <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--muted)', fontFamily: 'var(--mono)' }}>
+          Temporal UI: <a href="http://localhost:8233" target="_blank" style={{ color: 'var(--accent)', textDecoration: 'none' }}>localhost:8233</a>
+        </span>
+      </div>
+
+      <div className="wf-list">
+        {filtered.length === 0 && (
+          <div className="empty" style={{ padding: 40 }}>
+            <div className="empty-icon">⚡</div>
+            <div className="empty-title">Нет workflows</div>
+            <div className="empty-sub">Добавьте workflow_id выше чтобы управлять HITL, или откройте Temporal UI</div>
+          </div>
+        )}
+        {filtered.map(wf => (
+          <div key={wf.id} className={`wf-card ${wf.status === 'hitl' ? 'hitl-pending' : ''}`}>
+            <div className="wf-status-col">
+              <div className="wf-status-dot" style={{ background: statusDot[wf.status] || 'var(--muted)', boxShadow: ['hitl'].includes(wf.status) ? `0 0 8px ${statusDot[wf.status]}` : 'none' }}></div>
+            </div>
+            <div className="wf-main">
+              <div className="wf-title">
+                <span className="badge badge-blue">{wf.type}</span>
+                <StatusBadge status={wf.status} />
+                <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)', fontWeight: 400 }}>{wf.id}</span>
+              </div>
+              <div className="wf-query">"{wf.query}"</div>
+              <div className="wf-meta">
+                <span className="wf-meta-item">⟢ {wf.model}</span>
+                <span className="wf-meta-item">🕐 {wf.started}</span>
+              </div>
+            </div>
+
+            {wf.status === 'hitl' && (
+              <div className="wf-actions">
+                <button
+                  className="btn btn-success btn-sm"
+                  disabled={acting === wf.id + 'approve'}
+                  onClick={() => signalWorkflow(wf.id, 'approve')}
+                >
+                  {acting === wf.id + 'approve' ? <div className="spinner"></div> : '✓'} Approve
+                </button>
+                <button
+                  className="btn btn-danger btn-sm"
+                  disabled={acting === wf.id + 'reject'}
+                  onClick={() => signalWorkflow(wf.id, 'reject')}
+                >
+                  {acting === wf.id + 'reject' ? <div className="spinner"></div> : '✕'} Reject
+                </button>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {toast && <Toast {...toast} onDone={() => setToast(null)} />}
+    </div>
+  );
+};
+
+// ─── MAIN APP ─────────────────────────────────────────────────────────────────
+
+const App = () => {
+  const [screen, setScreen] = useState('chat');
+  const [config, setConfig] = useState(loadConfig);
+  const [showSettings, setShowSettings] = useState(!loadConfig().apiKey);
+
+  const apiKey = config.apiKey || '';
+
+  const handleSaveConfig = (cfg) => {
+    saveConfig(cfg);
+    setConfig(cfg);
+  };
+
+  const nav = [
+    { id: 'chat', label: 'Агент', icon: 'chat' },
+    { id: 'docs', label: 'Документы', icon: 'docs' },
+    { id: 'analytics', label: 'Аналитика', icon: 'analytics' },
+    { id: 'workflows', label: 'Workflows', icon: 'workflows' },
+  ];
+
+  const titles = {
+    chat: { title: 'AI Agent Chat', sub: 'PydanticAI · Temporal · Kimi K2' },
+    docs: { title: 'Документы', sub: 'RAG · pgvector · MinIO' },
+    analytics: { title: 'Аналитика', sub: 'ClickHouse · Cost Tracking' },
+    workflows: { title: 'Workflows', sub: 'Temporal · HITL · Durable Execution' },
+  };
+
+  const screens = {
+    chat: <ChatScreen apiKey={apiKey} />,
+    docs: <DocumentsScreen apiKey={apiKey} />,
+    analytics: <AnalyticsScreen apiKey={apiKey} />,
+    workflows: <WorkflowsScreen apiKey={apiKey} />,
+  };
+
+  const keyMasked = apiKey ? `…${apiKey.slice(-6)}` : 'не задан';
+
+  return (
+    <div className="layout">
+      <div className="sidebar">
+        <div className="sidebar-logo">
+          <div className="logo-mark">A</div>
+          <div>
+            <div className="logo-text">AgentPlatform</div>
+            <div className="logo-sub">v1.0.0 · local</div>
+          </div>
+        </div>
+
+        <div className="sidebar-section">Навигация</div>
+        {nav.map(item => (
+          <div key={item.id} className={`nav-item ${screen === item.id ? 'active' : ''}`} onClick={() => setScreen(item.id)}>
+            <svg className="nav-icon" viewBox="0 0 16 16" fill="none"><Icon name={item.icon} /></svg>
+            {item.label}
+          </div>
+        ))}
+
+        <div className="sidebar-section">Конфигурация</div>
+        <div className="nav-item" onClick={() => setShowSettings(true)}>
+          <svg className="nav-icon" viewBox="0 0 16 16" fill="none"><Icon name="settings" /></svg>
+          Настройки
+        </div>
+
+        <div className="sidebar-bottom">
+          <div className="tenant-pill" onClick={() => setShowSettings(true)} title="Изменить API-ключ">
+            <div className={`tenant-dot ${apiKey ? '' : 'off'}`}></div>
+            <div className="tenant-info">
+              <div className="tenant-name">{apiKey ? 'Connected' : 'No API Key'}</div>
+              <div className="tenant-key">{keyMasked}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="main">
+        <div className="topbar">
+          <span className="topbar-title">{titles[screen].title}</span>
+          <span className="topbar-sub">{titles[screen].sub}</span>
+          <div className="topbar-right">
+            {apiKey
+              ? <span className="badge badge-green"><span className="dot-pulse"></span>API ready</span>
+              : <span className="badge badge-yellow">⚠ Нет ключа</span>
+            }
+          </div>
+        </div>
+        <div className="content">{screens[screen]}</div>
+      </div>
+
+      {showSettings && (
+        <SettingsModal config={config} onSave={handleSaveConfig} onClose={() => setShowSettings(false)} />
+      )}
+    </div>
+  );
+};
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
