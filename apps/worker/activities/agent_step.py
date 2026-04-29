@@ -7,6 +7,8 @@ import time
 
 from temporalio import activity
 
+from pydantic_ai.settings import ModelSettings
+
 from packages.agents import AgentDeps, AgentRunInput, AgentRunOutput, build_research_agent
 from packages.analytics.events import UsageEvent, record_usage
 from packages.cache.semantic import semantic_cache
@@ -38,12 +40,21 @@ async def run_agent_step(payload: AgentRunInput) -> AgentRunOutput:
     agent = build_research_agent(model_name=payload.model)
     deps = AgentDeps(tenant_id=payload.tenant_id)
 
+    model_name = payload.model or settings.strong_model
+
+    # kimi-k2.6 has thinking enabled by default which is incompatible with
+    # tool_choice='required' that PydanticAI sends when tools are registered.
+    # Disable thinking via extra_body so tools work normally.
+    ms: ModelSettings = {}
+    if "kimi" in model_name:
+        ms = {"extra_body": {"thinking": {"type": "disabled"}}}
+
     t0 = time.monotonic()
-    result = await agent.run(payload.user_query, deps=deps)
+    result = await agent.run(payload.user_query, deps=deps, model_settings=ms)
     latency_ms = int((time.monotonic() - t0) * 1000)
 
     usage = result.usage()
-    resolved_model = payload.model or settings.strong_model
+    resolved_model = model_name
 
     # Moonshot / OpenAI return cached_tokens in usage.details when prompt
     # caching fires. Log it so we can verify cache hit rate in production.
