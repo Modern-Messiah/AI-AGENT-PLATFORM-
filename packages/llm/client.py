@@ -9,7 +9,7 @@ from pydantic_ai.providers.openai import OpenAIProvider
 from packages.core import settings
 
 _PROVIDER_CONFIG: dict[str, tuple[str, str]] = {
-    "moonshot": ("https://api.moonshot.cn/v1", settings.moonshot_api_key),
+    "moonshot": ("https://api.moonshot.ai/v1", settings.moonshot_api_key),
     "deepseek": ("https://api.deepseek.com/v1", settings.deepseek_api_key),
 }
 
