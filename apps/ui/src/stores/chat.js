@@ -80,7 +80,7 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
-  async function sendMessage(query, model) {
+  async function sendMessage(query, model, requireApproval = false) {
     const { apiFetch } = useApi()
     if (!query.trim() || loading.value) return null
 
@@ -134,6 +134,11 @@ export const useChatStore = defineStore('chat', () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ role: 'agent', content: data.answer, sources: data.sources || [], cached: data.cached || false })
       }).catch(() => {})
+      if (requireApproval) {
+        messages.value.push({ id: 'h' + Date.now(), role: 'hitl', time: nowTime() })
+      } else {
+        messages.value.push(agentMsg)
+      }
       return agentMsg
     } catch (e) {
       loading.value = false

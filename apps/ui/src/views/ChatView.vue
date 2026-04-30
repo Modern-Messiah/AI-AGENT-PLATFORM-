@@ -43,10 +43,9 @@ async function handleSend(query) {
     return
   }
   try {
-    const agentMsg = await chat.sendMessage(query, model.value)
-    if (requireApproval.value) {
+    const agentMsg = await chat.sendMessage(query, model.value, requireApproval.value)
+    if (requireApproval.value && agentMsg) {
       pendingHitl.value = agentMsg
-      chat.messages.push({ id: 'h' + Date.now(), role: 'hitl', time: '' })
     }
   } catch {}
 }
