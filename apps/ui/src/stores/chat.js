@@ -21,6 +21,9 @@ export const useChatStore = defineStore('chat', () => {
 
   async function loadSessions() {
     const { apiFetch } = useApi()
+    sessions.value = []
+    activeId.value = null
+    messages.value = []
     sessLoading.value = true
     try {
       const data = await apiFetch('/sessions')
