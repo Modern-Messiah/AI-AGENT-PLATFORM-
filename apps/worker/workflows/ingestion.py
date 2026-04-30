@@ -36,7 +36,7 @@ class IngestionWorkflow:
         try:
             await workflow.execute_activity(
                 mark_processing,
-                payload.document_id,
+                payload,
                 start_to_close_timeout=timedelta(seconds=30),
                 retry_policy=retry,
             )
@@ -60,7 +60,7 @@ class IngestionWorkflow:
             )
             await workflow.execute_activity(
                 mark_done,
-                payload.document_id,
+                payload,
                 start_to_close_timeout=timedelta(seconds=30),
                 retry_policy=retry,
             )
@@ -68,7 +68,7 @@ class IngestionWorkflow:
         except ActivityError as e:
             await workflow.execute_activity(
                 mark_failed,
-                args=[payload.document_id, str(e)],
+                args=[payload, str(e)],
                 start_to_close_timeout=timedelta(seconds=30),
                 retry_policy=RetryPolicy(maximum_attempts=1),
             )
