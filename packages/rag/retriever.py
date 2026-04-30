@@ -8,13 +8,14 @@ from sqlalchemy import select
 
 from packages.core import settings
 from packages.rag.embedder import embed_texts
-from packages.storage import Chunk, async_session
+from packages.storage import Chunk, Document, async_session
 
 
 @dataclass
 class RetrievedChunk:
     chunk_id: str
     document_id: str
+    filename: str
     content: str
     score: float
     metadata: dict
@@ -32,7 +33,8 @@ async def retrieve_chunks(
         # cosine_distance: 0 = identical, 2 = opposite. Score = 1 - distance.
         distance = Chunk.embedding.cosine_distance(query_vec)
         stmt = (
-            select(Chunk, distance.label("distance"))
+            select(Chunk, Document.filename, distance.label("distance"))
+            .join(Document, Chunk.document_id == Document.id)
             .where(Chunk.tenant_id == tenant_id)
             .order_by(distance)
             .limit(k)
@@ -43,9 +45,10 @@ async def retrieve_chunks(
         RetrievedChunk(
             chunk_id=str(chunk.id),
             document_id=str(chunk.document_id),
+            filename=filename,
             content=chunk.content,
             score=1.0 - float(distance),
             metadata=chunk.chunk_metadata,
         )
-        for chunk, distance in rows
+        for chunk, filename, distance in rows
     ]

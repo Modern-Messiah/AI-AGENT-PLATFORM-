@@ -27,8 +27,9 @@ When answering:
 3. Use http_fetch only when you need fresh external content.
 4. Use code_exec for calculations or non-trivial data wrangling.
 
-Always set confidence in [0,1]. Put the document_id of every retrieved chunk
-you actually used into sources — never invent ids.
+Always set confidence in [0,1]. In sources, list ONLY the filename of each
+document whose content you directly cited or paraphrased in your answer.
+If a retrieved chunk was not helpful, do not include its filename. Never invent filenames.
 """
 
 
