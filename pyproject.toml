@@ -40,6 +40,7 @@ dependencies = [
     # RAG
     "fastembed>=0.4",
     "markitdown>=0.0.1",
+    "pypdf>=4.0",
     "langchain-text-splitters>=0.3",
 
     # Logging
