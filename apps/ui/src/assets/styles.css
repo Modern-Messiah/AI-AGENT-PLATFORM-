@@ -209,6 +209,7 @@ html, body, #app { height: 100%; background: var(--bg); color: var(--text); font
   flex: 1; overflow-y: auto;
   padding: 24px 20px;
   display: flex; flex-direction: column;
+  align-items: flex-start;
   gap: 20px;
 }
 

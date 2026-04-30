@@ -49,7 +49,7 @@
 </template>
 
 <script setup>
-import { ref, watch } from 'vue'
+import { ref, watch, nextTick } from 'vue'
 import { useChatStore } from '@/stores/chat'
 import AppIcon from '@/components/AppIcon.vue'
 
@@ -58,9 +58,8 @@ defineEmits(['approve', 'reject'])
 const chat = useChatStore()
 const bottomRef = ref(null)
 
-watch([() => chat.messages.length, () => chat.loading], () => {
-  if (bottomRef.value) {
-    bottomRef.value.scrollIntoView({ behavior: 'smooth' })
-  }
+watch([() => chat.messages.length, () => chat.loading], async () => {
+  await nextTick()
+  bottomRef.value?.scrollIntoView({ behavior: 'smooth' })
 })
 </script>
