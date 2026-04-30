@@ -8,7 +8,8 @@ from sqlalchemy import select
 
 from packages.core import settings
 from packages.rag.embedder import embed_texts
-from packages.storage import Chunk, Document, async_session
+from packages.storage import Chunk, Document
+from packages.storage.db import tenant_session
 
 
 @dataclass
@@ -29,7 +30,7 @@ async def retrieve_chunks(
     k = k or settings.retrieval_top_k
     [query_vec] = await embed_texts([query])
 
-    async with async_session() as session:
+    async with tenant_session(tenant_id) as session:
         # cosine_distance: 0 = identical, 2 = opposite. Score = 1 - distance.
         distance = Chunk.embedding.cosine_distance(query_vec)
         stmt = (

@@ -15,6 +15,7 @@ class AgentRunOutput(BaseModel):
     answer: str = Field(..., description="Final answer to the user")
     confidence: float = Field(..., ge=0.0, le=1.0)
     sources: list[str] = Field(default_factory=list)
+    cached: bool = Field(default=False, description="True when answer came from semantic cache")
 
 
 class MultiStepResearchInput(BaseModel):

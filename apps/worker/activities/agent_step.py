@@ -34,7 +34,7 @@ async def run_agent_step(payload: AgentRunInput) -> AgentRunOutput:
             latency_ms=0,
             status="cache_hit",
         ))
-        return cached
+        return cached.model_copy(update={"cached": True})
 
     # ── LLM call ─────────────────────────────────────────────────────────────
     agent = build_research_agent(model_name=payload.model)

@@ -17,7 +17,8 @@ def _register_tools(agent: Agent[AgentDeps, AgentRunOutput]) -> None:
     register_retrieval_tool(agent)
     register_sql_tool(agent)
     register_http_tool(agent)
-    register_code_exec_tool(agent)
+    if settings.enable_code_exec:
+        register_code_exec_tool(agent)
 
 
 def build_research_agent(model_name: str | None = None) -> Agent[AgentDeps, AgentRunOutput]:

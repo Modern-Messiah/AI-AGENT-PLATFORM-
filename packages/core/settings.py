@@ -1,6 +1,7 @@
+import json
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -46,6 +47,35 @@ class Settings(BaseSettings):
 
     # Protect POST /auth/keys — change before deploying.
     admin_secret: str = "change-me-before-deploy"
+
+    # Opt-in: run arbitrary Python in a subprocess (disabled by default — see code_exec.py).
+    enable_code_exec: bool = False
+
+    # Explicit domain allowlist for http_fetch tool.
+    # Accepts JSON array  (HTTP_FETCH_ALLOWED_DOMAINS='["docs.python.org"]')
+    # or comma-separated  (HTTP_FETCH_ALLOWED_DOMAINS=docs.python.org,api.github.com).
+    # When non-empty ONLY these domains are reachable — fully prevents SSRF including DNS rebinding.
+    # When empty the tool falls back to an IP-based blocklist (still vulnerable to DNS rebinding).
+    http_fetch_allowed_domains: list[str] = []
+
+    @field_validator("http_fetch_allowed_domains", mode="before")
+    @classmethod
+    def _parse_domains(cls, v: object) -> object:
+        if isinstance(v, str):
+            v = v.strip()
+            if not v:
+                return []
+            if v.startswith("["):
+                return json.loads(v)
+            return [d.strip() for d in v.split(",") if d.strip()]
+        return v
+
+    # Maximum file size accepted by POST /documents and /documents/bulk (bytes).
+    max_upload_bytes: int = 50 * 1024 * 1024  # 50 MB per file
+
+    # Maximum total body across ALL files in a single POST /documents/bulk request.
+    # Prevents memory exhaustion from 20 × 50 MB = 1 GB bulk uploads.
+    max_bulk_total_bytes: int = 200 * 1024 * 1024  # 200 MB
 
 
 @lru_cache
