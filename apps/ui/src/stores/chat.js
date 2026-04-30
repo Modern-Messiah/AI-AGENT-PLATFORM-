@@ -20,7 +20,7 @@ export const useChatStore = defineStore('chat', () => {
   const loading = ref(false)
   const sessLoading = ref(false)
 
-  // sessId → { workflowId, time }
+  // sessId → [{ workflowId, time }, ...]  (array to support multiple pending workflows per session)
   // Persisted to localStorage so pending HITL cards survive page refresh.
   // HITL state is not stored server-side, so this map is the only source of truth.
   const pendingHitl = ref(_loadPendingHitl())
@@ -28,7 +28,9 @@ export const useChatStore = defineStore('chat', () => {
   function _loadPendingHitl() {
     try {
       const raw = localStorage.getItem(LS_HITL_KEY)
-      return raw ? new Map(JSON.parse(raw)) : new Map()
+      if (!raw) return new Map()
+      // Migrate old single-entry format { workflowId, time } → array format [{ workflowId, time }]
+      return new Map(JSON.parse(raw).map(([sid, val]) => [sid, Array.isArray(val) ? val : [val]]))
     } catch { return new Map() }
   }
 
@@ -37,8 +39,13 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   function _clearPendingByWorkflow(workflowId) {
-    for (const [sid, entry] of pendingHitl.value) {
-      if (entry.workflowId === workflowId) { pendingHitl.value.delete(sid); break }
+    for (const [sid, entries] of pendingHitl.value) {
+      const next = entries.filter(e => e.workflowId !== workflowId)
+      if (next.length !== entries.length) {
+        if (next.length === 0) pendingHitl.value.delete(sid)
+        else pendingHitl.value.set(sid, next)
+        break
+      }
     }
     _savePendingHitl()
   }
@@ -79,9 +86,10 @@ export const useChatStore = defineStore('chat', () => {
       // Re-inject a pending HITL card if one exists for this session and the session is
       // still active (guard against rapid session switches causing cross-session injection).
       if (activeId.value === id) {
-        const hitl = pendingHitl.value.get(id)
-        if (hitl && !messages.value.some(m => m.role === 'hitl' && m.workflowId === hitl.workflowId)) {
-          messages.value.push({ id: 'h' + Date.now(), role: 'hitl', time: hitl.time, workflowId: hitl.workflowId, sessId: id })
+        for (const hitl of (pendingHitl.value.get(id) || [])) {
+          if (!messages.value.some(m => m.role === 'hitl' && m.workflowId === hitl.workflowId)) {
+            messages.value.push({ id: 'h' + Date.now(), role: 'hitl', time: hitl.time, workflowId: hitl.workflowId, sessId: id })
+          }
         }
       }
       sessLoading.value = false
@@ -165,7 +173,9 @@ export const useChatStore = defineStore('chat', () => {
       if (data.pending_approval) {
         // Always register in pendingHitl first — this is the durable record that lets
         // selectSession re-inject the card if the user switches sessions and comes back.
-        pendingHitl.value.set(sessId, { workflowId: data.workflow_id, time: nowTime() })
+        const pending = pendingHitl.value.get(sessId) || []
+        pending.push({ workflowId: data.workflow_id, time: nowTime() })
+        pendingHitl.value.set(sessId, pending)
         _savePendingHitl()
         // Only render the card immediately if the user is still in this session.
         if (activeId.value === sessId) {
@@ -189,7 +199,9 @@ export const useChatStore = defineStore('chat', () => {
       return agentMsg
     } catch (e) {
       loading.value = false
-      messages.value.push({ id: 'e' + Date.now(), role: 'agent', text: `Ошибка: ${e.message}`, time: nowTime(), sources: [], error: true })
+      if (activeId.value === sessId) {
+        messages.value.push({ id: 'e' + Date.now(), role: 'agent', text: `Ошибка: ${e.message}`, time: nowTime(), sources: [], error: true })
+      }
       throw e
     }
   }
@@ -218,8 +230,7 @@ export const useChatStore = defineStore('chat', () => {
           }
           messages.value = messages.value.map(m => isThis(m) ? { ...agentMsg, id: m.id } : m)
           if (origSessId) {
-            pendingHitl.value.delete(origSessId)
-            _savePendingHitl()
+            _clearPendingByWorkflow(workflowId)
             apiFetch(`/sessions/${origSessId}/messages`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -232,11 +243,13 @@ export const useChatStore = defineStore('chat', () => {
       // 5-min deadline exceeded — mark card as timed out and remove from pendingHitl so
       // navigating back doesn't re-inject a fresh "waiting" card for a dead workflow.
       messages.value = messages.value.map(m => isThis(m) ? { ...m, status: 'timeout' } : m)
-      if (origSessId) { pendingHitl.value.delete(origSessId); _savePendingHitl() }
+      _clearPendingByWorkflow(workflowId)
     } catch (e) {
-      messages.value = messages.value.filter(m => !isThis(m))
-      messages.value.push({ id: 'e' + Date.now(), role: 'agent', text: `HITL error: ${e.message}`, time: nowTime(), sources: [], error: true })
-      if (origSessId) { pendingHitl.value.delete(origSessId); _savePendingHitl() }
+      if (activeId.value === origSessId) {
+        messages.value = messages.value.filter(m => !isThis(m))
+        messages.value.push({ id: 'e' + Date.now(), role: 'agent', text: `HITL error: ${e.message}`, time: nowTime(), sources: [], error: true })
+      }
+      _clearPendingByWorkflow(workflowId)
     }
   }
 
