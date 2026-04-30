@@ -37,7 +37,7 @@ from packages.analytics.clickhouse import ch_client
 from packages.auth import generate_key, require_tenant
 from packages.core import settings
 from packages.observability import setup_tracing
-from packages.storage import ApiKey, ChatMessage, ChatSession, Document, DocumentStatus, async_session, object_store
+from packages.storage import ApiKey, ChatMessage, ChatSession, Chunk, Document, DocumentStatus, async_session, object_store
 
 TenantID = Annotated[str, Depends(require_tenant)]
 
@@ -163,6 +163,21 @@ async def create_api_key(
 @app.post("/agent/run", response_model=AgentRunOutput)
 async def run_agent(payload: AgentRunInput, tenant_id: TenantID) -> AgentRunOutput:
     """Single agent run. Set require_approval=true to pause for HITL review."""
+    async with async_session() as db:
+        chunk_count = (await db.execute(
+            select(func.count()).select_from(Chunk).where(Chunk.tenant_id == tenant_id)
+        )).scalar()
+    if not chunk_count:
+        return AgentRunOutput(
+            answer=(
+                "У вас ещё нет проиндексированных документов. "
+                "Перейдите в раздел «Документы», загрузите файлы — "
+                "после индексации я смогу отвечать на вопросы по ним."
+            ),
+            confidence=1.0,
+            sources=[],
+        )
+
     payload = payload.model_copy(update={"tenant_id": tenant_id})
     client: Client = app.state.temporal
     workflow_id = f"agent-run-{tenant_id}-{uuid.uuid4()}"
