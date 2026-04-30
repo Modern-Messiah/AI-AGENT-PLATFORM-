@@ -13,9 +13,11 @@ export function useApi() {
       },
     })
     if (!res.ok) {
+      if (res.status === 401) settings.markInvalid()
       const text = await res.text().catch(() => res.statusText)
       throw new Error(`${res.status}: ${text}`)
     }
+    if (settings.keyStatus !== 'valid') settings.markValid()
     if (res.status === 204 || res.headers.get('content-length') === '0') return null
     return res.json()
   }

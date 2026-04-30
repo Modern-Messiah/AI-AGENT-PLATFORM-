@@ -1,9 +1,10 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 
 export const useSettingsStore = defineStore('settings', () => {
   const apiKey = ref('')
   const baseUrl = ref('/api')
+  const keyStatus = ref('unknown') // 'unknown' | 'valid' | 'invalid'
 
   function _load() {
     try {
@@ -19,10 +20,17 @@ export const useSettingsStore = defineStore('settings', () => {
     localStorage.setItem('aap_config', JSON.stringify({ apiKey: apiKey.value, base: baseUrl.value }))
   }
 
-  const keyMasked = computed(() => apiKey.value ? `…${apiKey.value.slice(-6)}` : 'не задан')
-  const isConnected = computed(() => !!apiKey.value)
+  function markValid()   { keyStatus.value = 'valid' }
+  function markInvalid() { keyStatus.value = 'invalid' }
+
+  // Reset status when key changes so sidebar shows neutral state
+  watch(apiKey, () => { keyStatus.value = 'unknown' })
+
+  const keyMasked    = computed(() => apiKey.value ? `…${apiKey.value.slice(-6)}` : 'не задан')
+  const isConnected  = computed(() => !!apiKey.value)
+  const isKeyInvalid = computed(() => keyStatus.value === 'invalid')
 
   _load()
 
-  return { apiKey, baseUrl, save, keyMasked, isConnected }
+  return { apiKey, baseUrl, keyStatus, save, markValid, markInvalid, keyMasked, isConnected, isKeyInvalid }
 })

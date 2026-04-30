@@ -83,6 +83,7 @@ html, body, #app { height: 100%; background: var(--bg); color: var(--text); font
 .tenant-pill:hover { background: var(--s3); }
 .tenant-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); flex-shrink: 0; box-shadow: 0 0 6px var(--green); }
 .tenant-dot.off { background: var(--muted); box-shadow: none; }
+.tenant-dot.invalid { background: var(--red); box-shadow: 0 0 6px var(--red); }
 .tenant-info { font-size: 12px; flex: 1; min-width: 0; }
 .tenant-name { color: var(--text); font-weight: 500; }
 .tenant-key { color: var(--muted); font-family: var(--mono); font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
