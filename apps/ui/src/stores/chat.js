@@ -127,9 +127,12 @@ export const useChatStore = defineStore('chat', () => {
       loading.value = false
 
       if (data.pending_approval) {
-        // Store sessId so approveHitl saves to the originating session even if the user
-        // switches chats while the workflow is pending.
-        messages.value.push({ id: 'h' + Date.now(), role: 'hitl', time: nowTime(), workflowId: data.workflow_id, sessId })
+        // Guard: only inject the HITL card into the session that initiated the request.
+        // If the user switched chats while the request was in-flight, skip the UI update;
+        // the card will appear when they navigate back (session reload from API).
+        if (activeId.value === sessId) {
+          messages.value.push({ id: 'h' + Date.now(), role: 'hitl', time: nowTime(), workflowId: data.workflow_id, sessId })
+        }
         return null
       }
 
@@ -137,12 +140,14 @@ export const useChatStore = defineStore('chat', () => {
         id: 'a' + Date.now(), role: 'agent', text: data.answer,
         time: nowTime(), sources: data.sources || [], cached: data.cached || false
       }
+      // Persist to the originating session regardless of which session is currently active.
       apiFetch(`/sessions/${sessId}/messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ role: 'agent', content: data.answer, sources: data.sources || [], cached: data.cached || false })
       }).catch(() => {})
-      messages.value.push(agentMsg)
+      // Only push into the visible messages list if the user hasn't switched sessions.
+      if (activeId.value === sessId) messages.value.push(agentMsg)
       return agentMsg
     } catch (e) {
       loading.value = false
@@ -154,6 +159,9 @@ export const useChatStore = defineStore('chat', () => {
   async function approveHitl(workflowId) {
     const { apiFetch } = useApi()
     const isThis = m => m.role === 'hitl' && m.workflowId === workflowId
+    // Capture sessId synchronously before any awaits: messages.value may point to a
+    // different session if the user switches chats while the workflow is pending.
+    const origSessId = messages.value.find(m => isThis(m))?.sessId ?? activeId.value
     // Show spinner on this specific card immediately
     messages.value = messages.value.map(m => isThis(m) ? { ...m, status: 'polling' } : m)
     try {
@@ -170,10 +178,8 @@ export const useChatStore = defineStore('chat', () => {
             id: 'a' + Date.now(), role: 'agent', text: data.answer,
             time: nowTime(), sources: data.sources || [], cached: data.cached || false
           }
-          // Capture sessId from the hitl message BEFORE replacing it.
-          const origSessId = messages.value.find(m => isThis(m))?.sessId
           messages.value = messages.value.map(m => isThis(m) ? { ...agentMsg, id: m.id } : m)
-          const targetSess = origSessId || activeId.value
+          const targetSess = origSessId
           if (targetSess) {
             apiFetch(`/sessions/${targetSess}/messages`, {
               method: 'POST',
