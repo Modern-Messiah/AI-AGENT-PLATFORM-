@@ -1,32 +1,33 @@
 """Document → plain text.
 
-PDF: pypdf (reliable text layer extraction).
+PDF: pymupdf — best-in-class text extraction, handles complex layouts.
 Everything else: markitdown (docx, pptx, xlsx, html, md, txt, images).
 """
 
 from __future__ import annotations
 
 import asyncio
-import io
 import tempfile
 from pathlib import Path
 
-import pypdf
+import fitz  # pymupdf
 from markitdown import MarkItDown
 
 _md = MarkItDown()
 
 
 def _parse_pdf(data: bytes) -> str:
-    reader = pypdf.PdfReader(io.BytesIO(data))
+    doc = fitz.open(stream=data, filetype="pdf")
     pages = []
-    for page in reader.pages:
-        text = page.extract_text() or ""
-        text = text.strip()
+    for page in doc:
+        text = page.get_text("text").strip()
         if text:
             pages.append(text)
+    doc.close()
     if not pages:
-        raise ValueError("PDF содержит только изображения или защищён от копирования — текст не извлечён")
+        raise ValueError(
+            "PDF не содержит текстового слоя — возможно, отсканирован или защищён"
+        )
     return "\n\n".join(pages)
 
 
