@@ -80,6 +80,7 @@ class DocumentResponse(BaseModel):
     filename: str
     status: DocumentStatus
     error: str | None = None
+    created_at: str | None = None
 
 
 class WorkflowSignalResponse(BaseModel):
@@ -254,6 +255,27 @@ async def get_usage(
 
 
 # ── Documents ─────────────────────────────────────────────────────────────────
+
+@app.get("/documents", response_model=list[DocumentResponse])
+async def list_documents(tenant_id: TenantID) -> list[DocumentResponse]:
+    async with async_session() as s:
+        rows = (await s.execute(
+            select(Document)
+            .where(Document.tenant_id == tenant_id)
+            .order_by(Document.created_at.desc())
+        )).scalars().all()
+    return [
+        DocumentResponse(
+            id=str(doc.id),
+            tenant_id=doc.tenant_id,
+            filename=doc.filename,
+            status=doc.status,
+            error=doc.error,
+            created_at=doc.created_at.isoformat() if doc.created_at else None,
+        )
+        for doc in rows
+    ]
+
 
 @app.post("/documents", response_model=DocumentResponse, status_code=202)
 async def upload_document(

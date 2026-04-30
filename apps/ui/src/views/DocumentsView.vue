@@ -104,56 +104,60 @@ const dragging = ref(false)
 const toast = ref(null)
 const fileInput = ref(null)
 
-function storageKey() {
-  return settings.apiKey ? `aap_docs_${settings.apiKey}` : 'aap_docs'
+async function loadDocs() {
+  if (!settings.isConnected) { docs.value = []; return }
+  try {
+    const data = await apiFetch('/documents')
+    // merge: keep in-progress uploads that aren't in the API list yet
+    const apiIds = new Set(data.map(d => d.id))
+    const pending = docs.value.filter(d => d._pending && !apiIds.has(d.id))
+    docs.value = [...pending, ...data.map(d => ({
+      id: d.id, name: d.filename, status: d.status,
+      error: d.error || null, size: '—',
+      time: d.created_at ? new Date(d.created_at).toLocaleDateString('ru') : '—'
+    }))]
+  } catch { docs.value = [] }
 }
-function loadDocs() {
-  try { docs.value = JSON.parse(localStorage.getItem(storageKey()) || '[]') } catch { docs.value = [] }
-}
-function persist() { localStorage.setItem(storageKey(), JSON.stringify(docs.value)) }
 
 watch(() => settings.apiKey, loadDocs, { immediate: true })
 
 const doneCount = computed(() => docs.value.filter(d => d.status === 'done').length)
 const progressPct = computed(() => docs.value.length ? doneCount.value / docs.value.length * 100 : 0)
+
 function mimeIcon(name) {
   const ext = (name || '').split('.').pop().toLowerCase()
   return ({ pdf: '📄', md: '📝', txt: '📃', csv: '📊', html: '🌐', docx: '📘' })[ext] || '📁'
 }
-function removeDoc(id) { docs.value = docs.value.filter(d => d.id !== id); persist() }
-function clearAll() { docs.value = []; persist() }
+function removeDoc(id) { docs.value = docs.value.filter(d => d.id !== id) }
+function clearAll() { docs.value = [] }
 function copyId(id) { navigator.clipboard.writeText(id).catch(() => {}); toast.value = { msg: `ID скопирован: ${id}`, type: 'info' } }
+
+function updateDoc(id, patch) {
+  docs.value = docs.value.map(d => d.id === id ? { ...d, ...patch } : d)
+}
 
 async function pollStatus(docId) {
   for (let i = 0; i < 30; i++) {
     await new Promise(r => setTimeout(r, 3000))
     try {
       const data = await apiFetch(`/documents/${docId}`)
-      if (data.status === 'done') { updateDoc(docId, { status: 'done' }); return }
-      if (data.status === 'failed') { updateDoc(docId, { status: 'failed', error: data.error || 'Failed' }); return }
+      if (data.status === 'done') { updateDoc(docId, { status: 'done', _pending: false }); return }
+      if (data.status === 'failed') { updateDoc(docId, { status: 'failed', error: data.error || 'Failed', _pending: false }); return }
     } catch {}
   }
-  updateDoc(docId, { status: 'failed', error: 'Timeout' })
-}
-
-function updateDoc(id, patch) {
-  docs.value = docs.value.map(d => d.id === id ? { ...d, ...patch } : d)
-  persist()
+  updateDoc(docId, { status: 'failed', error: 'Timeout', _pending: false })
 }
 
 async function uploadFile(file) {
   if (!settings.isConnected) { toast.value = { msg: 'Задайте X-API-Key в настройках', type: 'error' }; return }
   const tempId = 'upload-' + Date.now()
-  const entry = {
-    id: tempId, name: file.name, status: 'processing', time: 'сейчас', error: null,
-    size: file.size < 1048576 ? (file.size / 1024).toFixed(0) + ' KB' : (file.size / 1048576).toFixed(1) + ' MB'
-  }
-  docs.value = [entry, ...docs.value]; persist()
+  const size = file.size < 1048576 ? (file.size / 1024).toFixed(0) + ' KB' : (file.size / 1048576).toFixed(1) + ' MB'
+  docs.value = [{ id: tempId, name: file.name, status: 'processing', time: 'сейчас', error: null, size, _pending: true }, ...docs.value]
   toast.value = { msg: `Загрузка: ${file.name}`, type: 'info' }
   try {
     const form = new FormData(); form.append('file', file)
     const data = await apiFetch('/documents', { method: 'POST', body: form })
-    docs.value = docs.value.map(d => d.id === tempId ? { ...d, id: data.id } : d); persist()
+    docs.value = docs.value.map(d => d.id === tempId ? { ...d, id: data.id, _pending: true } : d)
     pollStatus(data.id)
   } catch (e) {
     updateDoc(tempId, { status: 'failed', error: e.message })
