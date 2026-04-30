@@ -85,9 +85,12 @@ def register_http_tool(agent: Agent[AgentDeps, object]) -> None:
         if settings.http_fetch_allowed_domains:
             # Strong protection: domain allowlist fully prevents SSRF + DNS rebinding.
             err = _allowlist_check(url)
-        else:
-            # Fallback: IP blocklist (vulnerable to DNS rebinding — configure allowlist for prod).
+        elif settings.app_env == "local":
+            # Dev-only fallback: IP blocklist is vulnerable to DNS rebinding.
             err = await _ip_blocklist_check(url)
+        else:
+            # Fail-closed: refuse all fetches in non-local environments without an allowlist.
+            return "Error: HTTP_FETCH_ALLOWED_DOMAINS is not configured; set it to enable this tool in production"
 
         if err:
             return err
