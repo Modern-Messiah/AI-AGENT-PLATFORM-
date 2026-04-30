@@ -76,7 +76,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useApi } from '@/composables/useApi'
 import { useSettingsStore } from '@/stores/settings'
 import AppToast from '@/components/AppToast.vue'
@@ -90,6 +90,11 @@ const filter = ref('all')
 const wfId = ref('')
 const acting = ref(null)
 const toast = ref(null)
+
+watch(() => settings.apiKey, () => {
+  workflows.value = []
+  filter.value = 'all'
+})
 
 const STATUS_COLOR = { running: 'var(--accent)', completed: 'var(--green)', failed: 'var(--red)', hitl: 'var(--yellow)', pending: 'var(--muted)' }
 const dotStyle = status => ({
