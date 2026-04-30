@@ -89,7 +89,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useApi } from '@/composables/useApi'
 import { useSettingsStore } from '@/stores/settings'
 import AppIcon from '@/components/AppIcon.vue'
@@ -99,16 +99,23 @@ import StatusBadge from '@/components/StatusBadge.vue'
 const { apiFetch } = useApi()
 const settings = useSettingsStore()
 
-const STORAGE_KEY = 'aap_docs'
-const docs = ref((() => { try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]') } catch { return [] } })())
+const docs = ref([])
 const dragging = ref(false)
 const toast = ref(null)
 const fileInput = ref(null)
 
+function storageKey() {
+  return settings.apiKey ? `aap_docs_${settings.apiKey}` : 'aap_docs'
+}
+function loadDocs() {
+  try { docs.value = JSON.parse(localStorage.getItem(storageKey()) || '[]') } catch { docs.value = [] }
+}
+function persist() { localStorage.setItem(storageKey(), JSON.stringify(docs.value)) }
+
+watch(() => settings.apiKey, loadDocs, { immediate: true })
+
 const doneCount = computed(() => docs.value.filter(d => d.status === 'done').length)
 const progressPct = computed(() => docs.value.length ? doneCount.value / docs.value.length * 100 : 0)
-
-function persist() { localStorage.setItem(STORAGE_KEY, JSON.stringify(docs.value)) }
 function mimeIcon(name) {
   const ext = (name || '').split('.').pop().toLowerCase()
   return ({ pdf: '📄', md: '📝', txt: '📃', csv: '📊', html: '🌐', docx: '📘' })[ext] || '📁'
