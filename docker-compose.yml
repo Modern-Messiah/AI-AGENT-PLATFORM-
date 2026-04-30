@@ -279,6 +279,18 @@ services:
     command: python -m apps.worker.main
     restart: unless-stopped
 
+  ui:
+    build:
+      context: apps/ui
+      dockerfile: Dockerfile
+    container_name: aap-ui
+    depends_on:
+      api:
+        condition: service_started
+    ports:
+      - "5173:80"
+    restart: unless-stopped
+
 volumes:
   pg_data:
   redis_data:
