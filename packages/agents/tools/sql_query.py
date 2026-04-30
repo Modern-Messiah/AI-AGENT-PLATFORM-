@@ -11,7 +11,12 @@ from packages.agents.deps import AgentDeps
 from packages.storage.db import tenant_session
 
 _BLOCKED = re.compile(
-    r"\b(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|TRUNCATE|GRANT|REVOKE|EXECUTE|CALL|COPY)\b",
+    r"\b(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|TRUNCATE|GRANT|REVOKE|EXECUTE|CALL|COPY|INTO)\b",
+    re.IGNORECASE,
+)
+# Blocks SELECT ... FOR UPDATE / FOR SHARE row-locking forms which acquire write locks.
+_LOCKING = re.compile(
+    r"\bFOR\s+(UPDATE|SHARE|NO\s+KEY\s+UPDATE|KEY\s+SHARE)\b",
     re.IGNORECASE,
 )
 _SAFE_TENANT = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
@@ -80,9 +85,6 @@ def register_sql_tool(agent: Agent[AgentDeps, object]) -> None:
         Args:
             query: A SQL SELECT statement using {tenant_id} where needed.
         """
-        if _BLOCKED.search(query):
-            return [{"error": "Only SELECT statements are allowed"}]
-
         if not _SAFE_TENANT.match(ctx.deps.tenant_id):
             return [{"error": "invalid tenant_id"}]
 
@@ -92,6 +94,12 @@ def register_sql_tool(agent: Agent[AgentDeps, object]) -> None:
         # Strip comments and string literals before all structural checks so a table
         # name in a comment or string can't trick the allowlist/blocklist.
         stripped = _strip_literals(query)
+
+        if _BLOCKED.search(stripped):
+            return [{"error": "Only SELECT statements are allowed"}]
+
+        if _LOCKING.search(stripped):
+            return [{"error": "Row-locking clauses (FOR UPDATE / FOR SHARE) are not allowed"}]
 
         if _FORBIDDEN_TABLES.search(stripped):
             return [{"error": "Query references a restricted table"}]
@@ -116,6 +124,7 @@ def register_sql_tool(agent: Agent[AgentDeps, object]) -> None:
             safe_query = safe_query.rstrip().rstrip(";") + f" LIMIT {_MAX_ROWS}"
 
         async with tenant_session(ctx.deps.tenant_id) as session:
+            await session.execute(sa.text("SET TRANSACTION READ ONLY"))
             await session.execute(sa.text("SET LOCAL statement_timeout = '5000'"))
             rows = (await session.execute(sa.text(safe_query))).mappings().all()
             return [dict(r) for r in rows]
