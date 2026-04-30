@@ -3,15 +3,39 @@
     <template v-for="msg in chat.messages" :key="msg.id">
       <!-- HITL approval card -->
       <div v-if="msg.role === 'hitl'" class="hitl-card">
-        <div class="hitl-icon">⏳</div>
-        <div>
-          <div class="hitl-title">Ожидает подтверждения</div>
-          <div class="hitl-desc">Агент сформировал ответ. Подтвердите или отклоните перед показом.</div>
-          <div class="hitl-actions">
-            <button class="btn btn-success btn-sm" @click="$emit('approve')">✓ Approve</button>
-            <button class="btn btn-danger btn-sm" @click="$emit('reject')">✕ Reject</button>
+        <!-- waiting for human decision -->
+        <template v-if="!msg.status">
+          <div class="hitl-icon">⏳</div>
+          <div>
+            <div class="hitl-title">Ожидает подтверждения</div>
+            <div class="hitl-desc">Агент сформировал ответ. Подтвердите или отклоните перед показом.</div>
+            <div class="hitl-actions">
+              <button class="btn btn-success btn-sm" @click="$emit('approve', msg.workflowId)">✓ Approve</button>
+              <button class="btn btn-danger btn-sm" @click="$emit('reject', msg.workflowId)">✕ Reject</button>
+            </div>
           </div>
-        </div>
+        </template>
+        <!-- approved — waiting for workflow to return the answer -->
+        <template v-else-if="msg.status === 'polling'">
+          <div class="hitl-icon">
+            <div class="typing-bubble" style="background:transparent;padding:0">
+              <div class="typing-dot"></div>
+              <div class="typing-dot"></div>
+              <div class="typing-dot"></div>
+            </div>
+          </div>
+          <div>
+            <div class="hitl-title">Подтверждено — ждём ответа агента…</div>
+          </div>
+        </template>
+        <!-- took longer than 5 minutes -->
+        <template v-else-if="msg.status === 'timeout'">
+          <div class="hitl-icon">⚠️</div>
+          <div>
+            <div class="hitl-title" style="color:var(--yellow)">Workflow не завершился за 5 минут</div>
+            <div class="hitl-desc">Проверьте Temporal UI или попробуйте ещё раз.</div>
+          </div>
+        </template>
       </div>
 
       <!-- Regular message -->
@@ -44,7 +68,6 @@
       </div>
     </div>
 
-    <div ref="bottomRef"></div>
   </div>
 </template>
 
@@ -56,10 +79,14 @@ import AppIcon from '@/components/AppIcon.vue'
 defineEmits(['approve', 'reject'])
 
 const chat = useChatStore()
-const bottomRef = ref(null)
+const containerRef = ref(null)
 
-watch([() => chat.messages.length, () => chat.loading], async () => {
+async function scrollToBottom() {
   await nextTick()
-  bottomRef.value?.scrollIntoView({ behavior: 'smooth' })
-})
+  if (containerRef.value) {
+    containerRef.value.scrollTop = containerRef.value.scrollHeight
+  }
+}
+
+watch([() => chat.messages.length, () => chat.loading], scrollToBottom)
 </script>

@@ -122,9 +122,17 @@ export const useChatStore = defineStore('chat', () => {
       const data = await apiFetch('/agent/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_query: query, model })
+        body: JSON.stringify({ user_query: query, model, require_approval: requireApproval })
       })
       loading.value = false
+
+      if (data.pending_approval) {
+        // Store sessId so approveHitl saves to the originating session even if the user
+        // switches chats while the workflow is pending.
+        messages.value.push({ id: 'h' + Date.now(), role: 'hitl', time: nowTime(), workflowId: data.workflow_id, sessId })
+        return null
+      }
+
       const agentMsg = {
         id: 'a' + Date.now(), role: 'agent', text: data.answer,
         time: nowTime(), sources: data.sources || [], cached: data.cached || false
@@ -134,11 +142,7 @@ export const useChatStore = defineStore('chat', () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ role: 'agent', content: data.answer, sources: data.sources || [], cached: data.cached || false })
       }).catch(() => {})
-      if (requireApproval) {
-        messages.value.push({ id: 'h' + Date.now(), role: 'hitl', time: nowTime() })
-      } else {
-        messages.value.push(agentMsg)
-      }
+      messages.value.push(agentMsg)
       return agentMsg
     } catch (e) {
       loading.value = false
@@ -147,12 +151,53 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
-  function approveHitl(pending) {
-    messages.value = messages.value.map(m => m.role === 'hitl' ? { ...pending, id: m.id, role: 'agent' } : m)
+  async function approveHitl(workflowId) {
+    const { apiFetch } = useApi()
+    const isThis = m => m.role === 'hitl' && m.workflowId === workflowId
+    // Show spinner on this specific card immediately
+    messages.value = messages.value.map(m => isThis(m) ? { ...m, status: 'polling' } : m)
+    try {
+      await apiFetch(`/workflows/${workflowId}/approve`, { method: 'POST' })
+      // Poll with exponential backoff for up to 5 minutes
+      const deadline = Date.now() + 5 * 60 * 1000
+      let delay = 800
+      while (Date.now() < deadline) {
+        await new Promise(r => setTimeout(r, delay))
+        delay = Math.min(Math.round(delay * 1.5), 8000)
+        const data = await apiFetch(`/workflows/${workflowId}/result`)
+        if (!data.pending_approval) {
+          const agentMsg = {
+            id: 'a' + Date.now(), role: 'agent', text: data.answer,
+            time: nowTime(), sources: data.sources || [], cached: data.cached || false
+          }
+          // Capture sessId from the hitl message BEFORE replacing it.
+          const origSessId = messages.value.find(m => isThis(m))?.sessId
+          messages.value = messages.value.map(m => isThis(m) ? { ...agentMsg, id: m.id } : m)
+          const targetSess = origSessId || activeId.value
+          if (targetSess) {
+            apiFetch(`/sessions/${targetSess}/messages`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ role: 'agent', content: data.answer, sources: data.sources || [], cached: data.cached || false })
+            }).catch(() => {})
+          }
+          return
+        }
+      }
+      // 5-min deadline exceeded — mark this card as timed out, don't remove it
+      messages.value = messages.value.map(m => isThis(m) ? { ...m, status: 'timeout' } : m)
+    } catch (e) {
+      messages.value = messages.value.filter(m => !isThis(m))
+      messages.value.push({ id: 'e' + Date.now(), role: 'agent', text: `HITL error: ${e.message}`, time: nowTime(), sources: [], error: true })
+    }
   }
 
-  function rejectHitl() {
-    messages.value = messages.value.filter(m => m.role !== 'hitl')
+  async function rejectHitl(workflowId) {
+    const { apiFetch } = useApi()
+    try {
+      if (workflowId) await apiFetch(`/workflows/${workflowId}/reject`, { method: 'POST' })
+    } catch {}
+    messages.value = messages.value.filter(m => !(m.role === 'hitl' && m.workflowId === workflowId))
   }
 
   return {

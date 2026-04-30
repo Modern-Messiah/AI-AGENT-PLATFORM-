@@ -28,7 +28,6 @@ const settings = useSettingsStore()
 const model = ref('moonshot/kimi-k2.6')
 const requireApproval = ref(false)
 const toast = ref(null)
-const pendingHitl = ref(null)
 
 function setToast(t) { toast.value = t }
 
@@ -43,23 +42,18 @@ async function handleSend(query) {
     return
   }
   try {
-    const agentMsg = await chat.sendMessage(query, model.value, requireApproval.value)
-    if (requireApproval.value && agentMsg) {
-      pendingHitl.value = agentMsg
-    }
+    await chat.sendMessage(query, model.value, requireApproval.value)
   } catch {}
 }
 
-function approveHitl() {
-  if (!pendingHitl.value) return
-  chat.approveHitl(pendingHitl.value)
-  pendingHitl.value = null
+// workflowId is carried by the hitl message itself and emitted from the card
+async function approveHitl(workflowId) {
+  await chat.approveHitl(workflowId)
   toast.value = { msg: 'Ответ подтверждён', type: 'success' }
 }
 
-function rejectHitl() {
-  chat.rejectHitl()
-  pendingHitl.value = null
+async function rejectHitl(workflowId) {
+  await chat.rejectHitl(workflowId)
   toast.value = { msg: 'Ответ отклонён', type: 'error' }
 }
 </script>

@@ -137,15 +137,17 @@ function updateDoc(id, patch) {
 }
 
 async function pollStatus(docId) {
-  for (let i = 0; i < 30; i++) {
-    await new Promise(r => setTimeout(r, 3000))
+  // Poll for up to 10 minutes (120 × 5s). Large PDFs + embedding can take several minutes.
+  for (let i = 0; i < 120; i++) {
+    await new Promise(r => setTimeout(r, 5000))
     try {
       const data = await apiFetch(`/documents/${docId}`)
       if (data.status === 'done') { updateDoc(docId, { status: 'done', _pending: false }); return }
       if (data.status === 'failed') { updateDoc(docId, { status: 'failed', error: data.error || 'Failed', _pending: false }); return }
     } catch {}
   }
-  updateDoc(docId, { status: 'failed', error: 'Timeout', _pending: false })
+  // After 10 min show 'processing' (not 'failed') — Temporal may still be running
+  updateDoc(docId, { status: 'processing', error: null, _pending: false })
 }
 
 async function uploadFile(file) {
