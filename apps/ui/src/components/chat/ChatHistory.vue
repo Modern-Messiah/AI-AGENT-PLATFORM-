@@ -21,7 +21,9 @@
           <div class="session-meta">{{ s.updated_at ? new Date(s.updated_at).toLocaleDateString('ru') : '' }}</div>
         </div>
         <button class="btn btn-ghost btn-sm del-btn" style="padding: 2px 5px; flex-shrink: 0"
-                @click.stop="handleDelete(s.id)" title="Удалить">✕</button>
+                @click.stop="askDelete(s)" title="Удалить">
+          <AppIcon name="trash" :size="11" />
+        </button>
       </div>
 
       <div v-if="settings.isConnected && chat.sessions.length === 0 && !chat.sessLoading"
@@ -30,12 +32,21 @@
       </div>
     </div>
   </div>
+
+  <ConfirmModal
+    v-if="confirmId"
+    :title="confirmTitle"
+    @confirm="doDelete"
+    @cancel="cancelDelete"
+  />
 </template>
 
 <script setup>
+import { ref } from 'vue'
 import { useChatStore } from '@/stores/chat'
 import { useSettingsStore } from '@/stores/settings'
 import AppIcon from '@/components/AppIcon.vue'
+import ConfirmModal from '@/components/ConfirmModal.vue'
 
 const props = defineProps({ model: String })
 const emit = defineEmits(['toast'])
@@ -43,20 +54,33 @@ const emit = defineEmits(['toast'])
 const chat = useChatStore()
 const settings = useSettingsStore()
 
-async function handleNew() {
-  if (!settings.isConnected) return
+const confirmId    = ref(null)
+const confirmTitle = ref('')
+
+function askDelete(sess) {
+  confirmTitle.value = sess.title || sess.id
+  confirmId.value    = sess.id
+}
+
+function cancelDelete() {
+  confirmId.value    = null
+  confirmTitle.value = ''
+}
+
+async function doDelete() {
+  const id = confirmId.value
+  confirmId.value = null
   try {
-    await chat.newChat(props.model)
+    await chat.deleteSession(id)
   } catch (e) {
     emit('toast', { msg: `Ошибка: ${e.message}`, type: 'error' })
   }
 }
 
-async function handleDelete(id) {
-  const sess = chat.sessions.find(s => s.id === id)
-  if (!confirm(`Удалить сессию "${sess?.title || id}"?\nВсе сообщения будут удалены.`)) return
+async function handleNew() {
+  if (!settings.isConnected) return
   try {
-    await chat.deleteSession(id)
+    await chat.newChat(props.model)
   } catch (e) {
     emit('toast', { msg: `Ошибка: ${e.message}`, type: 'error' })
   }
