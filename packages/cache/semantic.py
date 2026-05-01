@@ -47,7 +47,7 @@ class SemanticCache:
         # Fetch the newest _MAX_SCAN entries (highest scores = most recent timestamps).
         entry_ids = [
             eid.decode() if isinstance(eid, bytes) else eid
-            for eid in await r.zrange(idx_key, 0, _MAX_SCAN - 1, rev=True)
+            for eid in await r.zrange(idx_key, 0, _MAX_SCAN - 1, desc=True)
         ]
         if not entry_ids:
             return None
