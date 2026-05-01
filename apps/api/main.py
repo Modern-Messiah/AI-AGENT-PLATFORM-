@@ -30,7 +30,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy import func, select, update
 from temporalio.client import Client
-from temporalio.exceptions import RPCError
+from temporalio.service import RPCError
 
 from apps.worker.activities.ingestion import IngestionInput
 from apps.worker.workflows.agent_run import AgentRunWorkflow
