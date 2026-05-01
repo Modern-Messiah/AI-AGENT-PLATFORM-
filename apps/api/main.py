@@ -29,8 +29,9 @@ from typing import Annotated, AsyncIterator
 from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from temporalio.client import Client
+from temporalio.exceptions import RPCError
 
 from apps.worker.activities.ingestion import IngestionInput
 from apps.worker.workflows.agent_run import AgentRunWorkflow
@@ -113,6 +114,11 @@ class CreateSessionRequest(BaseModel):
     model: str | None = None
 
 
+class UpdateSessionRequest(BaseModel):
+    title: str | None = None
+    model: str | None = None
+
+
 class AddMessageRequest(BaseModel):
     role: str
     content: str
@@ -170,7 +176,7 @@ app = FastAPI(title="AI Agent Platform", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.allowed_origins or ["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -310,8 +316,10 @@ async def approve_workflow(workflow_id: str, tenant_id: TenantID) -> WorkflowSig
     client: Client = app.state.temporal
     try:
         await client.get_workflow_handle(workflow_id).signal(AgentRunWorkflow.approve)
-    except Exception as e:  # noqa: BLE001
-        raise HTTPException(status_code=404, detail=str(e)) from e
+    except RPCError as e:
+        code = 404 if "not found" in str(e).lower() else 503
+        detail = "workflow not found" if code == 404 else "workflow service unavailable"
+        raise HTTPException(status_code=code, detail=detail) from e
     return WorkflowSignalResponse(workflow_id=workflow_id, action="approved")
 
 
@@ -321,8 +329,10 @@ async def reject_workflow(workflow_id: str, tenant_id: TenantID) -> WorkflowSign
     client: Client = app.state.temporal
     try:
         await client.get_workflow_handle(workflow_id).signal(AgentRunWorkflow.reject)
-    except Exception as e:  # noqa: BLE001
-        raise HTTPException(status_code=404, detail=str(e)) from e
+    except RPCError as e:
+        code = 404 if "not found" in str(e).lower() else 503
+        detail = "workflow not found" if code == 404 else "workflow service unavailable"
+        raise HTTPException(status_code=code, detail=detail) from e
     return WorkflowSignalResponse(workflow_id=workflow_id, action="rejected")
 
 
@@ -584,7 +594,7 @@ async def create_session(body: CreateSessionRequest, tenant_id: TenantID) -> Cha
 
 
 @app.patch("/sessions/{session_id}", response_model=ChatSessionSchema)
-async def update_session(session_id: uuid.UUID, body: CreateSessionRequest, tenant_id: TenantID) -> ChatSessionSchema:
+async def update_session(session_id: uuid.UUID, body: UpdateSessionRequest, tenant_id: TenantID) -> ChatSessionSchema:
     async with tenant_session(tenant_id) as s:
         sess = (await s.execute(
             select(ChatSession).where(ChatSession.id == session_id, ChatSession.tenant_id == tenant_id)
