@@ -23,10 +23,10 @@ with workflow.unsafe.imports_passed_through():
     from packages.agents import AgentRunInput, AgentRunOutput
 
 _RETRY = RetryPolicy(
-    initial_interval=timedelta(seconds=1),
+    initial_interval=timedelta(seconds=2),
     maximum_interval=timedelta(seconds=30),
-    maximum_attempts=3,
-    non_retryable_error_types=["ValueError"],
+    maximum_attempts=2,
+    non_retryable_error_types=["ValueError", "ApplicationError"],
 )
 
 
@@ -48,7 +48,7 @@ class AgentRunWorkflow:
         result: AgentRunOutput = await workflow.execute_activity(
             run_agent_step,
             payload,
-            start_to_close_timeout=timedelta(minutes=15),
+            start_to_close_timeout=timedelta(minutes=5),
             retry_policy=_RETRY,
         )
 

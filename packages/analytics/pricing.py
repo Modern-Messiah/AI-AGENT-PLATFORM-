@@ -2,17 +2,29 @@
 
 Prices are approximate and should be verified against provider billing pages.
 Models are matched by the short name after the provider prefix
-(e.g. "moonshot/kimi-k2-turbo-preview" → "kimi-k2-turbo-preview").
+(e.g. "moonshot/kimi-k2.6" → "kimi-k2.6").
+
+Sources (checked 2026-05-01):
+  Moonshot: https://platform.moonshot.ai/docs/pricing
+  DeepSeek:  https://api-docs.deepseek.com/quick_start/pricing
 """
 
 from __future__ import annotations
 
 # {model_short_name: {input_usd_per_1m, output_usd_per_1m}}
 _PRICING: dict[str, dict[str, float]] = {
+    # ── Moonshot / Kimi ──────────────────────────────────────────────────────
+    "kimi-k2.6":             {"input": 0.60, "output": 2.50},
+    "kimi-k2.5":             {"input": 0.60, "output": 2.50},
     "kimi-k2-turbo-preview": {"input": 0.60, "output": 2.50},
     "kimi-k2-0711-preview":  {"input": 0.60, "output": 2.50},
-    "deepseek-chat":         {"input": 0.27, "output": 1.10},
-    "deepseek-reasoner":     {"input": 0.55, "output": 2.19},
+
+    # ── DeepSeek ─────────────────────────────────────────────────────────────
+    # deepseek-v4-pro: 75% discount active until 2026-05-31 ($1.74/$3.48 after)
+    "deepseek-v4-pro":       {"input": 0.435, "output": 0.87},
+    "deepseek-v4-flash":     {"input": 0.14,  "output": 0.28},
+    "deepseek-chat":         {"input": 0.14,  "output": 0.28},  # aliases to v4-flash
+    "deepseek-reasoner":     {"input": 0.55,  "output": 2.19},  # deepseek-r1
 }
 _DEFAULT = {"input": 0.50, "output": 1.50}
 

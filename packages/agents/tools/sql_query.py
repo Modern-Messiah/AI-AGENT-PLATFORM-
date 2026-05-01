@@ -72,15 +72,34 @@ def register_sql_tool(agent: Agent[AgentDeps, object]) -> None:
     async def sql_query(ctx: RunContext[AgentDeps], query: str) -> list[dict]:
         """Run a read-only SELECT against the platform database.
 
-        Use this to look up document metadata or chunk statistics for the
-        current tenant. Only SELECT statements are allowed.
+        Use this to look up document metadata or chunk content for the current tenant.
+        Only SELECT statements are allowed. Results are capped at 500 rows.
 
         Write {tenant_id} as a literal placeholder — it is replaced safely
-        with the current tenant's id. Example:
-          SELECT id, filename, status FROM documents WHERE tenant_id = '{tenant_id}'
+        with the current tenant's id.
 
-        Allowed tables: documents, chunks, chat_sessions, chat_messages.
-        Results are capped at 500 rows.
+        Schema:
+          documents(id, tenant_id, filename, mime_type, object_key,
+                    status, error, created_at, updated_at)
+            status values: pending | processing | ready | error
+
+          chunks(id, document_id, tenant_id, chunk_idx,
+                 content, metadata, created_at)
+            document_id references documents.id
+            content — the raw text of the chunk
+
+          chat_sessions(id, tenant_id, title, model, created_at, updated_at)
+
+          chat_messages(id, session_id, tenant_id, role, content,
+                        sources, cached, created_at)
+            session_id references chat_sessions.id
+            role values: user | assistant
+
+        Example queries:
+          SELECT id, filename, status FROM documents WHERE tenant_id = '{tenant_id}'
+          SELECT d.filename, c.chunk_idx, c.content
+            FROM chunks c JOIN documents d ON d.id = c.document_id
+            WHERE c.tenant_id = '{tenant_id}' LIMIT 20
 
         Args:
             query: A SQL SELECT statement using {tenant_id} where needed.
@@ -123,8 +142,11 @@ def register_sql_tool(agent: Agent[AgentDeps, object]) -> None:
         if not re.search(r"\bLIMIT\b", stripped, re.IGNORECASE):
             safe_query = safe_query.rstrip().rstrip(";") + f" LIMIT {_MAX_ROWS}"
 
-        async with tenant_session(ctx.deps.tenant_id) as session:
-            await session.execute(sa.text("SET TRANSACTION READ ONLY"))
-            await session.execute(sa.text("SET LOCAL statement_timeout = '5000'"))
-            rows = (await session.execute(sa.text(safe_query))).mappings().all()
-            return [dict(r) for r in rows]
+        try:
+            async with tenant_session(ctx.deps.tenant_id) as session:
+                await session.execute(sa.text("SET TRANSACTION READ ONLY"))
+                await session.execute(sa.text("SET LOCAL statement_timeout = '5000'"))
+                rows = (await session.execute(sa.text(safe_query))).mappings().all()
+                return [dict(r) for r in rows]
+        except Exception as exc:
+            return [{"error": f"SQL execution failed: {exc}"}]

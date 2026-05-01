@@ -113,6 +113,7 @@ def build_model(model_name: str | None = None) -> OpenAIModel:
             ("https://api.openai.com/v1", ""),
         )
     else:
+        provider_key = ""
         model_id = full_name
         base_url, api_key = "https://api.openai.com/v1", ""
 
