@@ -43,7 +43,7 @@
         <div class="msg-avatar"><AppIcon :name="msg.role" /></div>
         <div class="msg-body">
           <div class="msg-bubble" :style="msg.error ? { borderColor: 'var(--red)' } : {}">
-            {{ msg.text }}
+            {{ msg.text }}<span v-if="msg.streaming" class="streaming-cursor">▋</span>
           </div>
           <div class="msg-meta">
             <span class="msg-time">{{ msg.time }}</span>
@@ -88,5 +88,17 @@ async function scrollToBottom() {
   }
 }
 
-watch([() => chat.messages.length, () => chat.loading], scrollToBottom)
+watch([() => chat.messages.length, () => chat.loading, () => chat.streamTick], scrollToBottom)
 </script>
+
+<style scoped>
+.streaming-cursor {
+  display: inline-block;
+  margin-left: 1px;
+  animation: blink 0.8s step-end infinite;
+}
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0; }
+}
+</style>

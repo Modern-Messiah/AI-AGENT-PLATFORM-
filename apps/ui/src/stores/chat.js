@@ -19,6 +19,9 @@ export const useChatStore = defineStore('chat', () => {
   const messages = ref([])
   const loading = ref(false)
   const sessLoading = ref(false)
+  const loadedKey = ref(null)
+  const streamTick = ref(0)  // incremented on each streaming token to trigger scroll
+  let activeStreamController = null
 
   // sessId → [{ workflowId, time }, ...]  (array to support multiple pending workflows per session)
   // Persisted to localStorage so pending HITL cards survive page refresh.
@@ -50,7 +53,20 @@ export const useChatStore = defineStore('chat', () => {
     _savePendingHitl()
   }
 
-  async function loadSessions() {
+  function reset() {
+    if (activeStreamController) {
+      activeStreamController.abort()
+      activeStreamController = null
+    }
+    sessions.value = []
+    activeId.value = null
+    messages.value = []
+    loading.value = false
+    sessLoading.value = false
+    loadedKey.value = null
+  }
+
+  async function loadSessions(apiKey = null) {
     const { apiFetch } = useApi()
     sessions.value = []
     activeId.value = null
@@ -62,6 +78,7 @@ export const useChatStore = defineStore('chat', () => {
       if (data.length > 0) await selectSession(data[0].id)
     } finally {
       sessLoading.value = false
+      loadedKey.value = apiKey
     }
   }
 
@@ -125,7 +142,7 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   async function sendMessage(query, model, requireApproval = false) {
-    const { apiFetch } = useApi()
+    const { apiFetch, apiStreamFetch } = useApi()
     if (!query.trim() || loading.value) return null
 
     let sessId = activeId.value
@@ -162,48 +179,159 @@ export const useChatStore = defineStore('chat', () => {
       }).catch(e => console.error('Failed to update session title:', e))
     }
 
-    try {
-      const data = await apiFetch('/agent/run', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_query: query, model, require_approval: requireApproval })
-      })
-      loading.value = false
-
-      if (data.pending_approval) {
-        // Always register in pendingHitl first — this is the durable record that lets
-        // selectSession re-inject the card if the user switches sessions and comes back.
-        const pending = pendingHitl.value.get(sessId) || []
-        pending.push({ workflowId: data.workflow_id, time: nowTime() })
-        pendingHitl.value.set(sessId, pending)
-        _savePendingHitl()
-        // Only render the card immediately if the user is still in this session.
-        if (activeId.value === sessId) {
-          messages.value.push({ id: 'h' + Date.now(), role: 'hitl', time: nowTime(), workflowId: data.workflow_id, sessId })
+    // ── HITL path — uses Temporal workflow ──────────────────────────────────
+    if (requireApproval) {
+      try {
+        const data = await apiFetch('/agent/run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user_query: query, model, require_approval: true })
+        })
+        loading.value = false
+        if (data.pending_approval) {
+          const pending = pendingHitl.value.get(sessId) || []
+          pending.push({ workflowId: data.workflow_id, time: nowTime() })
+          pendingHitl.value.set(sessId, pending)
+          _savePendingHitl()
+          if (activeId.value === sessId) {
+            messages.value.push({ id: 'h' + Date.now(), role: 'hitl', time: nowTime(), workflowId: data.workflow_id, sessId })
+          }
         }
         return null
+      } catch (e) {
+        loading.value = false
+        if (activeId.value === sessId) {
+          messages.value.push({ id: 'e' + Date.now(), role: 'agent', text: `Ошибка: ${e.message}`, time: nowTime(), sources: [], error: true })
+        }
+        throw e
       }
+    }
 
-      const agentMsg = {
-        id: 'a' + Date.now(), role: 'agent', text: data.answer,
-        time: nowTime(), sources: data.sources || [], cached: data.cached || false
-      }
-      // Persist to the originating session regardless of which session is currently active.
-      apiFetch(`/sessions/${sessId}/messages`, {
+    // ── Streaming path ───────────────────────────────────────────────────────
+    let streamMsg = null
+    const streamController = new AbortController()
+    activeStreamController = streamController
+    try {
+      const response = await apiStreamFetch('/agent/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ role: 'agent', content: data.answer, sources: data.sources || [], cached: data.cached || false })
-      }).catch(e => console.error('Failed to persist agent message:', e))
-      // Only push into the visible messages list if the user hasn't switched sessions.
-      if (activeId.value === sessId) messages.value.push(agentMsg)
-      return agentMsg
+        body: JSON.stringify({ user_query: query, model }),
+        signal: streamController.signal,
+      })
+
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const parts = buffer.split('\n\n')
+        buffer = parts.pop() ?? ''
+
+        for (const part of parts) {
+          if (!part.startsWith('data: ')) continue
+          let event
+          try { event = JSON.parse(part.slice(6)) } catch { continue }
+
+          if (event.type === 'token') {
+            if (!streamMsg) {
+              // First token: create message, hide typing indicator
+              streamMsg = { id: 'a' + Date.now(), role: 'agent', text: '', time: nowTime(), sources: [], cached: false, streaming: true }
+              if (activeId.value === sessId) messages.value.push(streamMsg)
+              loading.value = false
+            }
+            if (activeId.value === sessId) {
+              let idx = messages.value.findIndex(m => m.id === streamMsg.id)
+              if (idx === -1) {
+                messages.value.push(streamMsg)
+                idx = messages.value.length - 1
+              }
+              if (idx !== -1) {
+                messages.value[idx].text += event.content
+                streamTick.value++
+              }
+            }
+
+          } else if (event.type === 'done') {
+            if (activeStreamController === streamController) activeStreamController = null
+            loading.value = false
+            if (activeId.value === sessId) {
+              if (streamMsg) {
+                const idx = messages.value.findIndex(m => m.id === streamMsg.id)
+                if (idx !== -1) {
+                  messages.value[idx] = { ...messages.value[idx], text: event.answer, sources: event.sources || [], cached: event.cached || false, streaming: false }
+                } else {
+                  messages.value.push({
+                    ...streamMsg,
+                    text: event.answer,
+                    sources: event.sources || [],
+                    cached: event.cached || false,
+                    streaming: false
+                  })
+                }
+              } else {
+                // Cache hit — full answer in one shot
+                streamMsg = { id: 'a' + Date.now(), role: 'agent', text: event.answer, time: nowTime(), sources: event.sources || [], cached: event.cached || false, streaming: false }
+                messages.value.push(streamMsg)
+              }
+            }
+            apiFetch(`/sessions/${sessId}/messages`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ role: 'agent', content: event.answer, sources: event.sources || [], cached: event.cached || false })
+            }).catch(e => console.error('Failed to persist agent message:', e))
+            return streamMsg
+
+          } else if (event.type === 'error') {
+            if (activeStreamController === streamController) activeStreamController = null
+            loading.value = false
+            const errMsg = { id: 'e' + Date.now(), role: 'agent', text: `Ошибка: ${event.message}`, time: nowTime(), sources: [], error: true }
+            if (activeId.value === sessId) {
+              if (streamMsg) {
+                const idx = messages.value.findIndex(m => m.id === streamMsg.id)
+                if (idx !== -1) messages.value[idx] = errMsg
+                else messages.value.push(errMsg)
+              } else {
+                messages.value.push(errMsg)
+              }
+            }
+            return null
+          }
+        }
+      }
     } catch (e) {
+      if (activeStreamController === streamController) activeStreamController = null
       loading.value = false
+      if (e?.name === 'AbortError') return null
+      const errMsg = { id: 'e' + Date.now(), role: 'agent', text: `Ошибка: ${e.message}`, time: nowTime(), sources: [], error: true }
       if (activeId.value === sessId) {
-        messages.value.push({ id: 'e' + Date.now(), role: 'agent', text: `Ошибка: ${e.message}`, time: nowTime(), sources: [], error: true })
+        if (streamMsg) {
+          const idx = messages.value.findIndex(m => m.id === streamMsg.id)
+          if (idx !== -1) messages.value[idx] = errMsg
+          else messages.value.push(errMsg)
+        } else {
+          messages.value.push(errMsg)
+        }
       }
       throw e
     }
+    return streamMsg
+  }
+
+  function cancelStreaming(options = {}) {
+    const { removePartial = false } = options
+    if (activeStreamController) {
+      activeStreamController.abort()
+      activeStreamController = null
+    }
+    loading.value = false
+    if (removePartial) {
+      messages.value = messages.value.filter(m => !m.streaming)
+      return
+    }
+    messages.value = messages.value.map(m => m.streaming ? { ...m, streaming: false } : m)
   }
 
   async function approveHitl(workflowId) {
@@ -274,8 +402,8 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   return {
-    sessions, activeId, messages, loading, sessLoading,
-    loadSessions, selectSession, newChat, deleteSession,
-    sendMessage, approveHitl, rejectHitl
+    sessions, activeId, messages, loading, sessLoading, loadedKey, streamTick,
+    reset, loadSessions, selectSession, newChat, deleteSession,
+    sendMessage, cancelStreaming, approveHitl, rejectHitl
   }
 })

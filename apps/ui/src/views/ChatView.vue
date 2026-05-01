@@ -32,8 +32,9 @@ const toast = ref(null)
 function setToast(t) { toast.value = t }
 
 watch(() => settings.apiKey, async (key) => {
-  if (!key) { chat.sessions = []; chat.activeId = null; chat.messages = []; return }
-  try { await chat.loadSessions() } catch {}
+  if (!key) { chat.reset(); return }
+  if (chat.loadedKey === key && (chat.sessions.length || chat.activeId)) return
+  try { await chat.loadSessions(key) } catch {}
 }, { immediate: true })
 
 async function handleSend(query) {

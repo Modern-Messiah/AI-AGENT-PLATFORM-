@@ -20,15 +20,21 @@ Endpoints:
 from __future__ import annotations
 
 import asyncio
+import json
+import logging
+import re
+import time
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from functools import lru_cache
 from typing import Annotated, AsyncIterator
 
 from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy import func, select, update
+from starlette.responses import StreamingResponse
 from temporalio.client import Client
 from temporalio.service import RPCError
 
@@ -36,9 +42,17 @@ from apps.worker.activities.ingestion import IngestionInput
 from apps.worker.workflows.agent_run import AgentRunWorkflow
 from apps.worker.workflows.ingestion import IngestionWorkflow
 from apps.worker.workflows.multi_step import MultiStepResearchWorkflow
-from packages.agents import AgentRunInput, AgentRunOutput, MultiStepResearchInput
+from packages.agents import (
+    AgentDeps,
+    AgentRunInput,
+    AgentRunOutput,
+    MultiStepResearchInput,
+    build_research_agent,
+)
 from packages.analytics.clickhouse import ch_client
+from packages.analytics.events import UsageEvent, record_usage
 from packages.auth import generate_key, require_tenant
+from packages.cache.semantic import semantic_cache
 from packages.core import settings
 from packages.core.tenant_utils import check_workflow_tenant
 from packages.observability import setup_tracing
@@ -47,6 +61,44 @@ from packages.storage import (
     async_session, object_store,
 )
 from packages.storage.db import tenant_session
+
+log = logging.getLogger(__name__)
+
+
+@lru_cache(maxsize=8)
+def _get_streaming_agent(model_name: str | None):  # type: ignore[return]
+    return build_research_agent(model_name=model_name)
+
+
+_PARTIAL_ANSWER_RE = re.compile(r'"answer"\s*:\s*"((?:\\.|[^"\\])*)')
+
+
+def _extract_partial_answer(parts: list[object]) -> str | None:
+    """Read the progressively streamed `answer` from the final_result tool args."""
+    for part in parts:
+        if getattr(part, "tool_name", None) != "final_result":
+            continue
+
+        args = getattr(part, "args", "")
+        if not isinstance(args, str):
+            continue
+
+        match = _PARTIAL_ANSWER_RE.search(args)
+        if match is None:
+            continue
+
+        raw = match.group(1)
+        try:
+            return json.loads(f'"{raw}"')
+        except json.JSONDecodeError:
+            return (
+                raw
+                .replace("\\n", "\n")
+                .replace("\\t", "\t")
+                .replace('\\"', '"')
+                .replace("\\\\", "\\")
+            )
+    return None
 
 TenantID = Annotated[str, Depends(require_tenant)]
 
@@ -273,6 +325,101 @@ async def run_agent(payload: AgentRunInput, tenant_id: TenantID) -> AgentRunApiR
         )
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+class AgentStreamRequest(BaseModel):
+    user_query: str
+    model: str | None = None
+
+
+@app.post("/agent/stream")
+async def agent_stream(body: AgentStreamRequest, tenant_id: TenantID) -> StreamingResponse:
+    """SSE streaming agent — bypasses Temporal for interactive chat."""
+
+    async def generate() -> AsyncIterator[str]:
+        # Semantic cache — instant reply if hit
+        try:
+            cached = await semantic_cache.get(body.user_query, tenant_id)
+        except Exception:
+            cached = None
+
+        if cached is not None:
+            yield f"data: {json.dumps({'type': 'token', 'content': cached.answer})}\n\n"
+            yield f"data: {json.dumps({'type': 'done', 'answer': cached.answer, 'sources': cached.sources, 'confidence': cached.confidence, 'cached': True})}\n\n"
+            return
+
+        model_name = body.model or settings.strong_model
+        agent = _get_streaming_agent(model_name)
+        deps = AgentDeps(tenant_id=tenant_id)
+
+        t0 = time.monotonic()
+        try:
+            async with agent.run_stream(body.user_query, deps=deps) as result:
+                streamed_answer = ""
+                async for message, _is_last in result.stream_structured(debounce_by=None):
+                    partial_answer = _extract_partial_answer(message.parts)
+                    if partial_answer is None:
+                        continue
+
+                    delta = (
+                        partial_answer[len(streamed_answer):]
+                        if partial_answer.startswith(streamed_answer)
+                        else partial_answer
+                    )
+                    streamed_answer = partial_answer
+                    if delta:
+                        yield f"data: {json.dumps({'type': 'token', 'content': delta})}\n\n"
+
+                output = await result.get_data()
+                output = output.model_copy(update={
+                    "sources": list(dict.fromkeys([*output.sources, *deps.sources])),
+                    "cached": False,
+                })
+                answer = output.answer
+                if answer and answer != streamed_answer:
+                    delta = answer[len(streamed_answer):] if answer.startswith(streamed_answer) else answer
+                    if delta:
+                        yield f"data: {json.dumps({'type': 'token', 'content': delta})}\n\n"
+
+                latency_ms = int((time.monotonic() - t0) * 1000)
+                usage = result.usage()
+
+                yield (
+                    "data: "
+                    f"{json.dumps({'type': 'done', 'answer': output.answer, 'sources': output.sources, 'confidence': output.confidence, 'cached': False})}\n\n"
+                )
+
+                try:
+                    await record_usage(UsageEvent(
+                        tenant_id=tenant_id,
+                        workflow_id=f"stream-{uuid.uuid4().hex[:12]}",
+                        run_id=f"stream-{uuid.uuid4().hex[:12]}",
+                        model=model_name,
+                        prompt_tokens=usage.request_tokens or 0,
+                        completion_tokens=usage.response_tokens or 0,
+                        latency_ms=latency_ms,
+                    ))
+                except Exception:
+                    pass
+
+                try:
+                    await semantic_cache.set(body.user_query, tenant_id, output)
+                except Exception:
+                    pass
+
+        except Exception as exc:
+            log.exception("agent_stream error | tenant=%s", tenant_id)
+            yield f"data: {json.dumps({'type': 'error', 'message': str(exc)})}\n\n"
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @app.post("/agent/research", response_model=AgentRunOutput)

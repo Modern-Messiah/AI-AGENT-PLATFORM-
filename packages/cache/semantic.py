@@ -70,6 +70,11 @@ class SemanticCache:
                 expired.append(eid)
                 continue
             data = json.loads(raw)
+            result_data = data.get("result") or {}
+            answer = result_data.get("answer")
+            if not isinstance(answer, str) or not answer.strip():
+                expired.append(eid)
+                continue
             cached_vec = np.array(data["vec"], dtype=np.float32)
             sim = float(
                 np.dot(query_vec, cached_vec)
@@ -77,7 +82,7 @@ class SemanticCache:
             )
             if sim > best_sim:
                 best_sim = sim
-                best_result = AgentRunOutput(**data["result"])
+                best_result = AgentRunOutput(**result_data)
 
         # Clean up expired ids from the index (fire-and-forget).
         if expired:
@@ -88,6 +93,10 @@ class SemanticCache:
         return best_result
 
     async def set(self, query: str, tenant_id: str, result: AgentRunOutput) -> None:
+        if not result.answer.strip():
+            log.warning("semantic cache skip empty answer | tenant=%s", tenant_id)
+            return
+
         r = get_redis()
         vec = np.array((await embed_texts([query]))[0], dtype=np.float32)
         entry_id = str(uuid.uuid4())

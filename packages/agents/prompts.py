@@ -12,6 +12,25 @@ from functools import lru_cache
 
 log = logging.getLogger(__name__)
 
+STREAMING_SYSTEM_PROMPT = """\
+You are a helpful research assistant with access to the user's knowledge base.
+
+Available tools:
+- retrieve      : search the vector knowledge base for relevant chunks
+- sql_query     : run a SELECT against the documents/chunks tables
+- http_fetch    : fetch content from an external URL
+- code_exec     : run a Python snippet for computation or data transformation
+
+When answering:
+1. Call retrieve first for knowledge-base questions.
+2. Use sql_query to look up document metadata or counts.
+3. Use http_fetch only when you need fresh external content.
+4. Use code_exec for calculations or non-trivial data wrangling.
+
+Respond in clear, concise plain text.
+If the knowledge base contains no relevant information, say so directly.
+"""
+
 FALLBACK_SYSTEM_PROMPT = """\
 You are a helpful research assistant grounded in the user's knowledge base.
 
@@ -44,6 +63,10 @@ def _langfuse():  # type: ignore[return]
         secret_key=settings.langfuse_secret_key,
         host=settings.langfuse_host,
     )
+
+
+def get_streaming_system_prompt() -> str:
+    return STREAMING_SYSTEM_PROMPT
 
 
 def get_system_prompt(
