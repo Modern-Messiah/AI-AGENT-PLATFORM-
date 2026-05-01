@@ -18,6 +18,7 @@ export const useChatStore = defineStore('chat', () => {
   const activeId = ref(null)
   const messages = ref([])
   const loading = ref(false)
+  const loadingSessionId = ref(null)
   const sessLoading = ref(false)
   const loadedKey = ref(null)
   const streamTick = ref(0)  // incremented on each streaming token to trigger scroll
@@ -62,8 +63,25 @@ export const useChatStore = defineStore('chat', () => {
     activeId.value = null
     messages.value = []
     loading.value = false
+    loadingSessionId.value = null
     sessLoading.value = false
     loadedKey.value = null
+  }
+
+  function _startLoading(sessId) {
+    loading.value = true
+    loadingSessionId.value = sessId
+  }
+
+  function _stopLoading(sessId = null) {
+    if (sessId === null || loadingSessionId.value === sessId) {
+      loading.value = false
+      loadingSessionId.value = null
+    }
+  }
+
+  function isActiveSessionLoading() {
+    return loading.value && loadingSessionId.value === activeId.value
   }
 
   async function loadSessions(apiKey = null) {
@@ -159,7 +177,7 @@ export const useChatStore = defineStore('chat', () => {
 
     const userMsg = { id: 'u' + Date.now(), role: 'user', text: query, time: nowTime(), sources: [] }
     messages.value = messages.value.filter(x => x.id !== 'w').concat(userMsg)
-    loading.value = true
+    _startLoading(sessId)
 
     apiFetch(`/sessions/${sessId}/messages`, {
       method: 'POST',
@@ -187,7 +205,7 @@ export const useChatStore = defineStore('chat', () => {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ user_query: query, model, require_approval: true })
         })
-        loading.value = false
+        _stopLoading(sessId)
         if (data.pending_approval) {
           const pending = pendingHitl.value.get(sessId) || []
           pending.push({ workflowId: data.workflow_id, time: nowTime() })
@@ -199,7 +217,7 @@ export const useChatStore = defineStore('chat', () => {
         }
         return null
       } catch (e) {
-        loading.value = false
+        _stopLoading(sessId)
         if (activeId.value === sessId) {
           messages.value.push({ id: 'e' + Date.now(), role: 'agent', text: `Ошибка: ${e.message}`, time: nowTime(), sources: [], error: true })
         }
@@ -240,7 +258,7 @@ export const useChatStore = defineStore('chat', () => {
               // First token: create message, hide typing indicator
               streamMsg = { id: 'a' + Date.now(), role: 'agent', text: '', time: nowTime(), sources: [], cached: false, streaming: true }
               if (activeId.value === sessId) messages.value.push(streamMsg)
-              loading.value = false
+              _stopLoading(sessId)
             }
             if (activeId.value === sessId) {
               let idx = messages.value.findIndex(m => m.id === streamMsg.id)
@@ -256,7 +274,7 @@ export const useChatStore = defineStore('chat', () => {
 
           } else if (event.type === 'done') {
             if (activeStreamController === streamController) activeStreamController = null
-            loading.value = false
+            _stopLoading(sessId)
             if (activeId.value === sessId) {
               if (streamMsg) {
                 const idx = messages.value.findIndex(m => m.id === streamMsg.id)
@@ -286,7 +304,7 @@ export const useChatStore = defineStore('chat', () => {
 
           } else if (event.type === 'error') {
             if (activeStreamController === streamController) activeStreamController = null
-            loading.value = false
+            _stopLoading(sessId)
             const errMsg = { id: 'e' + Date.now(), role: 'agent', text: `Ошибка: ${event.message}`, time: nowTime(), sources: [], error: true }
             if (activeId.value === sessId) {
               if (streamMsg) {
@@ -303,7 +321,7 @@ export const useChatStore = defineStore('chat', () => {
       }
     } catch (e) {
       if (activeStreamController === streamController) activeStreamController = null
-      loading.value = false
+      _stopLoading(sessId)
       if (e?.name === 'AbortError') return null
       const errMsg = { id: 'e' + Date.now(), role: 'agent', text: `Ошибка: ${e.message}`, time: nowTime(), sources: [], error: true }
       if (activeId.value === sessId) {
@@ -326,7 +344,7 @@ export const useChatStore = defineStore('chat', () => {
       activeStreamController.abort()
       activeStreamController = null
     }
-    loading.value = false
+    _stopLoading()
     if (removePartial) {
       messages.value = messages.value.filter(m => !m.streaming)
       return
@@ -402,8 +420,8 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   return {
-    sessions, activeId, messages, loading, sessLoading, loadedKey, streamTick,
+    sessions, activeId, messages, loading, loadingSessionId, sessLoading, loadedKey, streamTick,
     reset, loadSessions, selectSession, newChat, deleteSession,
-    sendMessage, cancelStreaming, approveHitl, rejectHitl
+    sendMessage, cancelStreaming, isActiveSessionLoading, approveHitl, rejectHitl
   }
 })

@@ -57,7 +57,7 @@
     </template>
 
     <!-- Typing indicator -->
-    <div v-if="chat.loading" class="msg agent">
+    <div v-if="chat.isActiveSessionLoading()" class="msg agent">
       <div class="msg-avatar"><AppIcon name="agent" /></div>
       <div class="msg-body">
         <div class="typing-bubble">
@@ -88,7 +88,7 @@ async function scrollToBottom() {
   }
 }
 
-watch([() => chat.messages.length, () => chat.loading, () => chat.streamTick], scrollToBottom)
+watch([() => chat.messages.length, () => chat.isActiveSessionLoading(), () => chat.streamTick], scrollToBottom)
 </script>
 
 <style scoped>

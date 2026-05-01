@@ -232,6 +232,9 @@ services:
       ADMIN_SECRET: ${ADMIN_SECRET:-change-me-before-deploy}
       APP_ENV: ${APP_ENV:-local}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      FASTEMBED_CACHE_PATH: /fastembed_cache
+    volumes:
+      - fastembed_cache:/fastembed_cache
     ports:
       - "8000:8000"
     command: uvicorn apps.api.main:app --host 0.0.0.0 --port 8000
