@@ -56,6 +56,8 @@ async def parse_document(input: IngestionInput) -> ParsedDoc:
 @activity.defn
 async def chunk_and_embed(parsed: ParsedDoc) -> ChunkBatch:
     contents = chunk_text(parsed.text)
+    if not contents:
+        raise ValueError("document contains no extractable text")
     embeddings = await embed_texts(contents)
     return ChunkBatch(contents=contents, embeddings=embeddings)
 

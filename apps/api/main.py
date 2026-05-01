@@ -428,17 +428,26 @@ async def upload_document(
         ))
 
     client: Client = app.state.temporal
-    await client.start_workflow(
-        IngestionWorkflow.run,
-        IngestionInput(
-            document_id=str(document_id),
-            tenant_id=tenant_id,
-            object_key=object_key,
-            filename=file.filename or "unnamed",
-        ),
-        id=f"ingest-{tenant_id}-{document_id}",
-        task_queue=settings.temporal_task_queue,
-    )
+    try:
+        await client.start_workflow(
+            IngestionWorkflow.run,
+            IngestionInput(
+                document_id=str(document_id),
+                tenant_id=tenant_id,
+                object_key=object_key,
+                filename=file.filename or "unnamed",
+            ),
+            id=f"ingest-{tenant_id}-{document_id}",
+            task_queue=settings.temporal_task_queue,
+        )
+    except Exception as e:
+        async with tenant_session(tenant_id) as s:
+            await s.execute(
+                update(Document)
+                .where(Document.id == document_id)
+                .values(status=DocumentStatus.failed, error="Failed to start ingestion workflow")
+            )
+        raise HTTPException(status_code=503, detail="ingestion service unavailable") from e
 
     return DocumentResponse(
         id=str(document_id),
@@ -509,17 +518,25 @@ async def upload_documents_bulk(
                 object_key=object_key,
                 status=DocumentStatus.pending,
             ))
-        await client.start_workflow(
-            IngestionWorkflow.run,
-            IngestionInput(
-                document_id=str(document_id),
-                tenant_id=tenant_id,
-                object_key=object_key,
-                filename=file.filename or "unnamed",
-            ),
-            id=f"ingest-{tenant_id}-{document_id}",
-            task_queue=settings.temporal_task_queue,
-        )
+        try:
+            await client.start_workflow(
+                IngestionWorkflow.run,
+                IngestionInput(
+                    document_id=str(document_id),
+                    tenant_id=tenant_id,
+                    object_key=object_key,
+                    filename=file.filename or "unnamed",
+                ),
+                id=f"ingest-{tenant_id}-{document_id}",
+                task_queue=settings.temporal_task_queue,
+            )
+        except Exception:
+            async with tenant_session(tenant_id) as s:
+                await s.execute(
+                    update(Document)
+                    .where(Document.id == document_id)
+                    .values(status=DocumentStatus.failed, error="Failed to start ingestion workflow")
+                )
         responses.append(DocumentResponse(
             id=str(document_id),
             tenant_id=tenant_id,
@@ -547,6 +564,19 @@ async def get_document(document_id: uuid.UUID, tenant_id: TenantID) -> DocumentR
         status=doc.status,
         error=doc.error,
     )
+
+
+@app.delete("/documents/{document_id}", status_code=204)
+async def delete_document(document_id: uuid.UUID, tenant_id: TenantID) -> None:
+    async with tenant_session(tenant_id) as s:
+        doc = (
+            await s.execute(
+                select(Document).where(Document.id == document_id, Document.tenant_id == tenant_id)
+            )
+        ).scalar_one_or_none()
+        if doc is None:
+            raise HTTPException(status_code=404, detail="document not found")
+        await s.delete(doc)  # CASCADE deletes chunks via FK ondelete="CASCADE"
 
 
 # ── Chat sessions ─────────────────────────────────────────────────────────────

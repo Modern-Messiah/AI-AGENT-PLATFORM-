@@ -17,13 +17,8 @@ _md = MarkItDown()
 
 
 def _parse_pdf(data: bytes) -> str:
-    doc = fitz.open(stream=data, filetype="pdf")
-    pages = []
-    for page in doc:
-        text = page.get_text("text").strip()
-        if text:
-            pages.append(text)
-    doc.close()
+    with fitz.open(stream=data, filetype="pdf") as doc:
+        pages = [page.get_text("text").strip() for page in doc if page.get_text("text").strip()]
     if not pages:
         raise ValueError(
             "PDF не содержит текстового слоя — возможно, отсканирован или защищён"
