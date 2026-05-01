@@ -5,7 +5,7 @@ description = "Durable AI agents on PydanticAI + Temporal with Bifrost gateway a
 requires-python = ">=3.12"
 dependencies = [
     # Agent framework
-    "pydantic-ai>=0.0.55",
+    "pydantic-ai>=0.0.55,<0.1",
     "pydantic>=2.9",
     "pydantic-settings>=2.5",
 
@@ -22,7 +22,7 @@ dependencies = [
     "openai>=1.50",
 
     # Observability — Langfuse + OpenTelemetry
-    "langfuse>=2.50",
+    "langfuse>=2.50,<3",
     "opentelemetry-api>=1.27",
     "opentelemetry-sdk>=1.27",
     "opentelemetry-exporter-otlp-proto-http>=1.27",
@@ -39,7 +39,7 @@ dependencies = [
 
     # RAG
     "fastembed>=0.4",
-    "markitdown>=0.0.1",
+    "markitdown>=0.0.1,<0.1",
     "pymupdf>=1.24",
     "langchain-text-splitters>=0.3",
 
