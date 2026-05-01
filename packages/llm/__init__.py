@@ -1,3 +1,3 @@
-from packages.llm.client import build_model
+from packages.llm.client import ChatStreamEvent, build_model, stream_chat_text
 
-__all__ = ["build_model"]
+__all__ = ["ChatStreamEvent", "build_model", "stream_chat_text"]

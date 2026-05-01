@@ -26,8 +26,10 @@ async def retrieve_chunks(
     query: str,
     tenant_id: str,
     k: int | None = None,
+    max_distance: float | None = None,
 ) -> list[RetrievedChunk]:
     k = k or settings.retrieval_top_k
+    max_distance = settings.retrieval_max_distance if max_distance is None else max_distance
     [query_vec] = await embed_texts([query])
 
     async with tenant_session(tenant_id) as session:
@@ -40,6 +42,8 @@ async def retrieve_chunks(
             .order_by(distance)
             .limit(k)
         )
+        if max_distance > 0:
+            stmt = stmt.where(distance <= max_distance)
         rows = (await session.execute(stmt)).all()
 
     return [

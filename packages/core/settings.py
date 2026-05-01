@@ -46,6 +46,14 @@ class Settings(BaseSettings):
     chunk_size: int = 2000
     chunk_overlap: int = 200
     retrieval_top_k: int = 5
+    retrieval_max_distance: float = 0.75
+    fast_rag_top_k: int = 3
+    fast_rag_context_max_chars: int = 8_000
+
+    # Interactive agent guardrails.
+    agent_query_max_chars: int = 12_000
+    agent_rate_limit_per_minute: int = 20
+    llm_timeout_seconds: float = 60.0
 
     # Log a WARNING when a single LLM call costs more than this amount.
     budget_alert_usd_per_call: float = 0.10

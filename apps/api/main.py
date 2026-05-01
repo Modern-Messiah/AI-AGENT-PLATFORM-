@@ -53,15 +53,20 @@ from packages.analytics.clickhouse import ch_client
 from packages.analytics.events import UsageEvent, record_usage
 from packages.auth import generate_key, require_tenant
 from packages.cache.semantic import semantic_cache
+from packages.cache.redis import get_redis
 from packages.core import settings
 from packages.core.tenant_utils import check_workflow_tenant
+from packages.llm import stream_chat_text
 from packages.observability import setup_tracing
+from packages.rag.embedder import embed_texts
+from packages.rag.retriever import RetrievedChunk, retrieve_chunks
 from packages.storage import (
     ApiKey, ChatMessage, ChatSession, Chunk, Document, DocumentStatus,
     async_session, object_store,
 )
 from packages.storage.db import tenant_session
 
+logging.basicConfig(level=settings.log_level)
 log = logging.getLogger(__name__)
 
 
@@ -99,6 +104,81 @@ def _extract_partial_answer(parts: list[object]) -> str | None:
                 .replace("\\\\", "\\")
             )
     return None
+
+
+def _build_fast_rag_messages(query: str, chunks: list[RetrievedChunk]) -> list[dict[str, str]]:
+    context_parts: list[str] = []
+    used_chars = 0
+    for i, chunk in enumerate(chunks, 1):
+        header = f"[{i}] {chunk.filename} (score={chunk.score:.3f})\n"
+        content = chunk.content.strip()
+        remaining = settings.fast_rag_context_max_chars - used_chars - len(header)
+        if remaining <= 0:
+            break
+        if len(content) > remaining:
+            content = content[:remaining].rsplit(" ", 1)[0].strip()
+        block = f"{header}{content}"
+        context_parts.append(block)
+        used_chars += len(block)
+
+    context = "\n\n---\n\n".join(context_parts)
+    return [
+        {
+            "role": "system",
+            "content": (
+                "You are a concise research assistant. Answer only from the provided "
+                "knowledge-base context. If the context does not contain enough "
+                "information, say that directly. Do not invent facts or filenames."
+            ),
+        },
+        {
+            "role": "user",
+            "content": (
+                f"Question:\n{query}\n\n"
+                f"Knowledge-base context:\n{context}\n\n"
+                "Answer in the user's language. Keep it clear and practical."
+            ),
+        },
+    ]
+
+
+def _validate_agent_query(query: str) -> str:
+    query = query.strip()
+    if not query:
+        raise HTTPException(status_code=400, detail="user_query must not be empty")
+    if len(query) > settings.agent_query_max_chars:
+        raise HTTPException(
+            status_code=413,
+            detail=f"user_query exceeds {settings.agent_query_max_chars} character limit",
+        )
+    return query
+
+
+async def _enforce_agent_limits(tenant_id: str, query: str, route: str) -> str:
+    query = _validate_agent_query(query)
+    limit = settings.agent_rate_limit_per_minute
+    if limit <= 0:
+        return query
+
+    now = int(time.time())
+    retry_after = 60 - (now % 60)
+    key = f"rl:{tenant_id}:agent:{now // 60}"
+    try:
+        r = get_redis()
+        count = await r.incr(key)
+        if count == 1:
+            await r.expire(key, 70)
+        if count > limit:
+            raise HTTPException(
+                status_code=429,
+                detail=f"rate limit exceeded: {limit} agent requests per minute",
+                headers={"Retry-After": str(retry_after)},
+            )
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        log.warning("rate limit check failed open | tenant=%s route=%s error=%s", tenant_id, route, exc)
+    return query
 
 TenantID = Annotated[str, Depends(require_tenant)]
 
@@ -222,6 +302,12 @@ def _chat_message_response(msg: ChatMessage) -> ChatMessageSchema:
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     setup_tracing("aap-api")
+    log.info("warming up embedding model...")
+    try:
+        await embed_texts(["warmup"])
+        log.info("embedding model ready")
+    except Exception as exc:  # noqa: BLE001
+        log.warning("embedding model warmup failed (%s) — will retry on first use", exc)
     app.state.temporal = await Client.connect(
         settings.temporal_address, namespace=settings.temporal_namespace
     )
@@ -280,6 +366,9 @@ async def create_api_key(
 @app.post("/agent/run", response_model=AgentRunApiResponse)
 async def run_agent(payload: AgentRunInput, tenant_id: TenantID) -> AgentRunApiResponse:
     """Single agent run. Set require_approval=true to pause for HITL review."""
+    user_query = await _enforce_agent_limits(tenant_id, payload.user_query, "/agent/run")
+    payload = payload.model_copy(update={"user_query": user_query})
+
     async with tenant_session(tenant_id) as db:
         chunk_count = (await db.execute(
             select(func.count()).select_from(Chunk).where(Chunk.tenant_id == tenant_id)
@@ -335,77 +424,117 @@ class AgentStreamRequest(BaseModel):
 @app.post("/agent/stream")
 async def agent_stream(body: AgentStreamRequest, tenant_id: TenantID) -> StreamingResponse:
     """SSE streaming agent — bypasses Temporal for interactive chat."""
+    user_query = await _enforce_agent_limits(tenant_id, body.user_query, "/agent/stream")
+    model_name = body.model or settings.strong_model
 
     async def generate() -> AsyncIterator[str]:
+        request_t0 = time.monotonic()
+        cache_t0 = time.monotonic()
         # Semantic cache — instant reply if hit
         try:
-            cached = await semantic_cache.get(body.user_query, tenant_id)
+            cached = await semantic_cache.get(user_query, tenant_id)
         except Exception:
             cached = None
+        log.info(
+            "agent_stream cache lookup | tenant=%s hit=%s latency_ms=%d",
+            tenant_id,
+            cached is not None,
+            int((time.monotonic() - cache_t0) * 1000),
+        )
 
         if cached is not None:
             yield f"data: {json.dumps({'type': 'token', 'content': cached.answer})}\n\n"
             yield f"data: {json.dumps({'type': 'done', 'answer': cached.answer, 'sources': cached.sources, 'confidence': cached.confidence, 'cached': True})}\n\n"
             return
 
-        model_name = body.model or settings.strong_model
-        agent = _get_streaming_agent(model_name)
-        deps = AgentDeps(tenant_id=tenant_id)
-
-        t0 = time.monotonic()
         try:
-            async with agent.run_stream(body.user_query, deps=deps) as result:
-                streamed_answer = ""
-                async for message, _is_last in result.stream_structured(debounce_by=None):
-                    partial_answer = _extract_partial_answer(message.parts)
-                    if partial_answer is None:
-                        continue
+            retrieve_t0 = time.monotonic()
+            chunks = await retrieve_chunks(
+                user_query,
+                tenant_id,
+                k=settings.fast_rag_top_k,
+                max_distance=settings.retrieval_max_distance,
+            )
+            log.info(
+                "agent_stream retrieve | tenant=%s chunks=%d latency_ms=%d scores=%s",
+                tenant_id,
+                len(chunks),
+                int((time.monotonic() - retrieve_t0) * 1000),
+                [round(c.score, 3) for c in chunks],
+            )
 
-                    delta = (
-                        partial_answer[len(streamed_answer):]
-                        if partial_answer.startswith(streamed_answer)
-                        else partial_answer
-                    )
-                    streamed_answer = partial_answer
-                    if delta:
-                        yield f"data: {json.dumps({'type': 'token', 'content': delta})}\n\n"
-
-                output = await result.get_data()
-                output = output.model_copy(update={
-                    "sources": list(dict.fromkeys([*output.sources, *deps.sources])),
-                    "cached": False,
-                })
-                answer = output.answer
-                if answer and answer != streamed_answer:
-                    delta = answer[len(streamed_answer):] if answer.startswith(streamed_answer) else answer
-                    if delta:
-                        yield f"data: {json.dumps({'type': 'token', 'content': delta})}\n\n"
-
-                latency_ms = int((time.monotonic() - t0) * 1000)
-                usage = result.usage()
-
+            sources = list(dict.fromkeys(c.filename for c in chunks))
+            if not chunks:
+                answer = "Не нашёл релевантной информации в загруженных документах."
+                output = AgentRunOutput(answer=answer, sources=[], confidence=0.2, cached=False)
+                yield f"data: {json.dumps({'type': 'token', 'content': answer})}\n\n"
                 yield (
                     "data: "
-                    f"{json.dumps({'type': 'done', 'answer': output.answer, 'sources': output.sources, 'confidence': output.confidence, 'cached': False})}\n\n"
+                    f"{json.dumps({'type': 'done', 'answer': answer, 'sources': [], 'confidence': output.confidence, 'cached': False})}\n\n"
                 )
+                return
 
-                try:
-                    await record_usage(UsageEvent(
-                        tenant_id=tenant_id,
-                        workflow_id=f"stream-{uuid.uuid4().hex[:12]}",
-                        run_id=f"stream-{uuid.uuid4().hex[:12]}",
-                        model=model_name,
-                        prompt_tokens=usage.request_tokens or 0,
-                        completion_tokens=usage.response_tokens or 0,
-                        latency_ms=latency_ms,
-                    ))
-                except Exception:
-                    pass
+            answer_parts: list[str] = []
+            prompt_tokens = 0
+            completion_tokens = 0
+            first_token_logged = False
+            messages = _build_fast_rag_messages(user_query, chunks)
 
-                try:
-                    await semantic_cache.set(body.user_query, tenant_id, output)
-                except Exception:
-                    pass
+            async for event in stream_chat_text(model_name, messages):
+                if event.type == "usage":
+                    prompt_tokens = event.prompt_tokens
+                    completion_tokens = event.completion_tokens
+                    continue
+                if event.type != "token" or not event.content:
+                    continue
+                if not first_token_logged:
+                    first_token_logged = True
+                    log.info(
+                        "agent_stream first token | tenant=%s model=%s latency_ms=%d",
+                        tenant_id,
+                        model_name,
+                        int((time.monotonic() - request_t0) * 1000),
+                    )
+                answer_parts.append(event.content)
+                yield f"data: {json.dumps({'type': 'token', 'content': event.content})}\n\n"
+
+            answer = "".join(answer_parts).strip()
+            output = AgentRunOutput(
+                answer=answer or "Не удалось получить ответ от модели.",
+                sources=sources if answer else [],
+                confidence=0.85 if answer else 0.0,
+                cached=False,
+            )
+            latency_ms = int((time.monotonic() - request_t0) * 1000)
+
+            yield (
+                "data: "
+                f"{json.dumps({'type': 'done', 'answer': output.answer, 'sources': output.sources, 'confidence': output.confidence, 'cached': False})}\n\n"
+            )
+            log.info(
+                "agent_stream done | tenant=%s model=%s latency_ms=%d",
+                tenant_id,
+                model_name,
+                latency_ms,
+            )
+
+            try:
+                await record_usage(UsageEvent(
+                    tenant_id=tenant_id,
+                    workflow_id=f"stream-{uuid.uuid4().hex[:12]}",
+                    run_id=f"stream-{uuid.uuid4().hex[:12]}",
+                    model=model_name,
+                    prompt_tokens=prompt_tokens,
+                    completion_tokens=completion_tokens,
+                    latency_ms=latency_ms,
+                ))
+            except Exception:
+                pass
+
+            try:
+                await semantic_cache.set(user_query, tenant_id, output)
+            except Exception:
+                pass
 
         except Exception as exc:
             log.exception("agent_stream error | tenant=%s", tenant_id)
@@ -425,7 +554,13 @@ async def agent_stream(body: AgentStreamRequest, tenant_id: TenantID) -> Streami
 @app.post("/agent/research", response_model=AgentRunOutput)
 async def run_research(payload: MultiStepResearchInput, tenant_id: TenantID) -> AgentRunOutput:
     """Multi-step research: fan-out sub-queries as child workflows, then synthesise."""
-    payload = payload.model_copy(update={"tenant_id": tenant_id})
+    main_query = await _enforce_agent_limits(tenant_id, payload.main_query, "/agent/research")
+    sub_queries = [_validate_agent_query(q) for q in payload.sub_queries]
+    payload = payload.model_copy(update={
+        "tenant_id": tenant_id,
+        "main_query": main_query,
+        "sub_queries": sub_queries,
+    })
     client: Client = app.state.temporal
     workflow_id = f"research-{tenant_id}-{uuid.uuid4()}"
     try:
