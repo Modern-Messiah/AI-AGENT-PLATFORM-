@@ -143,6 +143,28 @@ class CreateKeyResponse(BaseModel):
     raw_key: str  # shown once — store it now
 
 
+def _chat_session_response(sess: ChatSession, message_count: int = 0) -> ChatSessionSchema:
+    return ChatSessionSchema(
+        id=str(sess.id),
+        title=sess.title,
+        model=sess.model,
+        created_at=sess.created_at.isoformat(),
+        updated_at=sess.updated_at.isoformat(),
+        message_count=message_count,
+    )
+
+
+def _chat_message_response(msg: ChatMessage) -> ChatMessageSchema:
+    return ChatMessageSchema(
+        id=str(msg.id),
+        role=msg.role,
+        content=msg.content,
+        sources=msg.sources or [],
+        cached=msg.cached,
+        created_at=msg.created_at.isoformat(),
+    )
+
+
 # ── App lifecycle ─────────────────────────────────────────────────────────────
 
 @asynccontextmanager
@@ -596,13 +618,9 @@ async def create_session(body: CreateSessionRequest, tenant_id: TenantID) -> Cha
     async with tenant_session(tenant_id) as s:
         sess = ChatSession(tenant_id=tenant_id, title=body.title, model=body.model)
         s.add(sess)
-    return ChatSessionSchema(
-        id=str(sess.id),
-        title=sess.title,
-        model=sess.model,
-        created_at=sess.created_at.isoformat(),
-        updated_at=sess.updated_at.isoformat(),
-    )
+        await s.flush()
+        await s.refresh(sess)
+        return _chat_session_response(sess)
 
 
 @app.patch("/sessions/{session_id}", response_model=ChatSessionSchema)
@@ -613,14 +631,13 @@ async def update_session(session_id: uuid.UUID, body: UpdateSessionRequest, tena
         )).scalar_one_or_none()
         if sess is None:
             raise HTTPException(status_code=404, detail="session not found")
-        if body.title:
+        if body.title is not None:
             sess.title = body.title
-        if body.model:
+        if body.model is not None:
             sess.model = body.model
-    return ChatSessionSchema(
-        id=str(sess.id), title=sess.title, model=sess.model,
-        created_at=sess.created_at.isoformat(), updated_at=sess.updated_at.isoformat(),
-    )
+        await s.flush()
+        await s.refresh(sess)
+        return _chat_session_response(sess)
 
 
 @app.delete("/sessions/{session_id}", status_code=204)
@@ -642,11 +659,7 @@ async def get_messages(session_id: uuid.UUID, tenant_id: TenantID) -> list[ChatM
             .where(ChatMessage.session_id == session_id, ChatMessage.tenant_id == tenant_id)
             .order_by(ChatMessage.created_at)
         )).scalars().all()
-    return [ChatMessageSchema(
-        id=str(m.id), role=m.role, content=m.content,
-        sources=m.sources or [], cached=m.cached,
-        created_at=m.created_at.isoformat(),
-    ) for m in msgs]
+    return [_chat_message_response(m) for m in msgs]
 
 
 @app.post("/sessions/{session_id}/messages", response_model=ChatMessageSchema, status_code=201)
@@ -664,8 +677,6 @@ async def add_message(session_id: uuid.UUID, body: AddMessageRequest, tenant_id:
             sources=body.sources, cached=body.cached,
         )
         s.add(msg)
-    return ChatMessageSchema(
-        id=str(msg.id), role=msg.role, content=msg.content,
-        sources=msg.sources, cached=msg.cached,
-        created_at=msg.created_at.isoformat(),
-    )
+        await s.flush()
+        await s.refresh(msg)
+        return _chat_message_response(msg)

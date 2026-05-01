@@ -7,7 +7,6 @@ import time
 from functools import lru_cache
 
 from pydantic_ai import Agent
-from pydantic_ai.settings import ModelSettings
 from temporalio import activity
 
 from packages.agents import AgentDeps, AgentRunInput, AgentRunOutput, build_research_agent
@@ -48,16 +47,8 @@ async def run_agent_step(payload: AgentRunInput) -> AgentRunOutput:
 
     model_name = payload.model or settings.strong_model
 
-    # Reasoning models (Kimi, DeepSeek v4-pro/flash) have thinking enabled by
-    # default, which is incompatible with tool_choice='required' that PydanticAI
-    # sends when tools are registered ("deepseek-reasoner does not support this
-    # tool_choice"). Disable thinking so tools work normally.
-    ms: ModelSettings = {}
-    if "kimi" in model_name or "v4-pro" in model_name or "v4-flash" in model_name:
-        ms = {"extra_body": {"thinking": {"type": "disabled"}}}
-
     t0 = time.monotonic()
-    result = await agent.run(payload.user_query, deps=deps, model_settings=ms)
+    result = await agent.run(payload.user_query, deps=deps)
     latency_ms = int((time.monotonic() - t0) * 1000)
 
     usage = result.usage()
