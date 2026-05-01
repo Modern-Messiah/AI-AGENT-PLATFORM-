@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from functools import cached_property
+import threading
 from urllib.parse import urlparse
 
 import clickhouse_connect
@@ -11,18 +11,29 @@ from clickhouse_connect.driver.client import Client
 
 from packages.core import settings
 
+_init_lock = threading.Lock()
+
 
 class ClickHouseClient:
-    @cached_property
+    def __init__(self) -> None:
+        self._ch_client: Client | None = None
+
+    @property
     def _client(self) -> Client:
-        u = urlparse(settings.clickhouse_url)
-        return clickhouse_connect.get_client(
-            host=u.hostname or "localhost",
-            port=u.port or 8123,
-            username=u.username or "default",
-            password=u.password or "",
-            database=u.path.lstrip("/") or "analytics",
-        )
+        # Double-checked locking: asyncio.to_thread runs in real OS threads,
+        # so cached_property's non-thread-safe write is a real race here.
+        if self._ch_client is None:
+            with _init_lock:
+                if self._ch_client is None:
+                    u = urlparse(settings.clickhouse_url)
+                    self._ch_client = clickhouse_connect.get_client(
+                        host=u.hostname or "localhost",
+                        port=u.port or 8123,
+                        username=u.username or "default",
+                        password=u.password or "",
+                        database=u.path.lstrip("/") or "analytics",
+                    )
+        return self._ch_client
 
     async def insert(self, table: str, rows: list[list], column_names: list[str]) -> None:
         await asyncio.to_thread(

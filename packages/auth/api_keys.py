@@ -8,9 +8,10 @@ from __future__ import annotations
 
 import hashlib
 import secrets
+from datetime import datetime, timezone
 
 from fastapi import Header, HTTPException
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from packages.storage.db import async_session
 from packages.storage.models import ApiKey
@@ -41,4 +42,12 @@ async def require_tenant(x_api_key: str = Header(..., alias="X-API-Key")) -> str
 
     if row is None:
         raise HTTPException(status_code=401, detail="invalid or inactive API key")
+
+    async with async_session() as s, s.begin():
+        await s.execute(
+            update(ApiKey)
+            .where(ApiKey.key_hash == key_hash)
+            .values(last_used_at=datetime.now(timezone.utc))
+        )
+
     return row.tenant_id

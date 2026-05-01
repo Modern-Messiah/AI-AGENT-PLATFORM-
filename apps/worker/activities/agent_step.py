@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import logging
 import time
+from functools import lru_cache
 
-from temporalio import activity
-
+from pydantic_ai import Agent
 from pydantic_ai.settings import ModelSettings
+from temporalio import activity
 
 from packages.agents import AgentDeps, AgentRunInput, AgentRunOutput, build_research_agent
 from packages.analytics.events import UsageEvent, record_usage
@@ -15,6 +16,11 @@ from packages.cache.semantic import semantic_cache
 from packages.core import settings
 
 log = logging.getLogger(__name__)
+
+
+@lru_cache(maxsize=8)
+def _get_agent(model_name: str | None) -> Agent:  # type: ignore[type-arg]
+    return build_research_agent(model_name=model_name)
 
 
 @activity.defn
@@ -37,7 +43,7 @@ async def run_agent_step(payload: AgentRunInput) -> AgentRunOutput:
         return cached.model_copy(update={"cached": True})
 
     # ── LLM call ─────────────────────────────────────────────────────────────
-    agent = build_research_agent(model_name=payload.model)
+    agent = _get_agent(payload.model)
     deps = AgentDeps(tenant_id=payload.tenant_id)
 
     model_name = payload.model or settings.strong_model

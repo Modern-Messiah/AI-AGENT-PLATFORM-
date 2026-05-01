@@ -4,18 +4,19 @@ On cache miss the caller runs the LLM and then stores the result here.
 On cache hit the result is returned without any LLM call.
 
 Storage layout (plain Redis — no vector-search module required):
-  scache:{tenant_id}:idx          — Redis SET  of entry UUIDs for the tenant
+  scache:{tenant_id}:idx          — Redis ZSET (score=timestamp) of entry UUIDs
   scache:{tenant_id}:{entry_uuid} — Redis STRING (JSON) with vec + result, TTL-d
 
-Lookup scans at most _MAX_SCAN entries per tenant via a single pipeline batch,
-then computes cosine in numpy. Scales to a few thousand cached queries; swap for
-Redis Stack vector search when the index grows beyond that.
+Lookup scans the newest _MAX_SCAN entries from the ZSET index, then computes
+cosine in numpy. The ZSET is capped at _MAX_INDEX entries; oldest are evicted on
+every write so the index never grows unbounded (unlike a plain SET).
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import time
 import uuid
 
 import numpy as np
@@ -29,6 +30,7 @@ log = logging.getLogger(__name__)
 _TTL_SECONDS = 3600       # 1 hour per entry
 _THRESHOLD = 0.92         # cosine similarity required for a hit
 _MAX_SCAN = 500           # max entries to scan per lookup
+_MAX_INDEX = 1000         # hard cap on index size per tenant; oldest entries evicted first
 
 
 class SemanticCache:
@@ -42,11 +44,13 @@ class SemanticCache:
         r = get_redis()
         idx_key = self._idx_key(tenant_id)
 
-        entry_ids = [eid.decode() for eid in await r.smembers(idx_key)]
+        # Fetch the newest _MAX_SCAN entries (highest scores = most recent timestamps).
+        entry_ids = [
+            eid.decode() if isinstance(eid, bytes) else eid
+            for eid in await r.zrange(idx_key, 0, _MAX_SCAN - 1, rev=True)
+        ]
         if not entry_ids:
             return None
-
-        entry_ids = entry_ids[:_MAX_SCAN]
 
         # Batch-fetch all entries in one round trip.
         pipe = r.pipeline(transaction=False)
@@ -77,7 +81,7 @@ class SemanticCache:
 
         # Clean up expired ids from the index (fire-and-forget).
         if expired:
-            await r.srem(idx_key, *expired)
+            await r.zrem(idx_key, *expired)
 
         if best_result is not None:
             log.info("semantic cache hit | tenant=%s sim=%.4f", tenant_id, best_sim)
@@ -92,8 +96,11 @@ class SemanticCache:
 
         pipe = r.pipeline(transaction=False)
         pipe.set(self._entry_key(tenant_id, entry_id), data, ex=_TTL_SECONDS)
-        pipe.sadd(self._idx_key(tenant_id), entry_id)
+        # Add to ZSET with current timestamp as score so we can sort by recency.
+        pipe.zadd(self._idx_key(tenant_id), {entry_id: time.time()})
         pipe.expire(self._idx_key(tenant_id), _TTL_SECONDS)
+        # Trim to _MAX_INDEX by removing oldest entries (rank 0 … N-_MAX_INDEX-1).
+        pipe.zremrangebyrank(self._idx_key(tenant_id), 0, -(_MAX_INDEX + 1))
         await pipe.execute()
 
 
