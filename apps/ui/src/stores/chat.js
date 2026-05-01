@@ -148,7 +148,7 @@ export const useChatStore = defineStore('chat', () => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ role: 'user', content: query })
-    }).catch(() => {})
+    }).catch(e => console.error('Failed to persist user message:', e))
 
     const curSess = sessions.value.find(s => s.id === sessId)
     if (curSess?.title === 'New Chat') {
@@ -159,7 +159,7 @@ export const useChatStore = defineStore('chat', () => {
         body: JSON.stringify({ title })
       }).then(() => {
         sessions.value = sessions.value.map(x => x.id === sessId ? { ...x, title } : x)
-      }).catch(() => {})
+      }).catch(e => console.error('Failed to update session title:', e))
     }
 
     try {
@@ -193,7 +193,7 @@ export const useChatStore = defineStore('chat', () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ role: 'agent', content: data.answer, sources: data.sources || [], cached: data.cached || false })
-      }).catch(() => {})
+      }).catch(e => console.error('Failed to persist agent message:', e))
       // Only push into the visible messages list if the user hasn't switched sessions.
       if (activeId.value === sessId) messages.value.push(agentMsg)
       return agentMsg
@@ -255,9 +255,20 @@ export const useChatStore = defineStore('chat', () => {
 
   async function rejectHitl(workflowId) {
     const { apiFetch } = useApi()
-    try {
-      if (workflowId) await apiFetch(`/workflows/${workflowId}/reject`, { method: 'POST' })
-    } catch {}
+    if (workflowId) {
+      try {
+        await apiFetch(`/workflows/${workflowId}/reject`, { method: 'POST' })
+      } catch (e) {
+        // API call failed — the Temporal workflow is still waiting for a signal.
+        // Keep the card visible and mark it as errored so the user can retry.
+        messages.value = messages.value.map(m =>
+          m.role === 'hitl' && m.workflowId === workflowId
+            ? { ...m, status: 'reject_error', error: e.message }
+            : m
+        )
+        return
+      }
+    }
     _clearPendingByWorkflow(workflowId)
     messages.value = messages.value.filter(m => !(m.role === 'hitl' && m.workflowId === workflowId))
   }

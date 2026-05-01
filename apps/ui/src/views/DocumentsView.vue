@@ -128,8 +128,28 @@ function mimeIcon(name) {
   const ext = (name || '').split('.').pop().toLowerCase()
   return ({ pdf: '📄', md: '📝', txt: '📃', csv: '📊', html: '🌐', docx: '📘' })[ext] || '📁'
 }
-function removeDoc(id) { docs.value = docs.value.filter(d => d.id !== id) }
-function clearAll() { docs.value = [] }
+async function removeDoc(id) {
+  const doc = docs.value.find(d => d.id === id)
+  if (doc?._pending) { docs.value = docs.value.filter(d => d.id !== id); return }
+  try {
+    await apiFetch(`/documents/${id}`, { method: 'DELETE' })
+    docs.value = docs.value.filter(d => d.id !== id)
+  } catch (e) {
+    toast.value = { msg: `Ошибка удаления: ${e.message}`, type: 'error' }
+  }
+}
+
+async function clearAll() {
+  const toDelete = docs.value.filter(d => !d._pending)
+  if (!toDelete.length) { docs.value = docs.value.filter(d => d._pending); return }
+  const failed = []
+  await Promise.all(toDelete.map(async doc => {
+    try { await apiFetch(`/documents/${doc.id}`, { method: 'DELETE' }) }
+    catch { failed.push(doc.id) }
+  }))
+  docs.value = docs.value.filter(d => d._pending || failed.includes(d.id))
+  if (failed.length) toast.value = { msg: `Не удалось удалить ${failed.length} документ(а)`, type: 'error' }
+}
 function copyId(id) { navigator.clipboard.writeText(id).catch(() => {}); toast.value = { msg: `ID скопирован: ${id}`, type: 'info' } }
 
 function updateDoc(id, patch) {
