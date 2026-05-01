@@ -25,7 +25,7 @@ def build_research_agent(model_name: str | None = None) -> Agent[AgentDeps, Agen
     agent = Agent[AgentDeps, AgentRunOutput](
         model=build_model(model_name),
         deps_type=AgentDeps,
-        output_type=AgentRunOutput,
+        result_type=AgentRunOutput,
         system_prompt=get_system_prompt(),
     )
     _register_tools(agent)

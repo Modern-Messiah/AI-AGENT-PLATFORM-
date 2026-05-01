@@ -85,7 +85,7 @@ async def run_agent_step(payload: AgentRunInput) -> AgentRunOutput:
     ))
 
     # Store result for future semantic cache hits.
-    output = result.output
+    output = result.data
     await semantic_cache.set(payload.user_query, payload.tenant_id, output)
 
     return output
