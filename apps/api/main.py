@@ -20,7 +20,6 @@ Endpoints:
 from __future__ import annotations
 
 import asyncio
-import re
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -41,6 +40,7 @@ from packages.agents import AgentRunInput, AgentRunOutput, MultiStepResearchInpu
 from packages.analytics.clickhouse import ch_client
 from packages.auth import generate_key, require_tenant
 from packages.core import settings
+from packages.core.tenant_utils import check_workflow_tenant
 from packages.observability import setup_tracing
 from packages.storage import (
     ApiKey, ChatMessage, ChatSession, Chunk, Document, DocumentStatus,
@@ -50,9 +50,6 @@ from packages.storage.db import tenant_session
 
 TenantID = Annotated[str, Depends(require_tenant)]
 
-_UUID_RE = re.compile(
-    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
-)
 _READ_CHUNK = 64 * 1024  # 64 KB
 
 
@@ -72,21 +69,6 @@ async def _read_with_limit(file: UploadFile, max_bytes: int) -> bytes:
             )
         chunks.append(chunk)
     return b"".join(chunks)
-
-
-def _check_workflow_tenant(workflow_id: str, tenant_id: str) -> None:
-    """Raise 403 if the workflow_id was not created by this tenant.
-
-    Guards against tenant-id prefix collision, e.g. tenant 'foo' matching
-    workflow 'agent-run-foo-bar-<uuid>' created by tenant 'foo-bar'.
-    The UUID suffix check ensures only exact-prefix matches pass.
-    """
-    prefix = f"agent-run-{tenant_id}-"
-    if not workflow_id.startswith(prefix):
-        raise HTTPException(status_code=403, detail="workflow does not belong to this tenant")
-    suffix = workflow_id[len(prefix):]
-    if not _UUID_RE.match(suffix):
-        raise HTTPException(status_code=403, detail="invalid workflow_id format")
 
 
 # ── Pydantic schemas ──────────────────────────────────────────────────────────
@@ -293,7 +275,7 @@ async def run_research(payload: MultiStepResearchInput, tenant_id: TenantID) -> 
 @app.get("/workflows/{workflow_id}/result", response_model=AgentRunApiResponse)
 async def get_workflow_result(workflow_id: str, tenant_id: TenantID) -> AgentRunApiResponse:
     """Poll for HITL workflow result. Returns pending_approval=True while still waiting."""
-    _check_workflow_tenant(workflow_id, tenant_id)
+    check_workflow_tenant(workflow_id, tenant_id)
     client: Client = app.state.temporal
     handle = client.get_workflow_handle(workflow_id)
     try:
@@ -312,7 +294,7 @@ async def get_workflow_result(workflow_id: str, tenant_id: TenantID) -> AgentRun
 
 @app.post("/workflows/{workflow_id}/approve", response_model=WorkflowSignalResponse)
 async def approve_workflow(workflow_id: str, tenant_id: TenantID) -> WorkflowSignalResponse:
-    _check_workflow_tenant(workflow_id, tenant_id)
+    check_workflow_tenant(workflow_id, tenant_id)
     client: Client = app.state.temporal
     try:
         await client.get_workflow_handle(workflow_id).signal(AgentRunWorkflow.approve)
@@ -325,7 +307,7 @@ async def approve_workflow(workflow_id: str, tenant_id: TenantID) -> WorkflowSig
 
 @app.post("/workflows/{workflow_id}/reject", response_model=WorkflowSignalResponse)
 async def reject_workflow(workflow_id: str, tenant_id: TenantID) -> WorkflowSignalResponse:
-    _check_workflow_tenant(workflow_id, tenant_id)
+    check_workflow_tenant(workflow_id, tenant_id)
     client: Client = app.state.temporal
     try:
         await client.get_workflow_handle(workflow_id).signal(AgentRunWorkflow.reject)

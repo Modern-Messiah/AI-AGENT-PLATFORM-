@@ -1,6 +1,8 @@
 """Unit tests for multi-tenant isolation helpers.
 
 These tests verify the pure-logic guards without a live Temporal/Postgres connection.
+They import the production functions directly so any logic change in main.py or
+tenant_utils.py will immediately break these tests.
 """
 
 from __future__ import annotations
@@ -9,62 +11,44 @@ import re
 import uuid
 
 import pytest
+from fastapi import HTTPException
 
-# ── _check_workflow_tenant (main.py) — inline the logic for unit testing ─────
-# We duplicate the function here rather than importing from main.py to avoid
-# pulling in the full FastAPI app and its startup dependencies.
+from packages.core.tenant_utils import check_workflow_tenant
 
-_UUID_RE = re.compile(
-    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
-)
-
-
-class _FakeForbidden(Exception):
-    def __init__(self, detail: str) -> None:
-        self.detail = detail
-
-
-def _check_workflow_tenant(workflow_id: str, tenant_id: str) -> None:
-    prefix = f"agent-run-{tenant_id}-"
-    if not workflow_id.startswith(prefix):
-        raise _FakeForbidden("workflow does not belong to this tenant")
-    suffix = workflow_id[len(prefix):]
-    if not _UUID_RE.match(suffix):
-        raise _FakeForbidden("invalid workflow_id format")
-
-
-# ── correct tenant ────────────────────────────────────────────────────────────
+# ── check_workflow_tenant ─────────────────────────────────────────────────────
 
 def test_correct_tenant_passes() -> None:
     uid = str(uuid.uuid4())
-    _check_workflow_tenant(f"agent-run-tenant-a-{uid}", "tenant-a")  # no raise
+    check_workflow_tenant(f"agent-run-tenant-a-{uid}", "tenant-a")  # must not raise
 
-
-# ── wrong tenant ──────────────────────────────────────────────────────────────
 
 def test_wrong_tenant_raises() -> None:
     uid = str(uuid.uuid4())
-    with pytest.raises(_FakeForbidden, match="does not belong"):
-        _check_workflow_tenant(f"agent-run-tenant-b-{uid}", "tenant-a")
+    with pytest.raises(HTTPException) as exc_info:
+        check_workflow_tenant(f"agent-run-tenant-b-{uid}", "tenant-a")
+    assert exc_info.value.status_code == 403
+    assert "does not belong" in exc_info.value.detail
 
 
 def test_prefix_collision_rejected() -> None:
     """tenant 'foo' must not access a workflow created by 'foo-bar'."""
     uid = str(uuid.uuid4())
-    with pytest.raises(_FakeForbidden, match="does not belong"):
-        _check_workflow_tenant(f"agent-run-foo-bar-{uid}", "foo")
+    with pytest.raises(HTTPException) as exc_info:
+        check_workflow_tenant(f"agent-run-foo-bar-{uid}", "foo")
+    assert exc_info.value.status_code == 403
 
 
 def test_no_uuid_suffix_rejected() -> None:
-    with pytest.raises(_FakeForbidden, match="invalid workflow_id format"):
-        _check_workflow_tenant("agent-run-tenant-a-not-a-uuid", "tenant-a")
+    with pytest.raises(HTTPException) as exc_info:
+        check_workflow_tenant("agent-run-tenant-a-not-a-uuid", "tenant-a")
+    assert exc_info.value.status_code == 403
+    assert "invalid workflow_id format" in exc_info.value.detail
 
 
-def test_injected_extra_prefix_rejected() -> None:
-    """Ensure workflow IDs with unexpected structure are rejected."""
+def test_injected_extra_suffix_rejected() -> None:
     uid = str(uuid.uuid4())
-    with pytest.raises(_FakeForbidden):
-        _check_workflow_tenant(f"agent-run-tenant-a-{uid}-extra", "tenant-a")
+    with pytest.raises(HTTPException):
+        check_workflow_tenant(f"agent-run-tenant-a-{uid}-extra", "tenant-a")
 
 
 # ── safe tenant_id regex (from sql_query.py) ─────────────────────────────────
