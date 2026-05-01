@@ -48,11 +48,12 @@ async def run_agent_step(payload: AgentRunInput) -> AgentRunOutput:
 
     model_name = payload.model or settings.strong_model
 
-    # kimi-k2.6 has thinking enabled by default which is incompatible with
-    # tool_choice='required' that PydanticAI sends when tools are registered.
-    # Disable thinking via extra_body so tools work normally.
+    # Reasoning models (Kimi, DeepSeek v4-pro/flash) have thinking enabled by
+    # default, which is incompatible with tool_choice='required' that PydanticAI
+    # sends when tools are registered ("deepseek-reasoner does not support this
+    # tool_choice"). Disable thinking so tools work normally.
     ms: ModelSettings = {}
-    if "kimi" in model_name or "v4-pro" in model_name:
+    if "kimi" in model_name or "v4-pro" in model_name or "v4-flash" in model_name:
         ms = {"extra_body": {"thinking": {"type": "disabled"}}}
 
     t0 = time.monotonic()
