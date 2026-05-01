@@ -245,6 +245,7 @@ class DocumentResponse(BaseModel):
     tenant_id: str
     filename: str
     status: DocumentStatus
+    size_bytes: int = 0
     error: str | None = None
     created_at: str | None = None
 
@@ -294,6 +295,18 @@ def _chat_message_response(msg: ChatMessage) -> ChatMessageSchema:
         sources=msg.sources or [],
         cached=msg.cached,
         created_at=msg.created_at.isoformat(),
+    )
+
+
+def _document_response(doc: Document) -> DocumentResponse:
+    return DocumentResponse(
+        id=str(doc.id),
+        tenant_id=doc.tenant_id,
+        filename=doc.filename,
+        status=doc.status,
+        size_bytes=doc.size_bytes,
+        error=doc.error,
+        created_at=doc.created_at.isoformat() if doc.created_at else None,
     )
 
 
@@ -670,17 +683,7 @@ async def list_documents(tenant_id: TenantID) -> list[DocumentResponse]:
             .where(Document.tenant_id == tenant_id)
             .order_by(Document.created_at.desc())
         )).scalars().all()
-    return [
-        DocumentResponse(
-            id=str(doc.id),
-            tenant_id=doc.tenant_id,
-            filename=doc.filename,
-            status=doc.status,
-            error=doc.error,
-            created_at=doc.created_at.isoformat() if doc.created_at else None,
-        )
-        for doc in rows
-    ]
+    return [_document_response(doc) for doc in rows]
 
 
 @app.post("/documents", response_model=DocumentResponse, status_code=202)
@@ -710,6 +713,7 @@ async def upload_document(
             filename=file.filename or "unnamed",
             mime_type=file.content_type or "application/octet-stream",
             object_key=object_key,
+            size_bytes=len(data),
             status=DocumentStatus.pending,
         ))
 
@@ -735,12 +739,9 @@ async def upload_document(
             )
         raise HTTPException(status_code=503, detail="ingestion service unavailable") from e
 
-    return DocumentResponse(
-        id=str(document_id),
-        tenant_id=tenant_id,
-        filename=file.filename or "unnamed",
-        status=DocumentStatus.pending,
-    )
+    async with tenant_session(tenant_id) as s:
+        doc = (await s.execute(select(Document).where(Document.id == document_id))).scalar_one()
+    return _document_response(doc)
 
 
 @app.post("/documents/bulk", response_model=list[DocumentResponse], status_code=202)
@@ -802,6 +803,7 @@ async def upload_documents_bulk(
                 filename=file.filename or "unnamed",
                 mime_type=file.content_type or "application/octet-stream",
                 object_key=object_key,
+                size_bytes=len(data),
                 status=DocumentStatus.pending,
             ))
         try:
@@ -823,12 +825,9 @@ async def upload_documents_bulk(
                     .where(Document.id == document_id)
                     .values(status=DocumentStatus.failed, error="Failed to start ingestion workflow")
                 )
-        responses.append(DocumentResponse(
-            id=str(document_id),
-            tenant_id=tenant_id,
-            filename=file.filename or "unnamed",
-            status=DocumentStatus.pending,
-        ))
+        async with tenant_session(tenant_id) as s:
+            doc = (await s.execute(select(Document).where(Document.id == document_id))).scalar_one()
+        responses.append(_document_response(doc))
 
     return responses
 
@@ -843,13 +842,7 @@ async def get_document(document_id: uuid.UUID, tenant_id: TenantID) -> DocumentR
         ).scalar_one_or_none()
     if doc is None:
         raise HTTPException(status_code=404, detail="document not found")
-    return DocumentResponse(
-        id=str(doc.id),
-        tenant_id=doc.tenant_id,
-        filename=doc.filename,
-        status=doc.status,
-        error=doc.error,
-    )
+    return _document_response(doc)
 
 
 @app.delete("/documents/{document_id}", status_code=204)

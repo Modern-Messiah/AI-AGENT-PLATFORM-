@@ -64,6 +64,5 @@ const nav = [
   { path: '/chat',       label: 'Агент',     icon: 'chat' },
   { path: '/documents',  label: 'Документы', icon: 'docs' },
   { path: '/analytics',  label: 'Аналитика', icon: 'analytics' },
-  { path: '/workflows',  label: 'Workflows', icon: 'workflows' },
 ]
 </script>

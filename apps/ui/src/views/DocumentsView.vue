@@ -104,6 +104,14 @@ const dragging = ref(false)
 const toast = ref(null)
 const fileInput = ref(null)
 
+function fmtSize(bytes) {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '—'
+  if (bytes < 1024) return bytes + ' B'
+  if (bytes < 1048576) return (bytes / 1024).toFixed(0) + ' KB'
+  if (bytes < 1073741824) return (bytes / 1048576).toFixed(1) + ' MB'
+  return (bytes / 1073741824).toFixed(1) + ' GB'
+}
+
 async function loadDocs() {
   if (!settings.isConnected) { docs.value = []; return }
   try {
@@ -113,7 +121,7 @@ async function loadDocs() {
     const pending = docs.value.filter(d => d._pending && !apiIds.has(d.id))
     docs.value = [...pending, ...data.map(d => ({
       id: d.id, name: d.filename, status: d.status,
-      error: d.error || null, size: '—',
+      error: d.error || null, size: fmtSize(d.size_bytes || 0),
       time: d.created_at ? new Date(d.created_at).toLocaleDateString('ru') : '—'
     }))]
   } catch { docs.value = [] }

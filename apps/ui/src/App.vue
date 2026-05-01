@@ -27,7 +27,6 @@ const PAGE_META = {
   '/chat':       { title: 'AI Agent Chat',  sub: 'PydanticAI · Temporal · Kimi K2' },
   '/documents':  { title: 'Документы',      sub: 'RAG · pgvector · MinIO' },
   '/analytics':  { title: 'Аналитика',      sub: 'ClickHouse · Cost Tracking' },
-  '/workflows':  { title: 'Workflows',      sub: 'Temporal · HITL · Durable Execution' },
 }
 
 const meta = computed(() => PAGE_META[route.path] || { title: 'AI Agent Platform', sub: '' })
