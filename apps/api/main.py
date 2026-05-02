@@ -142,6 +142,21 @@ def _build_fast_rag_messages(query: str, chunks: list[RetrievedChunk]) -> list[d
     ]
 
 
+def _select_primary_document_chunks(chunks: list[RetrievedChunk]) -> tuple[list[RetrievedChunk], list[str]]:
+    """Keep the fast RAG answer grounded in one source document.
+
+    Retrieval returns the best chunks globally, which can include neighboring
+    documents with similar text. For chat UX we cite one source, so the context
+    must also be limited to that same document.
+    """
+    if not chunks:
+        return [], []
+
+    primary = chunks[0]
+    selected = [chunk for chunk in chunks if chunk.document_id == primary.document_id]
+    return selected, [primary.filename]
+
+
 def _validate_agent_query(query: str) -> str:
     query = query.strip()
     if not query:
@@ -456,8 +471,9 @@ async def agent_stream(body: AgentStreamRequest, tenant_id: TenantID) -> Streami
         )
 
         if cached is not None:
+            cached_sources = cached.sources[:1]
             yield f"data: {json.dumps({'type': 'token', 'content': cached.answer})}\n\n"
-            yield f"data: {json.dumps({'type': 'done', 'answer': cached.answer, 'sources': cached.sources, 'confidence': cached.confidence, 'cached': True})}\n\n"
+            yield f"data: {json.dumps({'type': 'done', 'answer': cached.answer, 'sources': cached_sources, 'confidence': cached.confidence, 'cached': True})}\n\n"
             return
 
         try:
@@ -469,14 +485,13 @@ async def agent_stream(body: AgentStreamRequest, tenant_id: TenantID) -> Streami
                 max_distance=settings.retrieval_max_distance,
             )
             log.info(
-                "agent_stream retrieve | tenant=%s chunks=%d latency_ms=%d scores=%s",
+                "agent_stream retrieve | tenant=%s chunks=%d latency_ms=%d matches=%s",
                 tenant_id,
                 len(chunks),
                 int((time.monotonic() - retrieve_t0) * 1000),
-                [round(c.score, 3) for c in chunks],
+                [(c.filename, round(c.score, 3)) for c in chunks],
             )
 
-            sources = list(dict.fromkeys(c.filename for c in chunks))
             if not chunks:
                 answer = "Не нашёл релевантной информации в загруженных документах."
                 output = AgentRunOutput(answer=answer, sources=[], confidence=0.2, cached=False)
@@ -487,11 +502,19 @@ async def agent_stream(body: AgentStreamRequest, tenant_id: TenantID) -> Streami
                 )
                 return
 
+            selected_chunks, sources = _select_primary_document_chunks(chunks)
+            log.info(
+                "agent_stream selected source | tenant=%s source=%s selected_chunks=%d",
+                tenant_id,
+                sources[0] if sources else "",
+                len(selected_chunks),
+            )
+
             answer_parts: list[str] = []
             prompt_tokens = 0
             completion_tokens = 0
             first_token_logged = False
-            messages = _build_fast_rag_messages(user_query, chunks)
+            messages = _build_fast_rag_messages(user_query, selected_chunks)
 
             async for event in stream_chat_text(model_name, messages):
                 if event.type == "usage":

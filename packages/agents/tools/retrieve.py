@@ -35,9 +35,6 @@ def register_retrieval_tool(agent: Agent[AgentDeps, AgentRunOutput]) -> None:
         helpful for your answer, do not include its filename.
         """
         results = await retrieve_chunks(query=query, tenant_id=ctx.deps.tenant_id, k=k)
-        for r in results:
-            if r.filename not in ctx.deps.sources:
-                ctx.deps.sources.append(r.filename)
         return [
             RetrievedSource(
                 document_id=r.document_id,
