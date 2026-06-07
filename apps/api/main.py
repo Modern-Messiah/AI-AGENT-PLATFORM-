@@ -15,6 +15,10 @@ Endpoints:
   GET  /documents/{id}               — ingestion status
   GET  /documents/{id}/chunks        — indexed chunk previews for one document
   POST /documents/{id}/reindex       — rebuild chunks/embeddings for existing file
+  GET  /notebooks                    — list document collections
+  POST /notebooks                    — create a document collection
+  GET  /notebooks/{id}               — collection detail
+  PUT  /notebooks/{id}/documents     — replace collection documents
   GET  /analytics/usage              — cost/token aggregate for a tenant
   POST /auth/keys                    — create an API key (admin only)
 """
@@ -64,12 +68,14 @@ from packages.storage import (
     Chunk,
     Document,
     DocumentStatus,
+    Notebook,
+    NotebookDocument,
     async_session,
     object_store,
 )
 from packages.storage.db import tenant_session
-from pydantic import BaseModel, Field
-from sqlalchemy import func, select, update
+from pydantic import BaseModel, Field, model_validator
+from sqlalchemy import delete, func, select, update
 from starlette.responses import StreamingResponse
 from temporalio.client import Client
 from temporalio.service import RPCError
@@ -257,6 +263,28 @@ class DocumentChunkPreview(BaseModel):
     excerpt: str
 
 
+class CreateNotebookRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=256)
+    description: str | None = Field(default=None, max_length=2000)
+    document_ids: list[uuid.UUID] = Field(default_factory=list)
+
+
+class UpdateNotebookDocumentsRequest(BaseModel):
+    document_ids: list[uuid.UUID] = Field(default_factory=list)
+
+
+class NotebookResponse(BaseModel):
+    id: str
+    tenant_id: str
+    title: str
+    description: str | None = None
+    document_ids: list[str] = Field(default_factory=list)
+    document_count: int = 0
+    documents: list[DocumentResponse] = Field(default_factory=list)
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
 class AgentRunApiResponse(BaseModel):
     answer: str = ""
     confidence: float = 0.0
@@ -317,6 +345,77 @@ def _document_response(doc: Document) -> DocumentResponse:
         error=doc.error,
         created_at=doc.created_at.isoformat() if doc.created_at else None,
     )
+
+
+def _dedupe_uuid_list(ids: list[uuid.UUID]) -> list[uuid.UUID]:
+    seen: set[uuid.UUID] = set()
+    deduped: list[uuid.UUID] = []
+    for item in ids:
+        if item in seen:
+            continue
+        seen.add(item)
+        deduped.append(item)
+    return deduped
+
+
+def _notebook_response(
+    notebook: Notebook,
+    documents: list[Document] | None = None,
+) -> NotebookResponse:
+    docs = documents or []
+    return NotebookResponse(
+        id=str(notebook.id),
+        tenant_id=notebook.tenant_id,
+        title=notebook.title,
+        description=notebook.description,
+        document_ids=[str(doc.id) for doc in docs],
+        document_count=len(docs),
+        documents=[_document_response(doc) for doc in docs],
+        created_at=notebook.created_at.isoformat() if notebook.created_at else None,
+        updated_at=notebook.updated_at.isoformat() if notebook.updated_at else None,
+    )
+
+
+def _clean_notebook_title(title: str) -> str:
+    cleaned = title.strip()
+    if not cleaned:
+        raise HTTPException(status_code=400, detail="title must not be empty")
+    return cleaned
+
+
+async def _load_tenant_documents(
+    db,
+    tenant_id: str,
+    document_ids: list[uuid.UUID],
+) -> list[Document]:
+    if not document_ids:
+        return []
+    rows = (
+        await db.execute(
+            select(Document)
+            .where(Document.id.in_(document_ids), Document.tenant_id == tenant_id)
+            .order_by(Document.created_at.desc())
+        )
+    ).scalars().all()
+    if len(rows) != len(document_ids):
+        raise HTTPException(status_code=404, detail="one or more documents not found")
+    by_id = {doc.id: doc for doc in rows}
+    return [by_id[doc_id] for doc_id in document_ids]
+
+
+async def _load_notebook_documents(db, tenant_id: str, notebook_id: uuid.UUID) -> list[Document]:
+    return (
+        await db.execute(
+            select(Document)
+            .join(NotebookDocument, NotebookDocument.document_id == Document.id)
+            .where(
+                NotebookDocument.notebook_id == notebook_id,
+                NotebookDocument.tenant_id == tenant_id,
+                Document.tenant_id == tenant_id,
+            )
+            .order_by(NotebookDocument.created_at, Document.created_at.desc())
+        )
+    ).scalars().all()
 
 
 def _metadata_page(metadata: dict[str, object]) -> int | None:
@@ -460,6 +559,13 @@ class AgentStreamRequest(BaseModel):
     user_query: str
     model: str | None = None
     document_id: uuid.UUID | None = None
+    notebook_id: uuid.UUID | None = None
+
+    @model_validator(mode="after")
+    def validate_single_scope(self) -> AgentStreamRequest:
+        if self.document_id is not None and self.notebook_id is not None:
+            raise ValueError("document_id and notebook_id cannot be used together")
+        return self
 
 
 @app.post("/agent/stream")
@@ -468,6 +574,8 @@ async def agent_stream(body: AgentStreamRequest, tenant_id: TenantID) -> Streami
     user_query = await _enforce_agent_limits(tenant_id, body.user_query, "/agent/stream")
     model_name = body.model or settings.strong_model
     scoped_document_id = body.document_id
+    scoped_notebook_id = body.notebook_id
+    scoped_document_ids: list[uuid.UUID] | None = None
 
     if scoped_document_id is not None:
         async with tenant_session(tenant_id) as db:
@@ -483,10 +591,30 @@ async def agent_stream(body: AgentStreamRequest, tenant_id: TenantID) -> Streami
             raise HTTPException(status_code=404, detail="document not found")
         if doc.status != DocumentStatus.done:
             raise HTTPException(status_code=409, detail="document is not indexed yet")
+    if scoped_notebook_id is not None:
+        async with tenant_session(tenant_id) as db:
+            notebook = (
+                await db.execute(
+                    select(Notebook).where(
+                        Notebook.id == scoped_notebook_id,
+                        Notebook.tenant_id == tenant_id,
+                    )
+                )
+            ).scalar_one_or_none()
+            if notebook is None:
+                raise HTTPException(status_code=404, detail="notebook not found")
+            notebook_documents = await _load_notebook_documents(db, tenant_id, scoped_notebook_id)
+        if not notebook_documents:
+            raise HTTPException(status_code=409, detail="notebook has no documents")
+        scoped_document_ids = [
+            doc.id for doc in notebook_documents if doc.status == DocumentStatus.done
+        ]
+        if not scoped_document_ids:
+            raise HTTPException(status_code=409, detail="notebook has no indexed documents yet")
 
     async def generate() -> AsyncIterator[str]:
         request_t0 = time.monotonic()
-        scoped = scoped_document_id is not None
+        scoped = scoped_document_id is not None or scoped_notebook_id is not None
         cached = None
         if not scoped:
             cache_t0 = time.monotonic()
@@ -517,11 +645,13 @@ async def agent_stream(body: AgentStreamRequest, tenant_id: TenantID) -> Streami
                 k=settings.fast_rag_candidate_k,
                 max_distance=settings.retrieval_max_distance,
                 document_id=scoped_document_id,
+                document_ids=scoped_document_ids,
             )
             log.info(
-                "agent_stream retrieve | tenant=%s document=%s chunks=%d latency_ms=%d matches=%s",
+                "agent_stream retrieve | tenant=%s document=%s notebook=%s chunks=%d latency_ms=%d matches=%s",
                 tenant_id,
                 scoped_document_id,
+                scoped_notebook_id,
                 len(chunks),
                 int((time.monotonic() - retrieve_t0) * 1000),
                 [(c.filename, round(c.score, 3)) for c in chunks],
@@ -530,7 +660,9 @@ async def agent_stream(body: AgentStreamRequest, tenant_id: TenantID) -> Streami
             if not chunks:
                 answer = (
                     "Не нашёл релевантной информации в выбранном документе."
-                    if scoped
+                    if scoped_document_id is not None
+                    else "Не нашёл релевантной информации в выбранной коллекции."
+                    if scoped_notebook_id is not None
                     else "Не нашёл релевантной информации в загруженных документах."
                 )
                 output = AgentRunOutput(answer=answer, sources=[], confidence=0.2, cached=False)
@@ -546,7 +678,7 @@ async def agent_stream(body: AgentStreamRequest, tenant_id: TenantID) -> Streami
                 limit=settings.fast_rag_top_k,
                 per_document=(
                     settings.fast_rag_top_k
-                    if scoped
+                    if scoped_document_id is not None
                     else settings.fast_rag_per_document_k
                 ),
             )
@@ -1029,6 +1161,123 @@ async def delete_document(document_id: uuid.UUID, tenant_id: TenantID) -> None:
             exc,
         )
     await _invalidate_semantic_cache(tenant_id, f"document-delete:{document_id}")
+
+
+# ── Notebooks ─────────────────────────────────────────────────────────────────
+
+@app.get("/notebooks", response_model=list[NotebookResponse])
+async def list_notebooks(tenant_id: TenantID) -> list[NotebookResponse]:
+    async with tenant_session(tenant_id) as s:
+        notebooks = (
+            await s.execute(
+                select(Notebook)
+                .where(Notebook.tenant_id == tenant_id)
+                .order_by(Notebook.created_at.desc())
+            )
+        ).scalars().all()
+        responses: list[NotebookResponse] = []
+        for notebook in notebooks:
+            documents = await _load_notebook_documents(s, tenant_id, notebook.id)
+            responses.append(_notebook_response(notebook, documents))
+    return responses
+
+
+@app.post("/notebooks", response_model=NotebookResponse, status_code=201)
+async def create_notebook(
+    body: CreateNotebookRequest,
+    tenant_id: TenantID,
+) -> NotebookResponse:
+    document_ids = _dedupe_uuid_list(body.document_ids)
+    async with tenant_session(tenant_id) as s:
+        documents = await _load_tenant_documents(s, tenant_id, document_ids)
+        notebook = Notebook(
+            id=uuid.uuid4(),
+            tenant_id=tenant_id,
+            title=_clean_notebook_title(body.title),
+            description=body.description.strip() if body.description else None,
+        )
+        s.add(notebook)
+        await s.flush()
+        s.add_all(
+            [
+                NotebookDocument(
+                    notebook_id=notebook.id,
+                    document_id=document_id,
+                    tenant_id=tenant_id,
+                )
+                for document_id in document_ids
+            ]
+        )
+        await s.flush()
+        await s.refresh(notebook)
+        response = _notebook_response(notebook, documents)
+    return response
+
+
+@app.get("/notebooks/{notebook_id}", response_model=NotebookResponse)
+async def get_notebook(notebook_id: uuid.UUID, tenant_id: TenantID) -> NotebookResponse:
+    async with tenant_session(tenant_id) as s:
+        notebook = (
+            await s.execute(
+                select(Notebook).where(Notebook.id == notebook_id, Notebook.tenant_id == tenant_id)
+            )
+        ).scalar_one_or_none()
+        if notebook is None:
+            raise HTTPException(status_code=404, detail="notebook not found")
+        documents = await _load_notebook_documents(s, tenant_id, notebook_id)
+        response = _notebook_response(notebook, documents)
+    return response
+
+
+@app.put("/notebooks/{notebook_id}/documents", response_model=NotebookResponse)
+async def replace_notebook_documents(
+    notebook_id: uuid.UUID,
+    body: UpdateNotebookDocumentsRequest,
+    tenant_id: TenantID,
+) -> NotebookResponse:
+    document_ids = _dedupe_uuid_list(body.document_ids)
+    async with tenant_session(tenant_id) as s:
+        notebook = (
+            await s.execute(
+                select(Notebook).where(Notebook.id == notebook_id, Notebook.tenant_id == tenant_id)
+            )
+        ).scalar_one_or_none()
+        if notebook is None:
+            raise HTTPException(status_code=404, detail="notebook not found")
+        documents = await _load_tenant_documents(s, tenant_id, document_ids)
+        await s.execute(
+            delete(NotebookDocument).where(
+                NotebookDocument.notebook_id == notebook_id,
+                NotebookDocument.tenant_id == tenant_id,
+            )
+        )
+        s.add_all(
+            [
+                NotebookDocument(
+                    notebook_id=notebook_id,
+                    document_id=document_id,
+                    tenant_id=tenant_id,
+                )
+                for document_id in document_ids
+            ]
+        )
+        notebook.updated_at = datetime.now(timezone.utc)
+        await s.flush()
+        response = _notebook_response(notebook, documents)
+    return response
+
+
+@app.delete("/notebooks/{notebook_id}", status_code=204)
+async def delete_notebook(notebook_id: uuid.UUID, tenant_id: TenantID) -> None:
+    async with tenant_session(tenant_id) as s:
+        notebook = (
+            await s.execute(
+                select(Notebook).where(Notebook.id == notebook_id, Notebook.tenant_id == tenant_id)
+            )
+        ).scalar_one_or_none()
+        if notebook is None:
+            raise HTTPException(status_code=404, detail="notebook not found")
+        await s.delete(notebook)
 
 
 # ── Chat sessions ─────────────────────────────────────────────────────────────

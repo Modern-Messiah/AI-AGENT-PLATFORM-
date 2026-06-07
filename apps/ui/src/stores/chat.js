@@ -163,6 +163,7 @@ export const useChatStore = defineStore('chat', () => {
     const { apiFetch, apiStreamFetch } = useApi()
     if (!query.trim() || loading.value) return null
     const documentId = options.documentId || null
+    const notebookId = options.notebookId || null
 
     let sessId = activeId.value
     if (!sessId) {
@@ -199,7 +200,7 @@ export const useChatStore = defineStore('chat', () => {
     }
 
     // ── HITL path — uses Temporal workflow ──────────────────────────────────
-    if (requireApproval && !documentId) {
+    if (requireApproval && !documentId && !notebookId) {
       try {
         const data = await apiFetch('/agent/run', {
           method: 'POST',
@@ -231,6 +232,7 @@ export const useChatStore = defineStore('chat', () => {
     const streamController = new AbortController()
     const streamBody = { user_query: query, model }
     if (documentId) streamBody.document_id = documentId
+    if (notebookId) streamBody.notebook_id = notebookId
     activeStreamController = streamController
     try {
       const response = await apiStreamFetch('/agent/stream', {

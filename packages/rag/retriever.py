@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from sqlalchemy import select
@@ -30,11 +31,14 @@ async def retrieve_chunks(
     k: int | None = None,
     max_distance: float | None = None,
     document_id: str | uuid.UUID | None = None,
+    document_ids: Sequence[str | uuid.UUID] | None = None,
 ) -> list[RetrievedChunk]:
     k = k or settings.retrieval_top_k
     max_distance = settings.retrieval_max_distance if max_distance is None else max_distance
     [query_vec] = await embed_texts([query])
-    document_uuid = uuid.UUID(str(document_id)) if document_id is not None else None
+    document_uuids = [uuid.UUID(str(doc_id)) for doc_id in (document_ids or [])]
+    if document_id is not None:
+        document_uuids = [uuid.UUID(str(document_id))]
 
     async with tenant_session(tenant_id) as session:
         # cosine_distance: 0 = identical, 2 = opposite. Score = 1 - distance.
@@ -46,8 +50,8 @@ async def retrieve_chunks(
             .order_by(distance)
             .limit(k)
         )
-        if document_uuid is not None:
-            stmt = stmt.where(Chunk.document_id == document_uuid)
+        if document_uuids:
+            stmt = stmt.where(Chunk.document_id.in_(document_uuids))
         if max_distance > 0:
             stmt = stmt.where(distance <= max_distance)
         rows = (await session.execute(stmt)).all()

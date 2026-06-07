@@ -42,15 +42,21 @@ watch(() => settings.apiKey, async (key) => {
 }, { immediate: true })
 
 watch(
-  [() => route.query.ask, () => route.query.document, () => settings.isConnected],
-  async ([ask, document, connected]) => {
+  [
+    () => route.query.ask,
+    () => route.query.document,
+    () => route.query.notebook,
+    () => settings.isConnected,
+  ],
+  async ([ask, document, notebook, connected]) => {
     if (!connected || typeof ask !== 'string' || !ask.trim()) return
     const documentId = typeof document === 'string' ? document : null
-    const askKey = `${ask}:${documentId || ''}`
+    const notebookId = typeof notebook === 'string' ? notebook : null
+    const askKey = `${ask}:${documentId || ''}:${notebookId || ''}`
     if (consumedAsk.value === askKey) return
     consumedAsk.value = askKey
     await router.replace({ path: '/chat' })
-    await handleSend(ask, { documentId })
+    await handleSend(ask, { documentId, notebookId })
   },
   { immediate: true },
 )
@@ -61,7 +67,7 @@ async function handleSend(query, options = {}) {
     return
   }
   try {
-    const approval = options.documentId ? false : requireApproval.value
+    const approval = options.documentId || options.notebookId ? false : requireApproval.value
     await chat.sendMessage(query, model.value, approval, options)
   } catch {}
 }

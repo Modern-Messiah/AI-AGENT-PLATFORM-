@@ -1,0 +1,39 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+
+import {
+  buildNotebookRoute,
+  buildNotebookQuestionRoute,
+  normalizeNotebook,
+} from '../src/utils/notebooks.js'
+
+
+test('normalizes API notebooks for the notebook table', () => {
+  const notebook = normalizeNotebook({
+    id: 'notebook-1',
+    title: 'Product research',
+    description: 'Source set for one project.',
+    document_count: 2,
+    document_ids: ['doc-1', 'doc-2'],
+    created_at: '2026-06-07T09:00:00Z',
+  })
+
+  assert.equal(notebook.id, 'notebook-1')
+  assert.equal(notebook.title, 'Product research')
+  assert.equal(notebook.description, 'Source set for one project.')
+  assert.equal(notebook.documentCount, 2)
+  assert.deepEqual(notebook.documentIds, ['doc-1', 'doc-2'])
+  assert.equal(notebook.createdLabel, '07.06.2026')
+})
+
+
+test('builds notebook routes', () => {
+  assert.deepEqual(buildNotebookRoute('notebook-1'), { path: '/notebooks/notebook-1' })
+  assert.deepEqual(
+    buildNotebookQuestionRoute('Что общее в источниках?', 'notebook-1'),
+    {
+      path: '/chat',
+      query: { ask: 'Что общее в источниках?', notebook: 'notebook-1' },
+    },
+  )
+})

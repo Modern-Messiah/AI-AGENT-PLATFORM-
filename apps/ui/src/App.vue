@@ -26,12 +26,16 @@ const showSettings = ref(!settings.isConnected)
 const PAGE_META = {
   '/chat':       { title: 'AI Agent Chat',  sub: 'PydanticAI · Temporal · Kimi K2' },
   '/documents':  { title: 'База знаний',    sub: 'Общая память для всех чатов' },
+  '/notebooks':  { title: 'Ноутбуки',       sub: 'Коллекции источников' },
   '/analytics':  { title: 'Аналитика',      sub: 'ClickHouse · Cost Tracking' },
 }
 
 const meta = computed(() => {
   if (route.path.startsWith('/documents/')) {
     return { title: 'Документ', sub: 'Фокусный режим базы знаний' }
+  }
+  if (route.path.startsWith('/notebooks/')) {
+    return { title: 'Ноутбук', sub: 'Чат по выбранной коллекции' }
   }
   return PAGE_META[route.path] || { title: 'AI Agent Platform', sub: '' }
 })

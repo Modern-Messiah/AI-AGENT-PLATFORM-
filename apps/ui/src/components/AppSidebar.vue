@@ -12,7 +12,7 @@
     <RouterLink v-for="item in nav" :key="item.path"
       :to="item.path"
       class="nav-item"
-      :class="{ active: route.path === item.path }"
+      :class="{ active: isNavActive(item.path) }"
     >
       <AppIcon :name="item.icon" class="nav-icon" />
       {{ item.label }}
@@ -63,6 +63,11 @@ const statusLabel = computed(() => {
 const nav = [
   { path: '/chat',       label: 'Агент',     icon: 'chat' },
   { path: '/documents',  label: 'База знаний', icon: 'docs' },
+  { path: '/notebooks',  label: 'Ноутбуки', icon: 'docs' },
   { path: '/analytics',  label: 'Аналитика', icon: 'analytics' },
 ]
+
+function isNavActive(path) {
+  return route.path === path || route.path.startsWith(`${path}/`)
+}
 </script>

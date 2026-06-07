@@ -57,6 +57,58 @@ class Document(Base):
     chunks: Mapped[list["Chunk"]] = relationship(
         back_populates="document", cascade="all, delete-orphan"
     )
+    notebook_links: Mapped[list["NotebookDocument"]] = relationship(
+        back_populates="document", cascade="all, delete-orphan"
+    )
+
+
+class Notebook(Base):
+    __tablename__ = "notebooks"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    title: Mapped[str] = mapped_column(String(256), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    document_links: Mapped[list["NotebookDocument"]] = relationship(
+        back_populates="notebook", cascade="all, delete-orphan"
+    )
+
+
+class NotebookDocument(Base):
+    __tablename__ = "notebook_documents"
+
+    notebook_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("notebooks.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    document_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("documents.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    tenant_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    notebook: Mapped[Notebook] = relationship(back_populates="document_links")
+    document: Mapped[Document] = relationship(back_populates="notebook_links")
+
+    __table_args__ = (
+        Index("ix_notebook_documents_tenant_notebook", "tenant_id", "notebook_id"),
+        Index("ix_notebook_documents_tenant_document", "tenant_id", "document_id"),
+    )
 
 
 class Chunk(Base):
