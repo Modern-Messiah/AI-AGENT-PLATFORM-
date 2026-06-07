@@ -19,6 +19,20 @@ class DocumentInsights:
     suggested_questions: list[str] = field(default_factory=list)
 
 
+@dataclass
+class NotebookInsightSource:
+    filename: str
+    summary: str = ""
+    suggested_questions: list[str] = field(default_factory=list)
+
+
+@dataclass
+class NotebookInsights:
+    summary: str = ""
+    suggested_questions: list[str] = field(default_factory=list)
+    key_topics: list[str] = field(default_factory=list)
+
+
 def _normalize_text(text: str) -> str:
     return _SPACE_RE.sub(" ", text).strip()
 
@@ -62,4 +76,71 @@ def build_document_insights(
             f"Какие ключевые факты есть в {filename}?",
             f"Какие выводы можно сделать из {filename}?",
         ],
+    )
+
+
+_MAX_NOTEBOOK_SUMMARY_CHARS = 900
+_TOPIC_RE = re.compile(r"[A-Za-zА-Яа-яЁё][A-Za-zА-Яа-яЁё0-9-]{3,}")
+_STOPWORDS = {
+    "and",
+    "into",
+    "that",
+    "the",
+    "this",
+    "with",
+    "внутри",
+    "документ",
+    "документы",
+    "какие",
+    "можно",
+    "сделать",
+    "факты",
+    "выводы",
+}
+
+
+def _extract_key_topics(text: str, limit: int = 6) -> list[str]:
+    counts: dict[str, int] = {}
+    labels: dict[str, str] = {}
+    positions: dict[str, int] = {}
+    for raw in _TOPIC_RE.findall(text):
+        key = raw.lower()
+        if key in _STOPWORDS:
+            continue
+        counts[key] = counts.get(key, 0) + 1
+        labels.setdefault(key, raw[:1].upper() + raw[1:])
+        positions.setdefault(key, len(positions))
+
+    ranked = sorted(counts, key=lambda item: (-counts[item], positions[item]))
+    return [labels[item] for item in ranked[:limit]]
+
+
+def build_notebook_insights(
+    sources: list[NotebookInsightSource],
+    *,
+    title: str,
+) -> NotebookInsights:
+    useful_sources = [source for source in sources if _normalize_text(source.summary)]
+    if not useful_sources:
+        return NotebookInsights()
+
+    summary_parts = [
+        f"{source.filename}: {_normalize_text(source.summary)}"
+        for source in useful_sources[:4]
+    ]
+    summary = _trim_at_word(" ".join(summary_parts), _MAX_NOTEBOOK_SUMMARY_CHARS)
+    title = title.strip() or "коллекции"
+    topic_text = " ".join(
+        [source.filename for source in useful_sources]
+        + [source.summary for source in useful_sources]
+    )
+
+    return NotebookInsights(
+        summary=summary,
+        suggested_questions=[
+            f"Что объединяет документы в {title}?",
+            f"Какие ключевые темы повторяются в {title}?",
+            f"Какие выводы можно сделать по коллекции {title}?",
+        ],
+        key_topics=_extract_key_topics(topic_text),
     )

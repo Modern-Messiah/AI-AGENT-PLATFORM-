@@ -37,12 +37,30 @@
         <div class="card">
           <div class="card-header">
             <div>
-              <div class="card-title">Спросить по коллекции</div>
-              <div class="card-sub">RAG-поиск ограничен документами ниже</div>
+              <div class="card-title">Обзор коллекции</div>
+              <div class="card-sub">
+                {{ normalized.insightsUpdatedLabel === '—' ? 'Ещё не собран' : `обновлён ${normalized.insightsUpdatedLabel}` }}
+              </div>
             </div>
+            <button
+              class="btn btn-ghost btn-sm"
+              type="button"
+              :disabled="refreshingInsights || includedDocs.length === 0"
+              @click="refreshInsights"
+            >
+              {{ refreshingInsights ? 'Обновляю...' : 'Обновить обзор' }}
+            </button>
           </div>
           <div class="detail-card-body">
-            <p v-if="normalized.description" class="summary-text">{{ normalized.description }}</p>
+            <p v-if="normalized.summary" class="summary-text">{{ normalized.summary }}</p>
+            <div v-else class="muted-block">
+              Нажмите «Обновить обзор», чтобы собрать краткое описание, темы и вопросы по этой коллекции.
+            </div>
+            <div v-if="normalized.keyTopics.length" class="topic-row">
+              <span v-for="topic in normalized.keyTopics" :key="topic" class="topic-chip">
+                {{ topic }}
+              </span>
+            </div>
             <div v-if="suggestedQuestions.length" class="detail-questions">
               <button
                 v-for="question in suggestedQuestions"
@@ -53,6 +71,9 @@
               >
                 {{ question }}
               </button>
+            </div>
+            <div v-else-if="normalized.description" class="summary-note">
+              {{ normalized.description }}
             </div>
             <button class="btn btn-primary ask-main" type="button" @click="askDefaultQuestion">
               Открыть чат по коллекции
@@ -140,6 +161,7 @@ const allDocs = ref([])
 const selectedDocumentIds = ref([])
 const loading = ref(false)
 const saving = ref(false)
+const refreshingInsights = ref(false)
 const error = ref('')
 const toast = ref(null)
 
@@ -148,6 +170,9 @@ const normalized = computed(() => notebook.value ? normalizeNotebook(notebook.va
 const readyDocs = computed(() => allDocs.value.filter(doc => doc.status === 'done'))
 const includedDocs = computed(() => (normalized.value?.documents || []).map(normalizeDocument))
 const suggestedQuestions = computed(() => {
+  if (normalized.value?.suggestedQuestions?.length) {
+    return normalized.value.suggestedQuestions
+  }
   const questions = []
   for (const doc of includedDocs.value) {
     for (const question of doc.suggestedQuestions || []) {
@@ -203,6 +228,20 @@ async function saveDocuments() {
     toast.value = { msg: `Ошибка сохранения: ${e.message}`, type: 'error' }
   } finally {
     saving.value = false
+  }
+}
+
+async function refreshInsights() {
+  refreshingInsights.value = true
+  try {
+    const data = await apiFetch(`/notebooks/${notebookId.value}/insights`, { method: 'POST' })
+    notebook.value = data
+    selectedDocumentIds.value = [...(data.document_ids || [])]
+    toast.value = { msg: 'Обзор коллекции обновлён', type: 'success' }
+  } catch (e) {
+    toast.value = { msg: `Ошибка обзора: ${e.message}`, type: 'error' }
+  } finally {
+    refreshingInsights.value = false
   }
 }
 
@@ -283,6 +322,27 @@ function askDefaultQuestion() {
   color: var(--muted2);
   font-size: 13px;
   line-height: 1.65;
+}
+.summary-note {
+  margin-bottom: 14px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.topic-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin: 12px 0 14px;
+}
+.topic-chip {
+  padding: 5px 8px;
+  border: 1px solid color-mix(in oklch, var(--accent) 35%, transparent);
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--accent) 10%, transparent);
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 10px;
 }
 .detail-questions {
   display: flex;

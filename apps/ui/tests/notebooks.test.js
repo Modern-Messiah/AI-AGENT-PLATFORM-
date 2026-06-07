@@ -15,6 +15,10 @@ test('normalizes API notebooks for the notebook table', () => {
     description: 'Source set for one project.',
     document_count: 2,
     document_ids: ['doc-1', 'doc-2'],
+    summary: 'Combined source overview.',
+    suggested_questions: ['Что общее в источниках?'],
+    key_topics: ['Revenue', 'Expansion'],
+    insights_updated_at: '2026-06-07T10:00:00Z',
     created_at: '2026-06-07T09:00:00Z',
   })
 
@@ -23,6 +27,10 @@ test('normalizes API notebooks for the notebook table', () => {
   assert.equal(notebook.description, 'Source set for one project.')
   assert.equal(notebook.documentCount, 2)
   assert.deepEqual(notebook.documentIds, ['doc-1', 'doc-2'])
+  assert.equal(notebook.summary, 'Combined source overview.')
+  assert.deepEqual(notebook.suggestedQuestions, ['Что общее в источниках?'])
+  assert.deepEqual(notebook.keyTopics, ['Revenue', 'Expansion'])
+  assert.equal(notebook.insightsUpdatedLabel, '07.06.2026')
   assert.equal(notebook.createdLabel, '07.06.2026')
 })
 

@@ -19,6 +19,7 @@ Endpoints:
   POST /notebooks                    — create a document collection
   GET  /notebooks/{id}               — collection detail
   PUT  /notebooks/{id}/documents     — replace collection documents
+  POST /notebooks/{id}/insights      — rebuild collection overview
   GET  /analytics/usage              — cost/token aggregate for a tenant
   POST /auth/keys                    — create an API key (admin only)
 """
@@ -55,8 +56,10 @@ from packages.llm import stream_chat_text
 from packages.observability import setup_tracing
 from packages.rag import (
     CitationSource,
+    NotebookInsightSource,
     build_citations,
     build_grounded_messages,
+    build_notebook_insights,
     retrieve_chunks,
     select_diverse_chunks,
 )
@@ -281,6 +284,10 @@ class NotebookResponse(BaseModel):
     document_ids: list[str] = Field(default_factory=list)
     document_count: int = 0
     documents: list[DocumentResponse] = Field(default_factory=list)
+    summary: str | None = None
+    suggested_questions: list[str] = Field(default_factory=list)
+    key_topics: list[str] = Field(default_factory=list)
+    insights_updated_at: str | None = None
     created_at: str | None = None
     updated_at: str | None = None
 
@@ -371,6 +378,14 @@ def _notebook_response(
         document_ids=[str(doc.id) for doc in docs],
         document_count=len(docs),
         documents=[_document_response(doc) for doc in docs],
+        summary=notebook.summary,
+        suggested_questions=notebook.suggested_questions or [],
+        key_topics=notebook.key_topics or [],
+        insights_updated_at=(
+            notebook.insights_updated_at.isoformat()
+            if notebook.insights_updated_at
+            else None
+        ),
         created_at=notebook.created_at.isoformat() if notebook.created_at else None,
         updated_at=notebook.updated_at.isoformat() if notebook.updated_at else None,
     )
@@ -1262,6 +1277,54 @@ async def replace_notebook_documents(
             ]
         )
         notebook.updated_at = datetime.now(timezone.utc)
+        notebook.summary = None
+        notebook.suggested_questions = []
+        notebook.key_topics = []
+        notebook.insights_updated_at = None
+        await s.flush()
+        response = _notebook_response(notebook, documents)
+    return response
+
+
+@app.post("/notebooks/{notebook_id}/insights", response_model=NotebookResponse)
+async def rebuild_notebook_insights(
+    notebook_id: uuid.UUID,
+    tenant_id: TenantID,
+) -> NotebookResponse:
+    async with tenant_session(tenant_id) as s:
+        notebook = (
+            await s.execute(
+                select(Notebook).where(Notebook.id == notebook_id, Notebook.tenant_id == tenant_id)
+            )
+        ).scalar_one_or_none()
+        if notebook is None:
+            raise HTTPException(status_code=404, detail="notebook not found")
+
+        documents = await _load_notebook_documents(s, tenant_id, notebook_id)
+        ready_documents = [doc for doc in documents if doc.status == DocumentStatus.done]
+        if not ready_documents:
+            raise HTTPException(status_code=409, detail="notebook has no indexed documents yet")
+
+        insights = build_notebook_insights(
+            [
+                NotebookInsightSource(
+                    filename=doc.filename,
+                    summary=doc.summary or "",
+                    suggested_questions=doc.suggested_questions or [],
+                )
+                for doc in ready_documents
+            ],
+            title=notebook.title,
+        )
+        if not insights.summary:
+            raise HTTPException(status_code=409, detail="notebook documents have no insights yet")
+
+        now = datetime.now(timezone.utc)
+        notebook.summary = insights.summary
+        notebook.suggested_questions = insights.suggested_questions
+        notebook.key_topics = insights.key_topics
+        notebook.insights_updated_at = now
+        notebook.updated_at = now
         await s.flush()
         response = _notebook_response(notebook, documents)
     return response

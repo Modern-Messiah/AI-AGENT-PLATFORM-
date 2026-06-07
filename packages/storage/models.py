@@ -69,6 +69,14 @@ class Notebook(Base):
     tenant_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
     title: Mapped[str] = mapped_column(String(256), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    suggested_questions: Mapped[list[str]] = mapped_column(
+        JSONB, default=list, nullable=False
+    )
+    key_topics: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+    insights_updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

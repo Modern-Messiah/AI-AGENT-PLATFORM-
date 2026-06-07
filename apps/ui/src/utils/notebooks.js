@@ -8,6 +8,16 @@ export function normalizeNotebook(notebook) {
       ? notebook.document_ids
       : (notebook.documentIds || []),
     documents: notebook.documents || [],
+    summary: notebook.summary || '',
+    suggestedQuestions: Array.isArray(notebook.suggested_questions)
+      ? notebook.suggested_questions
+      : (notebook.suggestedQuestions || []),
+    keyTopics: Array.isArray(notebook.key_topics)
+      ? notebook.key_topics
+      : (notebook.keyTopics || []),
+    insightsUpdatedLabel: notebook.insights_updated_at
+      ? new Date(notebook.insights_updated_at).toLocaleDateString('ru')
+      : '—',
     createdLabel: notebook.created_at ? new Date(notebook.created_at).toLocaleDateString('ru') : '—',
     updatedLabel: notebook.updated_at ? new Date(notebook.updated_at).toLocaleDateString('ru') : '—',
   }

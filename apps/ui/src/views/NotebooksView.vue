@@ -89,6 +89,12 @@
               <small>
                 {{ notebook.documentCount }} документ(ов) · создан {{ notebook.createdLabel }}
               </small>
+              <em v-if="notebook.summary">{{ notebook.summary }}</em>
+              <span v-if="notebook.keyTopics.length" class="topic-preview">
+                <strong v-for="topic in notebook.keyTopics.slice(0, 4)" :key="topic">
+                  {{ topic }}
+                </strong>
+              </span>
             </button>
             <button class="btn btn-ghost btn-sm" title="Удалить" @click="deleteNotebook(notebook.id)">
               <AppIcon name="trash" />
@@ -319,7 +325,8 @@ function openNotebook(id) {
   text-align: left;
 }
 .notebook-open span,
-.notebook-open small {
+.notebook-open small,
+.notebook-open em {
   display: block;
 }
 .notebook-open small {
@@ -327,6 +334,28 @@ function openNotebook(id) {
   color: var(--muted);
   font-family: var(--mono);
   font-size: 10px;
+}
+.notebook-open em {
+  margin-top: 8px;
+  color: var(--muted2);
+  font-size: 12px;
+  font-style: normal;
+  line-height: 1.45;
+}
+.topic-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 8px;
+}
+.topic-preview strong {
+  padding: 3px 6px;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--accent) 10%, transparent);
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 500;
 }
 
 @media (max-width: 900px) {

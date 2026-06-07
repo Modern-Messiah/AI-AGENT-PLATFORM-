@@ -17,6 +17,7 @@ def test_notebook_routes_are_registered() -> None:
     assert ("/notebooks/{notebook_id}", "GET") in routes
     assert ("/notebooks/{notebook_id}", "DELETE") in routes
     assert ("/notebooks/{notebook_id}/documents", "PUT") in routes
+    assert ("/notebooks/{notebook_id}/insights", "POST") in routes
 
 
 def test_notebook_create_schema_accepts_document_ids() -> None:
@@ -39,12 +40,19 @@ def test_notebook_response_schema_includes_documents() -> None:
         document_ids=["document-1"],
         document_count=1,
         documents=[],
+        summary="Combined source overview.",
+        suggested_questions=["Что общее в источниках?"],
+        key_topics=["Revenue", "Expansion"],
+        insights_updated_at="2026-06-07T00:00:00+00:00",
         created_at="2026-06-07T00:00:00+00:00",
         updated_at="2026-06-07T00:00:00+00:00",
     )
 
     assert response.document_count == 1
     assert response.document_ids == ["document-1"]
+    assert response.summary == "Combined source overview."
+    assert response.suggested_questions == ["Что общее в источниках?"]
+    assert response.key_topics == ["Revenue", "Expansion"]
 
 
 def test_agent_stream_request_accepts_notebook_scope() -> None:
