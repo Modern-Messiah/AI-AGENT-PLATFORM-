@@ -34,6 +34,10 @@ class Document(Base):
     mime_type: Mapped[str] = mapped_column(String(128), nullable=False)
     object_key: Mapped[str] = mapped_column(String(512), nullable=False)
     size_bytes: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    suggested_questions: Mapped[list[str]] = mapped_column(
+        JSONB, default=list, nullable=False
+    )
     status: Mapped[DocumentStatus] = mapped_column(
         Enum(DocumentStatus, name="document_status"),
         default=DocumentStatus.pending,

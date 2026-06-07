@@ -67,7 +67,7 @@ from packages.storage import (
     object_store,
 )
 from packages.storage.db import tenant_session
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select, update
 from starlette.responses import StreamingResponse
 from temporalio.client import Client
@@ -243,6 +243,8 @@ class DocumentResponse(BaseModel):
     filename: str
     status: DocumentStatus
     size_bytes: int = 0
+    summary: str | None = None
+    suggested_questions: list[str] = Field(default_factory=list)
     error: str | None = None
     created_at: str | None = None
 
@@ -302,6 +304,8 @@ def _document_response(doc: Document) -> DocumentResponse:
         filename=doc.filename,
         status=doc.status,
         size_bytes=doc.size_bytes,
+        summary=doc.summary,
+        suggested_questions=doc.suggested_questions or [],
         error=doc.error,
         created_at=doc.created_at.isoformat() if doc.created_at else None,
     )

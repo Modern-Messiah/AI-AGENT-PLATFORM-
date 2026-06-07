@@ -1,8 +1,6 @@
 import json
 
 import pytest
-from pydantic import ValidationError
-
 from apps.api.main import (
     AddMessageRequest,
     AgentRunApiResponse,
@@ -11,6 +9,7 @@ from apps.api.main import (
 )
 from packages.agents import AgentRunInput, AgentRunOutput
 from packages.rag.citations import CitationSource
+from pydantic import ValidationError
 
 
 def test_agent_input_requires_query() -> None:
@@ -82,3 +81,20 @@ def test_chat_api_schemas_accept_serialized_citations() -> None:
     assert chat_message.sources[0].filename == "guide.pdf"
     assert api_response.sources[0].chunk_id == "chunk-1"
     assert json.loads(json.dumps(_serialize_sources(add_request.sources))) == [citation]
+
+
+def test_document_response_accepts_insights() -> None:
+    from apps.api.main import DocumentResponse
+    from packages.storage import DocumentStatus
+
+    response = DocumentResponse(
+        id="document-1",
+        tenant_id="tenant-a",
+        filename="guide.pdf",
+        status=DocumentStatus.done,
+        summary="Short document summary.",
+        suggested_questions=["Что внутри guide.pdf?"],
+    )
+
+    assert response.summary == "Short document summary."
+    assert response.suggested_questions == ["Что внутри guide.pdf?"]

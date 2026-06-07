@@ -15,6 +15,10 @@ export function normalizeDocument(doc) {
     size: formatFileSize(doc.size_bytes || doc.sizeBytes || 0),
     time: doc.created_at ? new Date(doc.created_at).toLocaleDateString('ru') : '—',
     createdLabel: doc.created_at ? new Date(doc.created_at).toLocaleDateString('ru') : '—',
+    summary: doc.summary || '',
+    suggestedQuestions: Array.isArray(doc.suggested_questions)
+      ? doc.suggested_questions
+      : (doc.suggestedQuestions || []),
   }
 }
 
@@ -40,4 +44,8 @@ export function canReindexDocument(doc) {
     && doc.status !== 'pending'
     && doc.status !== 'processing'
   )
+}
+
+export function buildQuestionRoute(question) {
+  return { path: '/chat', query: { ask: question } }
 }

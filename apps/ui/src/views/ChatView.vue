@@ -14,6 +14,7 @@
 
 <script setup>
 import { ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useChatStore } from '@/stores/chat'
 import { useSettingsStore } from '@/stores/settings'
 import ChatHistory from '@/components/chat/ChatHistory.vue'
@@ -24,10 +25,13 @@ import AppToast from '@/components/AppToast.vue'
 
 const chat = useChatStore()
 const settings = useSettingsStore()
+const route = useRoute()
+const router = useRouter()
 
 const model = ref('moonshot/kimi-k2.6')
 const requireApproval = ref(false)
 const toast = ref(null)
+const consumedAsk = ref('')
 
 function setToast(t) { toast.value = t }
 
@@ -35,6 +39,13 @@ watch(() => settings.apiKey, async (key) => {
   if (!key) { chat.reset(); return }
   if (chat.loadedKey === key && (chat.sessions.length || chat.activeId)) return
   try { await chat.loadSessions(key) } catch {}
+}, { immediate: true })
+
+watch([() => route.query.ask, () => settings.isConnected], async ([ask, connected]) => {
+  if (!connected || typeof ask !== 'string' || !ask.trim() || consumedAsk.value === ask) return
+  consumedAsk.value = ask
+  await router.replace({ path: '/chat' })
+  await handleSend(ask)
 }, { immediate: true })
 
 async function handleSend(query) {

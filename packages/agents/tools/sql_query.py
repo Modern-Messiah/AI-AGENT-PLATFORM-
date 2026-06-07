@@ -80,8 +80,9 @@ def register_sql_tool(agent: Agent[AgentDeps, object]) -> None:
 
         Schema:
           documents(id, tenant_id, filename, mime_type, object_key,
-                    status, error, created_at, updated_at)
-            status values: pending | processing | ready | error
+                    status, summary, suggested_questions, error,
+                    created_at, updated_at)
+            status values: pending | processing | done | failed
 
           chunks(id, document_id, tenant_id, chunk_idx,
                  content, metadata, created_at)

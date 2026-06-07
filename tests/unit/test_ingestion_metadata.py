@@ -8,6 +8,7 @@ from apps.worker.activities.ingestion import (
     mark_done,
 )
 from packages.rag.parser import ParsedSegment
+from packages.rag.summaries import DocumentInsights
 
 
 async def test_chunk_and_embed_preserves_segment_metadata(monkeypatch) -> None:
@@ -21,7 +22,11 @@ async def test_chunk_and_embed_preserves_segment_metadata(monkeypatch) -> None:
                 text=("Page four evidence. " * 180).strip(),
                 metadata={"page": 4},
             )
-        ]
+        ],
+        insights=DocumentInsights(
+            summary="Page four evidence summary.",
+            suggested_questions=["Что есть на странице 4?"],
+        ),
     )
 
     batch = await chunk_and_embed(parsed)
@@ -29,6 +34,8 @@ async def test_chunk_and_embed_preserves_segment_metadata(monkeypatch) -> None:
     assert len(batch.contents) > 1
     assert len(batch.contents) == len(batch.embeddings) == len(batch.metadata)
     assert all(metadata == {"page": 4} for metadata in batch.metadata)
+    assert batch.summary == "Page four evidence summary."
+    assert batch.suggested_questions == ["Что есть на странице 4?"]
 
 
 class _FakeSession:

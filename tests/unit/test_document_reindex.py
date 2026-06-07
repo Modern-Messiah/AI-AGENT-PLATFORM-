@@ -70,6 +70,8 @@ async def test_reindex_document_starts_new_ingestion_workflow(monkeypatch) -> No
         mime_type="application/pdf",
         object_key="tenant-a/manual.pdf",
         size_bytes=2048,
+        summary="Old summary.",
+        suggested_questions=["Old question?"],
         status=DocumentStatus.done,
         error="old failure",
         created_at=datetime(2026, 6, 7, tzinfo=timezone.utc),

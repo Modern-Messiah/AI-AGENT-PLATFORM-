@@ -74,44 +74,67 @@
           </tr>
         </thead>
         <tbody>
-          <tr v-for="doc in docs" :key="doc.id">
-            <td>
-              <div class="file-name">
-                <div class="file-icon">{{ mimeIcon(doc.name) }}</div>
-                <div>
-                  <div>{{ doc.name }}</div>
-                  <div v-if="doc.error" style="font-size: 11px; color: var(--red); margin-top: 2px">{{ doc.error }}</div>
-                  <div style="font-size: 10px; color: var(--muted); font-family: var(--mono); margin-top: 1px">{{ doc.id }}</div>
+          <template v-for="doc in docs" :key="doc.id">
+            <tr>
+              <td>
+                <div class="file-name">
+                  <div class="file-icon">{{ mimeIcon(doc.name) }}</div>
+                  <div>
+                    <div>{{ doc.name }}</div>
+                    <div v-if="doc.error" style="font-size: 11px; color: var(--red); margin-top: 2px">{{ doc.error }}</div>
+                    <div style="font-size: 10px; color: var(--muted); font-family: var(--mono); margin-top: 1px">{{ doc.id }}</div>
+                  </div>
                 </div>
-              </div>
-            </td>
-            <td>
-              <div style="display: flex; align-items: center; gap: 8px">
-                <StatusBadge :status="doc.status" />
-                <div v-if="doc.status === 'processing'" class="spinner"></div>
-              </div>
-            </td>
-            <td class="td-mono">{{ doc.size }}</td>
-            <td class="td-mono">{{ doc.time }}</td>
-            <td>
-              <div style="display: flex; gap: 6px; justify-content: flex-end">
-                <button class="btn btn-ghost btn-sm" title="Копировать ID" @click="copyId(doc.id)">
-                  <AppIcon name="copy" />
-                </button>
-                <button
-                  class="btn btn-ghost btn-sm"
-                  title="Переиндексировать"
-                  :disabled="!canReindexDocument(doc)"
-                  @click="reindexDoc(doc)"
-                >
-                  <AppIcon name="refresh" />
-                </button>
-                <button class="btn btn-ghost btn-sm" title="Удалить" @click="removeDoc(doc.id)">
-                  <AppIcon name="trash" />
-                </button>
-              </div>
-            </td>
-          </tr>
+              </td>
+              <td>
+                <div style="display: flex; align-items: center; gap: 8px">
+                  <StatusBadge :status="doc.status" />
+                  <div v-if="doc.status === 'processing' || doc.status === 'pending'" class="spinner"></div>
+                </div>
+              </td>
+              <td class="td-mono">{{ doc.size }}</td>
+              <td class="td-mono">{{ doc.time }}</td>
+              <td>
+                <div style="display: flex; gap: 6px; justify-content: flex-end">
+                  <button class="btn btn-ghost btn-sm" title="Копировать ID" @click="copyId(doc.id)">
+                    <AppIcon name="copy" />
+                  </button>
+                  <button
+                    class="btn btn-ghost btn-sm"
+                    title="Переиндексировать"
+                    :disabled="!canReindexDocument(doc)"
+                    @click="reindexDoc(doc)"
+                  >
+                    <AppIcon name="refresh" />
+                  </button>
+                  <button class="btn btn-ghost btn-sm" title="Удалить" @click="removeDoc(doc.id)">
+                    <AppIcon name="trash" />
+                  </button>
+                </div>
+              </td>
+            </tr>
+            <tr v-if="hasInsights(doc)" class="doc-insights-row">
+              <td colspan="5">
+                <div class="doc-insights">
+                  <div v-if="doc.summary" class="doc-summary">
+                    <span>Что внутри</span>
+                    {{ doc.summary }}
+                  </div>
+                  <div v-if="doc.suggestedQuestions.length" class="doc-questions">
+                    <button
+                      v-for="question in doc.suggestedQuestions"
+                      :key="question"
+                      class="question-chip"
+                      type="button"
+                      @click="askQuestion(question)"
+                    >
+                      {{ question }}
+                    </button>
+                  </div>
+                </div>
+              </td>
+            </tr>
+          </template>
         </tbody>
       </table>
     </div>
@@ -125,13 +148,15 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { useApi } from '@/composables/useApi'
 import { useSettingsStore } from '@/stores/settings'
 import AppIcon from '@/components/AppIcon.vue'
 import AppToast from '@/components/AppToast.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import {
+  buildQuestionRoute,
   canReindexDocument,
   formatFileSize,
   knowledgeBaseStats,
@@ -140,6 +165,7 @@ import {
 
 const { apiFetch } = useApi()
 const settings = useSettingsStore()
+const router = useRouter()
 
 const docs = ref([])
 const dragging = ref(false)
@@ -165,6 +191,15 @@ function mimeIcon(name) {
   const ext = (name || '').split('.').pop().toLowerCase()
   return ({ pdf: '📄', md: '📝', txt: '📃', csv: '📊', html: '🌐', docx: '📘' })[ext] || '📁'
 }
+
+function hasInsights(doc) {
+  return Boolean(doc.summary || doc.suggestedQuestions?.length)
+}
+
+function askQuestion(question) {
+  router.push(buildQuestionRoute(question))
+}
+
 async function removeDoc(id) {
   const doc = docs.value.find(d => d.id === id)
   if (doc?._pending) { docs.value = docs.value.filter(d => d.id !== id); return }
@@ -212,7 +247,10 @@ async function pollStatus(docId) {
     await new Promise(r => setTimeout(r, 5000))
     try {
       const data = await apiFetch(`/documents/${docId}`)
-      if (data.status === 'done') { updateDoc(docId, { status: 'done', _pending: false }); return }
+      if (data.status === 'done') {
+        updateDoc(docId, { ...normalizeDocument(data), _pending: false })
+        return
+      }
       if (data.status === 'failed') { updateDoc(docId, { status: 'failed', error: data.error || 'Failed', _pending: false }); return }
     } catch {}
   }
@@ -303,6 +341,48 @@ function handleFileInput(e) {
 }
 .kb-stat.warn span {
   color: var(--red);
+}
+.doc-insights-row td {
+  padding-top: 0;
+}
+.doc-insights {
+  margin: 0 8px 12px 42px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in oklch, var(--s2) 74%, transparent);
+}
+.doc-summary {
+  color: var(--muted2);
+  font-size: 12px;
+  line-height: 1.55;
+}
+.doc-summary span {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 600;
+}
+.doc-questions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+.question-chip {
+  padding: 5px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--s1);
+  color: var(--muted2);
+  cursor: pointer;
+  font-family: var(--font);
+  font-size: 11px;
+}
+.question-chip:hover {
+  border-color: var(--accent);
+  color: var(--text);
 }
 
 @media (max-width: 900px) {

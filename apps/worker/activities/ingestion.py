@@ -11,8 +11,9 @@ import uuid
 from dataclasses import dataclass, field
 
 from packages.cache.semantic import semantic_cache
-from packages.rag import chunk_segments, embed_texts, parse_to_segments
+from packages.rag import build_document_insights, chunk_segments, embed_texts, parse_to_segments
 from packages.rag.parser import ParsedSegment
+from packages.rag.summaries import DocumentInsights
 from packages.storage import Chunk, Document, DocumentStatus, object_store
 from packages.storage.db import tenant_session
 from sqlalchemy import update
@@ -34,6 +35,7 @@ class ParsedDoc:
     # `text` remains for Temporal compatibility with already-produced activity results.
     segments: list[ParsedSegment] = field(default_factory=list)
     text: str = ""
+    insights: DocumentInsights = field(default_factory=DocumentInsights)
 
 
 @dataclass
@@ -41,6 +43,8 @@ class ChunkBatch:
     contents: list[str]
     embeddings: list[list[float]]
     metadata: list[dict[str, object]] = field(default_factory=list)
+    summary: str = ""
+    suggested_questions: list[str] = field(default_factory=list)
 
 
 @activity.defn
@@ -57,7 +61,8 @@ async def mark_processing(input: IngestionInput) -> None:
 async def parse_document(input: IngestionInput) -> ParsedDoc:
     data = object_store.get(input.object_key)
     segments = await parse_to_segments(data, input.filename)
-    return ParsedDoc(segments=segments)
+    insights = build_document_insights(segments, filename=input.filename)
+    return ParsedDoc(segments=segments, insights=insights)
 
 
 @activity.defn
@@ -74,6 +79,8 @@ async def chunk_and_embed(parsed: ParsedDoc) -> ChunkBatch:
         contents=contents,
         embeddings=embeddings,
         metadata=[chunk.metadata for chunk in chunks],
+        summary=parsed.insights.summary,
+        suggested_questions=parsed.insights.suggested_questions,
     )
 
 
@@ -84,6 +91,14 @@ async def store_chunks(input: IngestionInput, batch: ChunkBatch) -> int:
         # Idempotency: drop any existing chunks for this document before re-insert.
         # On retry we re-embed but never duplicate rows.
         await s.execute(Chunk.__table__.delete().where(Chunk.document_id == document_id))
+        await s.execute(
+            update(Document)
+            .where(Document.id == document_id)
+            .values(
+                summary=batch.summary or None,
+                suggested_questions=batch.suggested_questions,
+            )
+        )
         s.add_all(
             [
                 Chunk(

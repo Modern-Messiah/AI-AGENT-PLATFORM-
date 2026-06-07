@@ -8,10 +8,13 @@ from packages.rag.citations import (
 from packages.rag.embedder import embed_texts
 from packages.rag.parser import parse_to_segments, parse_to_text
 from packages.rag.retriever import retrieve_chunks
+from packages.rag.summaries import DocumentInsights, build_document_insights
 
 __all__ = [
     "CitationSource",
+    "DocumentInsights",
     "build_citations",
+    "build_document_insights",
     "build_grounded_messages",
     "chunk_segments",
     "chunk_text",
