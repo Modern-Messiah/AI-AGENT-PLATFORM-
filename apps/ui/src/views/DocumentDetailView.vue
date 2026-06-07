@@ -1,0 +1,312 @@
+<template>
+  <div class="screen-body">
+    <div class="detail-hero">
+      <div>
+        <button class="back-link" type="button" @click="router.push('/documents')">
+          Назад к базе знаний
+        </button>
+        <div class="detail-eyebrow">Документ в общей памяти</div>
+        <h1>{{ normalized?.name || 'Документ' }}</h1>
+        <p>
+          Здесь видно, что агент знает об этом файле: краткое описание,
+          вопросы для старта и фрагменты, по которым строятся ответы.
+        </p>
+      </div>
+      <div v-if="normalized" class="detail-status">
+        <StatusBadge :status="normalized.status" />
+        <span>{{ normalized.size }}</span>
+        <span>{{ normalized.createdLabel }}</span>
+      </div>
+    </div>
+
+    <div v-if="loading" class="card">
+      <div class="empty">
+        <div class="spinner"></div>
+        <div class="empty-title">Загружаю документ</div>
+      </div>
+    </div>
+
+    <div v-else-if="error" class="card">
+      <div class="empty">
+        <div class="empty-title">Не удалось открыть документ</div>
+        <div class="empty-sub">{{ error }}</div>
+      </div>
+    </div>
+
+    <template v-else-if="normalized">
+      <div class="detail-grid">
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Что внутри</div>
+              <div class="card-sub">Сводка после индексации</div>
+            </div>
+          </div>
+          <div class="detail-card-body">
+            <p v-if="normalized.summary" class="summary-text">{{ normalized.summary }}</p>
+            <div v-else class="muted-block">
+              Сводка появится после успешной индексации документа.
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Спросить по документу</div>
+              <div class="card-sub">Ответ будет ограничен этим источником</div>
+            </div>
+          </div>
+          <div class="detail-card-body">
+            <div v-if="normalized.suggestedQuestions.length" class="detail-questions">
+              <button
+                v-for="question in normalized.suggestedQuestions"
+                :key="question"
+                class="question-chip"
+                type="button"
+                @click="askQuestion(question)"
+              >
+                {{ question }}
+              </button>
+            </div>
+            <button class="btn btn-primary ask-main" type="button" @click="askDefaultQuestion">
+              Открыть чат по этому документу
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <div class="card-title">Фрагменты индекса</div>
+            <div class="card-sub">{{ chunks.length }} фрагмент(ов), которые доступны RAG-поиску</div>
+          </div>
+          <button class="btn btn-ghost btn-sm" type="button" @click="loadDocument">
+            Обновить
+          </button>
+        </div>
+
+        <div v-if="chunks.length === 0" class="empty">
+          <div class="empty-title">Фрагментов пока нет</div>
+          <div class="empty-sub">
+            Если документ ещё индексируется, подождите немного. Если статус готов,
+            попробуйте переиндексировать файл.
+          </div>
+        </div>
+
+        <div v-else class="chunks-list">
+          <article v-for="chunk in chunks" :key="chunk.chunk_id" class="chunk-card">
+            <div class="chunk-meta">
+              <span>#{{ chunk.chunk_index + 1 }}</span>
+              <span v-if="chunk.page">стр. {{ chunk.page }}</span>
+            </div>
+            <p>{{ chunk.excerpt }}</p>
+          </article>
+        </div>
+      </div>
+    </template>
+  </div>
+</template>
+
+<script setup>
+import { computed, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { useApi } from '@/composables/useApi'
+import { useSettingsStore } from '@/stores/settings'
+import StatusBadge from '@/components/StatusBadge.vue'
+import { buildQuestionRoute, normalizeDocument } from '@/utils/documents'
+
+const route = useRoute()
+const router = useRouter()
+const { apiFetch } = useApi()
+const settings = useSettingsStore()
+
+const document = ref(null)
+const chunks = ref([])
+const loading = ref(false)
+const error = ref('')
+
+const documentId = computed(() => String(route.params.id || ''))
+const normalized = computed(() => document.value ? normalizeDocument(document.value) : null)
+
+watch([() => settings.apiKey, documentId], loadDocument, { immediate: true })
+
+async function loadDocument() {
+  if (!settings.isConnected || !documentId.value) {
+    document.value = null
+    chunks.value = []
+    error.value = settings.isConnected ? 'Документ не выбран' : 'Задайте X-API-Key в настройках'
+    return
+  }
+
+  loading.value = true
+  error.value = ''
+  try {
+    const [doc, chunkRows] = await Promise.all([
+      apiFetch(`/documents/${documentId.value}`),
+      apiFetch(`/documents/${documentId.value}/chunks`).catch(() => []),
+    ])
+    document.value = doc
+    chunks.value = chunkRows
+  } catch (e) {
+    document.value = null
+    chunks.value = []
+    error.value = e.message
+  } finally {
+    loading.value = false
+  }
+}
+
+function askQuestion(question) {
+  router.push(buildQuestionRoute(question, documentId.value))
+}
+
+function askDefaultQuestion() {
+  const firstQuestion = normalized.value?.suggestedQuestions?.[0]
+  askQuestion(firstQuestion || `Расскажи главное из документа ${normalized.value?.name || ''}`)
+}
+</script>
+
+<style scoped>
+.detail-hero {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background:
+    radial-gradient(circle at 0% 0%, color-mix(in oklch, var(--accent) 18%, transparent), transparent 30%),
+    var(--s1);
+}
+.back-link {
+  margin: 0 0 12px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted2);
+  cursor: pointer;
+  font-family: var(--font);
+  font-size: 12px;
+}
+.back-link:hover {
+  color: var(--text);
+}
+.detail-eyebrow {
+  margin-bottom: 6px;
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.detail-hero h1 {
+  margin: 0 0 8px;
+  font-size: 24px;
+  letter-spacing: -0.04em;
+  overflow-wrap: anywhere;
+}
+.detail-hero p {
+  max-width: 640px;
+  color: var(--muted2);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.detail-status {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  min-width: 140px;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.detail-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
+  gap: 14px;
+}
+.detail-card-body {
+  padding: 16px 18px;
+}
+.summary-text {
+  margin: 0;
+  color: var(--muted2);
+  font-size: 13px;
+  line-height: 1.65;
+}
+.muted-block {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.detail-questions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.question-chip {
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--s1);
+  color: var(--muted2);
+  cursor: pointer;
+  font-family: var(--font);
+  font-size: 12px;
+  text-align: left;
+}
+.question-chip:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+.ask-main {
+  width: 100%;
+  justify-content: center;
+}
+.chunks-list {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+}
+.chunk-card {
+  padding: 13px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: color-mix(in oklch, var(--s2) 74%, transparent);
+}
+.chunk-meta {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 10px;
+  text-transform: uppercase;
+}
+.chunk-card p {
+  margin: 0;
+  color: var(--muted2);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+@media (max-width: 900px) {
+  .detail-hero,
+  .detail-status {
+    align-items: flex-start;
+  }
+  .detail-hero {
+    flex-direction: column;
+  }
+  .detail-grid {
+    grid-template-columns: 1fr;
+  }
+}
+</style>

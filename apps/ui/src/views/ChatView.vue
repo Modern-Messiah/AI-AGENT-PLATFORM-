@@ -41,20 +41,28 @@ watch(() => settings.apiKey, async (key) => {
   try { await chat.loadSessions(key) } catch {}
 }, { immediate: true })
 
-watch([() => route.query.ask, () => settings.isConnected], async ([ask, connected]) => {
-  if (!connected || typeof ask !== 'string' || !ask.trim() || consumedAsk.value === ask) return
-  consumedAsk.value = ask
-  await router.replace({ path: '/chat' })
-  await handleSend(ask)
-}, { immediate: true })
+watch(
+  [() => route.query.ask, () => route.query.document, () => settings.isConnected],
+  async ([ask, document, connected]) => {
+    if (!connected || typeof ask !== 'string' || !ask.trim()) return
+    const documentId = typeof document === 'string' ? document : null
+    const askKey = `${ask}:${documentId || ''}`
+    if (consumedAsk.value === askKey) return
+    consumedAsk.value = askKey
+    await router.replace({ path: '/chat' })
+    await handleSend(ask, { documentId })
+  },
+  { immediate: true },
+)
 
-async function handleSend(query) {
+async function handleSend(query, options = {}) {
   if (!settings.isConnected) {
     toast.value = { msg: 'Задайте X-API-Key в настройках', type: 'error' }
     return
   }
   try {
-    await chat.sendMessage(query, model.value, requireApproval.value)
+    const approval = options.documentId ? false : requireApproval.value
+    await chat.sendMessage(query, model.value, approval, options)
   } catch {}
 }
 

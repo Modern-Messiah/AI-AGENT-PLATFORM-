@@ -159,9 +159,10 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
-  async function sendMessage(query, model, requireApproval = false) {
+  async function sendMessage(query, model, requireApproval = false, options = {}) {
     const { apiFetch, apiStreamFetch } = useApi()
     if (!query.trim() || loading.value) return null
+    const documentId = options.documentId || null
 
     let sessId = activeId.value
     if (!sessId) {
@@ -198,7 +199,7 @@ export const useChatStore = defineStore('chat', () => {
     }
 
     // ── HITL path — uses Temporal workflow ──────────────────────────────────
-    if (requireApproval) {
+    if (requireApproval && !documentId) {
       try {
         const data = await apiFetch('/agent/run', {
           method: 'POST',
@@ -228,12 +229,14 @@ export const useChatStore = defineStore('chat', () => {
     // ── Streaming path ───────────────────────────────────────────────────────
     let streamMsg = null
     const streamController = new AbortController()
+    const streamBody = { user_query: query, model }
+    if (documentId) streamBody.document_id = documentId
     activeStreamController = streamController
     try {
       const response = await apiStreamFetch('/agent/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_query: query, model }),
+        body: JSON.stringify(streamBody),
         signal: streamController.signal,
       })
 

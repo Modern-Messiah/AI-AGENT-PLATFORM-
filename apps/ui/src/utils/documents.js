@@ -46,6 +46,12 @@ export function canReindexDocument(doc) {
   )
 }
 
-export function buildQuestionRoute(question) {
-  return { path: '/chat', query: { ask: question } }
+export function buildQuestionRoute(question, documentId = null) {
+  const query = { ask: question }
+  if (documentId) query.document = documentId
+  return { path: '/chat', query }
+}
+
+export function buildDocumentRoute(documentId) {
+  return { path: `/documents/${documentId}` }
 }

@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import {
+  buildDocumentRoute,
   buildQuestionRoute,
   canReindexDocument,
   knowledgeBaseStats,
@@ -63,4 +64,14 @@ test('builds chat route for suggested questions', () => {
     buildQuestionRoute('Что внутри manual.pdf?'),
     { path: '/chat', query: { ask: 'Что внутри manual.pdf?' } },
   )
+
+  assert.deepEqual(
+    buildQuestionRoute('Что внутри manual.pdf?', 'doc-1'),
+    { path: '/chat', query: { ask: 'Что внутри manual.pdf?', document: 'doc-1' } },
+  )
+})
+
+
+test('builds document detail route', () => {
+  assert.deepEqual(buildDocumentRoute('doc-1'), { path: '/documents/doc-1' })
 })

@@ -29,5 +29,10 @@ const PAGE_META = {
   '/analytics':  { title: 'Аналитика',      sub: 'ClickHouse · Cost Tracking' },
 }
 
-const meta = computed(() => PAGE_META[route.path] || { title: 'AI Agent Platform', sub: '' })
+const meta = computed(() => {
+  if (route.path.startsWith('/documents/')) {
+    return { title: 'Документ', sub: 'Фокусный режим базы знаний' }
+  }
+  return PAGE_META[route.path] || { title: 'AI Agent Platform', sub: '' }
+})
 </script>

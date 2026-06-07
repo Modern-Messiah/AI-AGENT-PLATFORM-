@@ -13,6 +13,7 @@ Endpoints:
   POST /documents                    — upload file, kick off IngestionWorkflow
   POST /documents/bulk               — upload multiple files
   GET  /documents/{id}               — ingestion status
+  GET  /documents/{id}/chunks        — indexed chunk previews for one document
   POST /documents/{id}/reindex       — rebuild chunks/embeddings for existing file
   GET  /analytics/usage              — cost/token aggregate for a tenant
   POST /auth/keys                    — create an API key (admin only)
@@ -249,6 +250,13 @@ class DocumentResponse(BaseModel):
     created_at: str | None = None
 
 
+class DocumentChunkPreview(BaseModel):
+    chunk_id: str
+    chunk_index: int
+    page: int | None = None
+    excerpt: str
+
+
 class AgentRunApiResponse(BaseModel):
     answer: str = ""
     confidence: float = 0.0
@@ -309,6 +317,24 @@ def _document_response(doc: Document) -> DocumentResponse:
         error=doc.error,
         created_at=doc.created_at.isoformat() if doc.created_at else None,
     )
+
+
+def _metadata_page(metadata: dict[str, object]) -> int | None:
+    page = metadata.get("page")
+    if isinstance(page, bool) or page is None:
+        return None
+    try:
+        parsed = int(page)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed > 0 else None
+
+
+def _chunk_excerpt(content: str, max_chars: int = 520) -> str:
+    excerpt = re.sub(r"\s+", " ", content).strip()
+    if len(excerpt) <= max_chars:
+        return excerpt
+    return f"{excerpt[:max_chars].rstrip()}…"
 
 
 # ── App lifecycle ─────────────────────────────────────────────────────────────
@@ -433,6 +459,7 @@ async def run_agent(payload: AgentRunInput, tenant_id: TenantID) -> AgentRunApiR
 class AgentStreamRequest(BaseModel):
     user_query: str
     model: str | None = None
+    document_id: uuid.UUID | None = None
 
 
 @app.post("/agent/stream")
@@ -440,21 +467,41 @@ async def agent_stream(body: AgentStreamRequest, tenant_id: TenantID) -> Streami
     """SSE streaming agent — bypasses Temporal for interactive chat."""
     user_query = await _enforce_agent_limits(tenant_id, body.user_query, "/agent/stream")
     model_name = body.model or settings.strong_model
+    scoped_document_id = body.document_id
+
+    if scoped_document_id is not None:
+        async with tenant_session(tenant_id) as db:
+            doc = (
+                await db.execute(
+                    select(Document).where(
+                        Document.id == scoped_document_id,
+                        Document.tenant_id == tenant_id,
+                    )
+                )
+            ).scalar_one_or_none()
+        if doc is None:
+            raise HTTPException(status_code=404, detail="document not found")
+        if doc.status != DocumentStatus.done:
+            raise HTTPException(status_code=409, detail="document is not indexed yet")
 
     async def generate() -> AsyncIterator[str]:
         request_t0 = time.monotonic()
-        cache_t0 = time.monotonic()
-        # Semantic cache — instant reply if hit
-        try:
-            cached = await semantic_cache.get(user_query, tenant_id)
-        except Exception:
-            cached = None
-        log.info(
-            "agent_stream cache lookup | tenant=%s hit=%s latency_ms=%d",
-            tenant_id,
-            cached is not None,
-            int((time.monotonic() - cache_t0) * 1000),
-        )
+        scoped = scoped_document_id is not None
+        cached = None
+        if not scoped:
+            cache_t0 = time.monotonic()
+            # Semantic cache — instant reply if hit. Scoped document requests skip it:
+            # the same wording can mean different things inside different files.
+            try:
+                cached = await semantic_cache.get(user_query, tenant_id)
+            except Exception:
+                cached = None
+            log.info(
+                "agent_stream cache lookup | tenant=%s hit=%s latency_ms=%d",
+                tenant_id,
+                cached is not None,
+                int((time.monotonic() - cache_t0) * 1000),
+            )
 
         if cached is not None:
             cached_sources = _serialize_sources(cached.sources)
@@ -469,17 +516,23 @@ async def agent_stream(body: AgentStreamRequest, tenant_id: TenantID) -> Streami
                 tenant_id,
                 k=settings.fast_rag_candidate_k,
                 max_distance=settings.retrieval_max_distance,
+                document_id=scoped_document_id,
             )
             log.info(
-                "agent_stream retrieve | tenant=%s chunks=%d latency_ms=%d matches=%s",
+                "agent_stream retrieve | tenant=%s document=%s chunks=%d latency_ms=%d matches=%s",
                 tenant_id,
+                scoped_document_id,
                 len(chunks),
                 int((time.monotonic() - retrieve_t0) * 1000),
                 [(c.filename, round(c.score, 3)) for c in chunks],
             )
 
             if not chunks:
-                answer = "Не нашёл релевантной информации в загруженных документах."
+                answer = (
+                    "Не нашёл релевантной информации в выбранном документе."
+                    if scoped
+                    else "Не нашёл релевантной информации в загруженных документах."
+                )
                 output = AgentRunOutput(answer=answer, sources=[], confidence=0.2, cached=False)
                 yield f"data: {json.dumps({'type': 'token', 'content': answer})}\n\n"
                 yield (
@@ -491,7 +544,11 @@ async def agent_stream(body: AgentStreamRequest, tenant_id: TenantID) -> Streami
             selected_chunks = select_diverse_chunks(
                 chunks,
                 limit=settings.fast_rag_top_k,
-                per_document=settings.fast_rag_per_document_k,
+                per_document=(
+                    settings.fast_rag_top_k
+                    if scoped
+                    else settings.fast_rag_per_document_k
+                ),
             )
             sources = build_citations(selected_chunks)
             log.info(
@@ -562,10 +619,11 @@ async def agent_stream(body: AgentStreamRequest, tenant_id: TenantID) -> Streami
             except Exception:
                 pass
 
-            try:
-                await semantic_cache.set(user_query, tenant_id, output)
-            except Exception:
-                pass
+            if not scoped:
+                try:
+                    await semantic_cache.set(user_query, tenant_id, output)
+                except Exception:
+                    pass
 
         except Exception as exc:
             log.exception("agent_stream error | tenant=%s", tenant_id)
@@ -864,6 +922,40 @@ async def get_document(document_id: uuid.UUID, tenant_id: TenantID) -> DocumentR
     if doc is None:
         raise HTTPException(status_code=404, detail="document not found")
     return _document_response(doc)
+
+
+@app.get("/documents/{document_id}/chunks", response_model=list[DocumentChunkPreview])
+async def list_document_chunks(
+    document_id: uuid.UUID,
+    tenant_id: TenantID,
+    limit: int = Query(default=25, ge=1, le=100),
+) -> list[DocumentChunkPreview]:
+    async with tenant_session(tenant_id) as s:
+        doc = (
+            await s.execute(
+                select(Document).where(Document.id == document_id, Document.tenant_id == tenant_id)
+            )
+        ).scalar_one_or_none()
+        if doc is None:
+            raise HTTPException(status_code=404, detail="document not found")
+        chunks = (
+            await s.execute(
+                select(Chunk)
+                .where(Chunk.document_id == document_id, Chunk.tenant_id == tenant_id)
+                .order_by(Chunk.chunk_idx)
+                .limit(limit)
+            )
+        ).scalars().all()
+
+    return [
+        DocumentChunkPreview(
+            chunk_id=str(chunk.id),
+            chunk_index=chunk.chunk_idx,
+            page=_metadata_page(chunk.chunk_metadata or {}),
+            excerpt=_chunk_excerpt(chunk.content),
+        )
+        for chunk in chunks
+    ]
 
 
 @app.post("/documents/{document_id}/reindex", response_model=DocumentResponse, status_code=202)

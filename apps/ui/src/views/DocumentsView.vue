@@ -80,7 +80,14 @@
                 <div class="file-name">
                   <div class="file-icon">{{ mimeIcon(doc.name) }}</div>
                   <div>
-                    <div>{{ doc.name }}</div>
+                    <button
+                      class="file-title-button"
+                      type="button"
+                      :disabled="doc._pending"
+                      @click="openDocument(doc)"
+                    >
+                      {{ doc.name }}
+                    </button>
                     <div v-if="doc.error" style="font-size: 11px; color: var(--red); margin-top: 2px">{{ doc.error }}</div>
                     <div style="font-size: 10px; color: var(--muted); font-family: var(--mono); margin-top: 1px">{{ doc.id }}</div>
                   </div>
@@ -96,6 +103,14 @@
               <td class="td-mono">{{ doc.time }}</td>
               <td>
                 <div style="display: flex; gap: 6px; justify-content: flex-end">
+                  <button
+                    class="btn btn-ghost btn-sm"
+                    title="Открыть документ"
+                    :disabled="doc._pending"
+                    @click="openDocument(doc)"
+                  >
+                    <AppIcon name="docs" />
+                  </button>
                   <button class="btn btn-ghost btn-sm" title="Копировать ID" @click="copyId(doc.id)">
                     <AppIcon name="copy" />
                   </button>
@@ -126,7 +141,7 @@
                       :key="question"
                       class="question-chip"
                       type="button"
-                      @click="askQuestion(question)"
+                      @click="askQuestion(question, doc.id)"
                     >
                       {{ question }}
                     </button>
@@ -156,6 +171,7 @@ import AppIcon from '@/components/AppIcon.vue'
 import AppToast from '@/components/AppToast.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import {
+  buildDocumentRoute,
   buildQuestionRoute,
   canReindexDocument,
   formatFileSize,
@@ -196,8 +212,13 @@ function hasInsights(doc) {
   return Boolean(doc.summary || doc.suggestedQuestions?.length)
 }
 
-function askQuestion(question) {
-  router.push(buildQuestionRoute(question))
+function askQuestion(question, documentId) {
+  router.push(buildQuestionRoute(question, documentId))
+}
+
+function openDocument(doc) {
+  if (doc?._pending) return
+  router.push(buildDocumentRoute(doc.id))
 }
 
 async function removeDoc(id) {
@@ -341,6 +362,23 @@ function handleFileInput(e) {
 }
 .kb-stat.warn span {
   color: var(--red);
+}
+.file-title-button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  font-family: var(--font);
+  font-size: 13px;
+  text-align: left;
+}
+.file-title-button:hover {
+  color: var(--accent);
+}
+.file-title-button:disabled {
+  color: var(--muted2);
+  cursor: not-allowed;
 }
 .doc-insights-row td {
   padding-top: 0;
