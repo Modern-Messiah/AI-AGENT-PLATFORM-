@@ -1,5 +1,30 @@
 <template>
   <div class="screen-body">
+    <div class="kb-hero">
+      <div>
+        <div class="kb-eyebrow">Общая память для всех чатов</div>
+        <h1>База знаний</h1>
+        <p>
+          Загруженные файлы индексируются один раз, а потом агент использует их
+          в любом новом чате с точными ссылками на источники.
+        </p>
+      </div>
+      <div class="kb-stats">
+        <div class="kb-stat">
+          <span>{{ stats.ready }}</span>
+          <label>готово</label>
+        </div>
+        <div class="kb-stat">
+          <span>{{ stats.processing }}</span>
+          <label>в работе</label>
+        </div>
+        <div class="kb-stat" :class="{ warn: stats.failed }">
+          <span>{{ stats.failed }}</span>
+          <label>ошибки</label>
+        </div>
+      </div>
+    </div>
+
     <div
       :class="['drop-zone', { 'drag-over': dragging }]"
       @dragover.prevent="dragging = true"
@@ -10,8 +35,8 @@
       <div class="drop-icon">
         <AppIcon name="upload" :size="32" />
       </div>
-      <div class="drop-title">Перетащите файлы или нажмите для выбора</div>
-      <div class="drop-sub">Файлы загружаются в MinIO и обрабатываются через IngestionWorkflow</div>
+      <div class="drop-title">Добавьте документы в базу знаний</div>
+      <div class="drop-sub">PDF сохраняют страницы для цитат, остальные файлы индексируются фрагментами</div>
       <div class="drop-types">
         <span v-for="t in ['PDF','DOCX','TXT','MD','CSV','HTML']" :key="t" class="type-chip">.{{ t.toLowerCase() }}</span>
       </div>
@@ -21,13 +46,16 @@
     <div class="card">
       <div class="card-header">
         <div>
-          <div class="card-title">Документы</div>
-          <div class="card-sub">{{ doneCount }} из {{ docs.length }} проиндексировано</div>
+          <div class="card-title">Файлы памяти</div>
+          <div class="card-sub">{{ stats.ready }} из {{ stats.total }} готово для ответов во всех чатах</div>
         </div>
         <div style="display: flex; gap: 8px; align-items: center">
           <div v-if="docs.length" class="progress" style="width: 100px">
-            <div class="progress-fill" :style="{ width: progressPct + '%' }"></div>
+            <div class="progress-fill" :style="{ width: stats.progressPct + '%' }"></div>
           </div>
+          <button class="btn btn-ghost btn-sm" title="Обновить" @click="loadDocs">
+            <AppIcon name="refresh" :size="11" />
+          </button>
           <button class="btn btn-ghost btn-sm" title="Очистить список" @click="clearAll">
             <AppIcon name="trash" :size="11" />
           </button>
@@ -36,8 +64,8 @@
 
       <div v-if="docs.length === 0" class="empty" style="padding: 40px">
         <div class="empty-icon">📂</div>
-        <div class="empty-title">Нет документов</div>
-        <div class="empty-sub">Загрузите файл выше для начала RAG-индексации</div>
+        <div class="empty-title">База знаний пока пустая</div>
+        <div class="empty-sub">Загрузите документы, и агент сможет опираться на них в любом чате</div>
       </div>
       <table v-else>
         <thead>
@@ -70,6 +98,14 @@
                 <button class="btn btn-ghost btn-sm" title="Копировать ID" @click="copyId(doc.id)">
                   <AppIcon name="copy" />
                 </button>
+                <button
+                  class="btn btn-ghost btn-sm"
+                  title="Переиндексировать"
+                  :disabled="!canReindexDocument(doc)"
+                  @click="reindexDoc(doc)"
+                >
+                  <AppIcon name="refresh" />
+                </button>
                 <button class="btn btn-ghost btn-sm" title="Удалить" @click="removeDoc(doc.id)">
                   <AppIcon name="trash" />
                 </button>
@@ -81,7 +117,7 @@
     </div>
 
     <div style="font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 8px">
-      <span style="font-family: var(--mono)">pgvector</span> · bge-small-en-v1.5 (384-dim) · HNSW index · cosine similarity
+      <span style="font-family: var(--mono)">pgvector</span> · multi-document citations · page-aware PDF parsing · semantic cache invalidation
     </div>
 
     <AppToast v-if="toast" v-bind="toast" @done="toast = null" />
@@ -95,6 +131,12 @@ import { useSettingsStore } from '@/stores/settings'
 import AppIcon from '@/components/AppIcon.vue'
 import AppToast from '@/components/AppToast.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
+import {
+  canReindexDocument,
+  formatFileSize,
+  knowledgeBaseStats,
+  normalizeDocument,
+} from '@/utils/documents'
 
 const { apiFetch } = useApi()
 const settings = useSettingsStore()
@@ -104,14 +146,6 @@ const dragging = ref(false)
 const toast = ref(null)
 const fileInput = ref(null)
 
-function fmtSize(bytes) {
-  if (!Number.isFinite(bytes) || bytes <= 0) return '—'
-  if (bytes < 1024) return bytes + ' B'
-  if (bytes < 1048576) return (bytes / 1024).toFixed(0) + ' KB'
-  if (bytes < 1073741824) return (bytes / 1048576).toFixed(1) + ' MB'
-  return (bytes / 1073741824).toFixed(1) + ' GB'
-}
-
 async function loadDocs() {
   if (!settings.isConnected) { docs.value = []; return }
   try {
@@ -119,18 +153,13 @@ async function loadDocs() {
     // merge: keep in-progress uploads that aren't in the API list yet
     const apiIds = new Set(data.map(d => d.id))
     const pending = docs.value.filter(d => d._pending && !apiIds.has(d.id))
-    docs.value = [...pending, ...data.map(d => ({
-      id: d.id, name: d.filename, status: d.status,
-      error: d.error || null, size: fmtSize(d.size_bytes || 0),
-      time: d.created_at ? new Date(d.created_at).toLocaleDateString('ru') : '—'
-    }))]
+    docs.value = [...pending, ...data.map(normalizeDocument)]
   } catch { docs.value = [] }
 }
 
 watch(() => settings.apiKey, loadDocs, { immediate: true })
 
-const doneCount = computed(() => docs.value.filter(d => d.status === 'done').length)
-const progressPct = computed(() => docs.value.length ? doneCount.value / docs.value.length * 100 : 0)
+const stats = computed(() => knowledgeBaseStats(docs.value))
 
 function mimeIcon(name) {
   const ext = (name || '').split('.').pop().toLowerCase()
@@ -144,6 +173,19 @@ async function removeDoc(id) {
     docs.value = docs.value.filter(d => d.id !== id)
   } catch (e) {
     toast.value = { msg: `Ошибка удаления: ${e.message}`, type: 'error' }
+  }
+}
+
+async function reindexDoc(doc) {
+  if (!canReindexDocument(doc)) return
+  updateDoc(doc.id, { status: 'pending', error: null, _pending: true })
+  toast.value = { msg: `Переиндексация: ${doc.name}`, type: 'info' }
+  try {
+    await apiFetch(`/documents/${doc.id}/reindex`, { method: 'POST' })
+    pollStatus(doc.id)
+  } catch (e) {
+    updateDoc(doc.id, { status: 'failed', error: e.message, _pending: false })
+    toast.value = { msg: `Ошибка переиндексации: ${e.message}`, type: 'error' }
   }
 }
 
@@ -181,7 +223,7 @@ async function pollStatus(docId) {
 async function uploadFile(file) {
   if (!settings.isConnected) { toast.value = { msg: 'Задайте X-API-Key в настройках', type: 'error' }; return }
   const tempId = 'upload-' + Date.now()
-  const size = file.size < 1048576 ? (file.size / 1024).toFixed(0) + ' KB' : (file.size / 1048576).toFixed(1) + ' MB'
+  const size = formatFileSize(file.size)
   docs.value = [{ id: tempId, name: file.name, status: 'processing', time: 'сейчас', error: null, size, _pending: true }, ...docs.value]
   toast.value = { msg: `Загрузка: ${file.name}`, type: 'info' }
   try {
@@ -204,3 +246,71 @@ function handleFileInput(e) {
   e.target.value = ''
 }
 </script>
+
+<style scoped>
+.kb-hero {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background:
+    radial-gradient(circle at 10% 0%, color-mix(in oklch, var(--purple) 18%, transparent), transparent 28%),
+    var(--s1);
+}
+.kb-eyebrow {
+  margin-bottom: 6px;
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.kb-hero h1 {
+  margin: 0 0 8px;
+  font-size: 24px;
+  letter-spacing: -0.04em;
+}
+.kb-hero p {
+  max-width: 620px;
+  color: var(--muted2);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.kb-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(84px, 1fr));
+  gap: 8px;
+  min-width: 280px;
+}
+.kb-stat {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in oklch, var(--s2) 86%, transparent);
+}
+.kb-stat span {
+  display: block;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 20px;
+  font-weight: 700;
+}
+.kb-stat label {
+  color: var(--muted);
+  font-size: 11px;
+}
+.kb-stat.warn span {
+  color: var(--red);
+}
+
+@media (max-width: 900px) {
+  .kb-hero {
+    flex-direction: column;
+  }
+  .kb-stats {
+    min-width: 0;
+  }
+}
+</style>

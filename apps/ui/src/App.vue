@@ -25,7 +25,7 @@ const showSettings = ref(!settings.isConnected)
 
 const PAGE_META = {
   '/chat':       { title: 'AI Agent Chat',  sub: 'PydanticAI · Temporal · Kimi K2' },
-  '/documents':  { title: 'Документы',      sub: 'RAG · pgvector · MinIO' },
+  '/documents':  { title: 'База знаний',    sub: 'Общая память для всех чатов' },
   '/analytics':  { title: 'Аналитика',      sub: 'ClickHouse · Cost Tracking' },
 }
 

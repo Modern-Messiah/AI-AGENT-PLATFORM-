@@ -13,6 +13,7 @@ Endpoints:
   POST /documents                    — upload file, kick off IngestionWorkflow
   POST /documents/bulk               — upload multiple files
   GET  /documents/{id}               — ingestion status
+  POST /documents/{id}/reindex       — rebuild chunks/embeddings for existing file
   GET  /analytics/usage              — cost/token aggregate for a tenant
   POST /auth/keys                    — create an API key (admin only)
 """
@@ -32,16 +33,6 @@ from typing import Annotated, AsyncIterator
 
 from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from sqlalchemy import func, select, update
-from starlette.responses import StreamingResponse
-from temporalio.client import Client
-from temporalio.service import RPCError
-
-from apps.worker.activities.ingestion import IngestionInput
-from apps.worker.workflows.agent_run import AgentRunWorkflow
-from apps.worker.workflows.ingestion import IngestionWorkflow
-from apps.worker.workflows.multi_step import MultiStepResearchWorkflow
 from packages.agents import (
     AgentRunInput,
     AgentRunOutput,
@@ -51,8 +42,8 @@ from packages.agents import (
 from packages.analytics.clickhouse import ch_client
 from packages.analytics.events import UsageEvent, record_usage
 from packages.auth import generate_key, require_tenant
-from packages.cache.semantic import semantic_cache
 from packages.cache.redis import get_redis
+from packages.cache.semantic import semantic_cache
 from packages.core import settings
 from packages.core.tenant_utils import check_workflow_tenant
 from packages.llm import stream_chat_text
@@ -66,10 +57,26 @@ from packages.rag import (
 )
 from packages.rag.embedder import embed_texts
 from packages.storage import (
-    ApiKey, ChatMessage, ChatSession, Chunk, Document, DocumentStatus,
-    async_session, object_store,
+    ApiKey,
+    ChatMessage,
+    ChatSession,
+    Chunk,
+    Document,
+    DocumentStatus,
+    async_session,
+    object_store,
 )
 from packages.storage.db import tenant_session
+from pydantic import BaseModel
+from sqlalchemy import func, select, update
+from starlette.responses import StreamingResponse
+from temporalio.client import Client
+from temporalio.service import RPCError
+
+from apps.worker.activities.ingestion import IngestionInput
+from apps.worker.workflows.agent_run import AgentRunWorkflow
+from apps.worker.workflows.ingestion import IngestionWorkflow
+from apps.worker.workflows.multi_step import MultiStepResearchWorkflow
 
 logging.basicConfig(level=settings.log_level)
 log = logging.getLogger(__name__)
@@ -853,6 +860,52 @@ async def get_document(document_id: uuid.UUID, tenant_id: TenantID) -> DocumentR
     if doc is None:
         raise HTTPException(status_code=404, detail="document not found")
     return _document_response(doc)
+
+
+@app.post("/documents/{document_id}/reindex", response_model=DocumentResponse, status_code=202)
+async def reindex_document(document_id: uuid.UUID, tenant_id: TenantID) -> DocumentResponse:
+    async with tenant_session(tenant_id) as s:
+        doc = (
+            await s.execute(
+                select(Document).where(Document.id == document_id, Document.tenant_id == tenant_id)
+            )
+        ).scalar_one_or_none()
+        if doc is None:
+            raise HTTPException(status_code=404, detail="document not found")
+        if doc.status in {DocumentStatus.pending, DocumentStatus.processing}:
+            raise HTTPException(status_code=409, detail="document is already being indexed")
+
+        doc.status = DocumentStatus.pending
+        doc.error = None
+        await s.flush()
+        response = _document_response(doc)
+        ingestion_input = IngestionInput(
+            document_id=str(document_id),
+            tenant_id=tenant_id,
+            object_key=doc.object_key,
+            filename=doc.filename,
+        )
+
+    await _invalidate_semantic_cache(tenant_id, f"document-reindex:{document_id}")
+
+    client: Client = app.state.temporal
+    try:
+        await client.start_workflow(
+            IngestionWorkflow.run,
+            ingestion_input,
+            id=f"reindex-{tenant_id}-{document_id}-{uuid.uuid4()}",
+            task_queue=settings.temporal_task_queue,
+        )
+    except Exception as e:
+        async with tenant_session(tenant_id) as s:
+            await s.execute(
+                update(Document)
+                .where(Document.id == document_id)
+                .values(status=DocumentStatus.failed, error="Failed to start reindex workflow")
+            )
+        raise HTTPException(status_code=503, detail="ingestion service unavailable") from e
+
+    return response
 
 
 @app.delete("/documents/{document_id}", status_code=204)

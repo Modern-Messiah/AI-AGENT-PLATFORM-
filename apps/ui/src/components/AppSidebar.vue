@@ -62,7 +62,7 @@ const statusLabel = computed(() => {
 
 const nav = [
   { path: '/chat',       label: 'Агент',     icon: 'chat' },
-  { path: '/documents',  label: 'Документы', icon: 'docs' },
+  { path: '/documents',  label: 'База знаний', icon: 'docs' },
   { path: '/analytics',  label: 'Аналитика', icon: 'analytics' },
 ]
 </script>
