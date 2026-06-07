@@ -30,9 +30,7 @@ class Settings(BaseSettings):
     temporal_namespace: str = "default"
     temporal_task_queue: str = "agent-tasks"
 
-    database_url: str = Field(
-        default="postgresql+asyncpg://postgres:postgres@localhost:5432/app"
-    )
+    database_url: str = Field(default="postgresql+asyncpg://postgres:postgres@localhost:5432/app")
     redis_url: str = "redis://localhost:6379/0"
     clickhouse_url: str = "http://default:clickhouse@localhost:8123/analytics"
 
@@ -47,7 +45,9 @@ class Settings(BaseSettings):
     chunk_overlap: int = 200
     retrieval_top_k: int = 5
     retrieval_max_distance: float = 0.75
-    fast_rag_top_k: int = 3
+    fast_rag_candidate_k: int = 12
+    fast_rag_top_k: int = 6
+    fast_rag_per_document_k: int = 2
     fast_rag_context_max_chars: int = 8_000
 
     # Interactive agent guardrails.

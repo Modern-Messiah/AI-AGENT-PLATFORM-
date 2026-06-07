@@ -43,7 +43,6 @@ from apps.worker.workflows.agent_run import AgentRunWorkflow
 from apps.worker.workflows.ingestion import IngestionWorkflow
 from apps.worker.workflows.multi_step import MultiStepResearchWorkflow
 from packages.agents import (
-    AgentDeps,
     AgentRunInput,
     AgentRunOutput,
     MultiStepResearchInput,
@@ -58,8 +57,14 @@ from packages.core import settings
 from packages.core.tenant_utils import check_workflow_tenant
 from packages.llm import stream_chat_text
 from packages.observability import setup_tracing
+from packages.rag import (
+    CitationSource,
+    build_citations,
+    build_grounded_messages,
+    retrieve_chunks,
+    select_diverse_chunks,
+)
 from packages.rag.embedder import embed_texts
-from packages.rag.retriever import RetrievedChunk, retrieve_chunks
 from packages.storage import (
     ApiKey, ChatMessage, ChatSession, Chunk, Document, DocumentStatus,
     async_session, object_store,
@@ -106,55 +111,25 @@ def _extract_partial_answer(parts: list[object]) -> str | None:
     return None
 
 
-def _build_fast_rag_messages(query: str, chunks: list[RetrievedChunk]) -> list[dict[str, str]]:
-    context_parts: list[str] = []
-    used_chars = 0
-    for i, chunk in enumerate(chunks, 1):
-        header = f"[{i}] {chunk.filename} (score={chunk.score:.3f})\n"
-        content = chunk.content.strip()
-        remaining = settings.fast_rag_context_max_chars - used_chars - len(header)
-        if remaining <= 0:
-            break
-        if len(content) > remaining:
-            content = content[:remaining].rsplit(" ", 1)[0].strip()
-        block = f"{header}{content}"
-        context_parts.append(block)
-        used_chars += len(block)
-
-    context = "\n\n---\n\n".join(context_parts)
+def _serialize_sources(
+    sources: list[str | CitationSource],
+) -> list[str | dict[str, object]]:
     return [
-        {
-            "role": "system",
-            "content": (
-                "You are a concise research assistant. Answer only from the provided "
-                "knowledge-base context. If the context does not contain enough "
-                "information, say that directly. Do not invent facts or filenames."
-            ),
-        },
-        {
-            "role": "user",
-            "content": (
-                f"Question:\n{query}\n\n"
-                f"Knowledge-base context:\n{context}\n\n"
-                "Answer in the user's language. Keep it clear and practical."
-            ),
-        },
+        source.model_dump(mode="json") if isinstance(source, CitationSource) else source
+        for source in sources
     ]
 
 
-def _select_primary_document_chunks(chunks: list[RetrievedChunk]) -> tuple[list[RetrievedChunk], list[str]]:
-    """Keep the fast RAG answer grounded in one source document.
-
-    Retrieval returns the best chunks globally, which can include neighboring
-    documents with similar text. For chat UX we cite one source, so the context
-    must also be limited to that same document.
-    """
-    if not chunks:
-        return [], []
-
-    primary = chunks[0]
-    selected = [chunk for chunk in chunks if chunk.document_id == primary.document_id]
-    return selected, [primary.filename]
+async def _invalidate_semantic_cache(tenant_id: str, reason: str) -> None:
+    try:
+        await semantic_cache.clear(tenant_id)
+    except Exception as exc:
+        log.warning(
+            "semantic cache invalidation failed | tenant=%s reason=%s error=%s",
+            tenant_id,
+            reason,
+            exc,
+        )
 
 
 def _validate_agent_query(query: str) -> str:
@@ -224,7 +199,7 @@ class ChatMessageSchema(BaseModel):
     id: str
     role: str
     content: str
-    sources: list[str] = []
+    sources: list[str | CitationSource] = []
     cached: bool = False
     created_at: str
 
@@ -251,7 +226,7 @@ class UpdateSessionRequest(BaseModel):
 class AddMessageRequest(BaseModel):
     role: str
     content: str
-    sources: list[str] = []
+    sources: list[str | CitationSource] = []
     cached: bool = False
 
 
@@ -268,7 +243,7 @@ class DocumentResponse(BaseModel):
 class AgentRunApiResponse(BaseModel):
     answer: str = ""
     confidence: float = 0.0
-    sources: list[str] = []
+    sources: list[str | CitationSource] = []
     cached: bool = False
     workflow_id: str | None = None
     pending_approval: bool = False
@@ -471,7 +446,7 @@ async def agent_stream(body: AgentStreamRequest, tenant_id: TenantID) -> Streami
         )
 
         if cached is not None:
-            cached_sources = cached.sources[:1]
+            cached_sources = _serialize_sources(cached.sources)
             yield f"data: {json.dumps({'type': 'token', 'content': cached.answer})}\n\n"
             yield f"data: {json.dumps({'type': 'done', 'answer': cached.answer, 'sources': cached_sources, 'confidence': cached.confidence, 'cached': True})}\n\n"
             return
@@ -481,7 +456,7 @@ async def agent_stream(body: AgentStreamRequest, tenant_id: TenantID) -> Streami
             chunks = await retrieve_chunks(
                 user_query,
                 tenant_id,
-                k=settings.fast_rag_top_k,
+                k=settings.fast_rag_candidate_k,
                 max_distance=settings.retrieval_max_distance,
             )
             log.info(
@@ -502,11 +477,16 @@ async def agent_stream(body: AgentStreamRequest, tenant_id: TenantID) -> Streami
                 )
                 return
 
-            selected_chunks, sources = _select_primary_document_chunks(chunks)
+            selected_chunks = select_diverse_chunks(
+                chunks,
+                limit=settings.fast_rag_top_k,
+                per_document=settings.fast_rag_per_document_k,
+            )
+            sources = build_citations(selected_chunks)
             log.info(
-                "agent_stream selected source | tenant=%s source=%s selected_chunks=%d",
+                "agent_stream selected sources | tenant=%s sources=%s selected_chunks=%d",
                 tenant_id,
-                sources[0] if sources else "",
+                [source.filename for source in sources],
                 len(selected_chunks),
             )
 
@@ -514,7 +494,11 @@ async def agent_stream(body: AgentStreamRequest, tenant_id: TenantID) -> Streami
             prompt_tokens = 0
             completion_tokens = 0
             first_token_logged = False
-            messages = _build_fast_rag_messages(user_query, selected_chunks)
+            messages = build_grounded_messages(
+                user_query,
+                sources,
+                max_context_chars=settings.fast_rag_context_max_chars,
+            )
 
             async for event in stream_chat_text(model_name, messages):
                 if event.type == "usage":
@@ -545,7 +529,7 @@ async def agent_stream(body: AgentStreamRequest, tenant_id: TenantID) -> Streami
 
             yield (
                 "data: "
-                f"{json.dumps({'type': 'done', 'answer': output.answer, 'sources': output.sources, 'confidence': output.confidence, 'cached': False})}\n\n"
+                f"{json.dumps({'type': 'done', 'answer': output.answer, 'sources': _serialize_sources(output.sources), 'confidence': output.confidence, 'cached': False})}\n\n"
             )
             log.info(
                 "agent_stream done | tenant=%s model=%s latency_ms=%d",
@@ -740,6 +724,8 @@ async def upload_document(
             status=DocumentStatus.pending,
         ))
 
+    await _invalidate_semantic_cache(tenant_id, f"document-upload:{document_id}")
+
     client: Client = app.state.temporal
     try:
         await client.start_workflow(
@@ -829,6 +815,7 @@ async def upload_documents_bulk(
                 size_bytes=len(data),
                 status=DocumentStatus.pending,
             ))
+        await _invalidate_semantic_cache(tenant_id, f"document-upload:{document_id}")
         try:
             await client.start_workflow(
                 IngestionWorkflow.run,
@@ -870,6 +857,7 @@ async def get_document(document_id: uuid.UUID, tenant_id: TenantID) -> DocumentR
 
 @app.delete("/documents/{document_id}", status_code=204)
 async def delete_document(document_id: uuid.UUID, tenant_id: TenantID) -> None:
+    object_key = ""
     async with tenant_session(tenant_id) as s:
         doc = (
             await s.execute(
@@ -878,7 +866,20 @@ async def delete_document(document_id: uuid.UUID, tenant_id: TenantID) -> None:
         ).scalar_one_or_none()
         if doc is None:
             raise HTTPException(status_code=404, detail="document not found")
+        object_key = doc.object_key
         await s.delete(doc)  # CASCADE deletes chunks via FK ondelete="CASCADE"
+
+    try:
+        object_store.delete(object_key)
+    except Exception as exc:
+        log.warning(
+            "object deletion failed | tenant=%s document=%s key=%s error=%s",
+            tenant_id,
+            document_id,
+            object_key,
+            exc,
+        )
+    await _invalidate_semantic_cache(tenant_id, f"document-delete:{document_id}")
 
 
 # ── Chat sessions ─────────────────────────────────────────────────────────────
@@ -972,7 +973,7 @@ async def add_message(session_id: uuid.UUID, body: AddMessageRequest, tenant_id:
         msg = ChatMessage(
             session_id=session_id, tenant_id=tenant_id,
             role=body.role, content=body.content,
-            sources=body.sources, cached=body.cached,
+            sources=_serialize_sources(body.sources), cached=body.cached,
         )
         s.add(msg)
         await s.flush()

@@ -15,9 +15,11 @@ from temporalio import workflow
 from temporalio.common import RetryPolicy
 
 with workflow.unsafe.imports_passed_through():
+    from packages.agents import AgentRunInput, AgentRunOutput, MultiStepResearchInput
+    from packages.rag.citations import CitationSource
+
     from apps.worker.activities.agent_step import run_agent_step
     from apps.worker.workflows.agent_run import AgentRunWorkflow
-    from packages.agents import AgentRunInput, AgentRunOutput, MultiStepResearchInput
 
 _RETRY = RetryPolicy(
     initial_interval=timedelta(seconds=1),
@@ -33,6 +35,26 @@ def _synthesis_prompt(main_query: str, sub_results: list[AgentRunOutput]) -> str
         parts.append(f"\n[{i}] {r.answer}")
     parts.append("\n\nSynthesize the above into a single comprehensive answer.")
     return "\n".join(parts)
+
+
+def _merge_sources(
+    *source_groups: list[str | CitationSource],
+) -> list[str | CitationSource]:
+    merged: list[str | CitationSource] = []
+    seen: set[tuple[str, ...]] = set()
+
+    for source in (source for group in source_groups for source in group):
+        key = (
+            ("legacy", source)
+            if isinstance(source, str)
+            else ("citation", source.document_id, source.chunk_id)
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append(source)
+
+    return merged
 
 
 @workflow.defn
@@ -55,13 +77,14 @@ class MultiStepResearchWorkflow:
             child_handles.append(handle)
 
         # Fan-in: wait for all children.
-        import asyncio  # noqa: PLC0415 — inside workflow, import is fine here
+        import asyncio
+
         sub_results: list[AgentRunOutput] = list(
             await asyncio.gather(*[h.result() for h in child_handles])
         )
 
         # Collect all source ids from sub-results for the final answer.
-        all_sources = list({s for r in sub_results for s in r.sources})
+        all_sources = _merge_sources(*(result.sources for result in sub_results))
 
         synthesis_input = AgentRunInput(
             tenant_id=payload.tenant_id,
@@ -74,5 +97,5 @@ class MultiStepResearchWorkflow:
             start_to_close_timeout=timedelta(minutes=10),
             retry_policy=_RETRY,
         )
-        final.sources = list({*final.sources, *all_sources})
+        final.sources = _merge_sources(final.sources, all_sources)
         return final

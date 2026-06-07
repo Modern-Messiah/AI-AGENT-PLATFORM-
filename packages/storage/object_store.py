@@ -41,5 +41,8 @@ class ObjectStore:
             resp.close()
             resp.release_conn()
 
+    def delete(self, key: str) -> None:
+        self._client.remove_object(settings.minio_bucket, key)
+
 
 object_store = ObjectStore()

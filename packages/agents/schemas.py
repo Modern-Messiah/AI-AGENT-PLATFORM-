@@ -1,5 +1,7 @@
 from pydantic import BaseModel, Field
 
+from packages.rag.citations import CitationSource
+
 
 class AgentRunInput(BaseModel):
     tenant_id: str = Field(default="", description="Overridden from API key — do not set manually")
@@ -14,7 +16,7 @@ class AgentRunInput(BaseModel):
 class AgentRunOutput(BaseModel):
     answer: str = Field(..., description="Final answer to the user")
     confidence: float = Field(..., ge=0.0, le=1.0)
-    sources: list[str] = Field(default_factory=list)
+    sources: list[str | CitationSource] = Field(default_factory=list)
     cached: bool = Field(default=False, description="True when answer came from semantic cache")
 
 

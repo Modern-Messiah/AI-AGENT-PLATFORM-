@@ -19,7 +19,8 @@ class RetrievedChunk:
     filename: str
     content: str
     score: float
-    metadata: dict
+    metadata: dict[str, object]
+    chunk_idx: int = 0
 
 
 async def retrieve_chunks(
@@ -54,6 +55,7 @@ async def retrieve_chunks(
             content=chunk.content,
             score=1.0 - float(distance),
             metadata=chunk.chunk_metadata,
+            chunk_idx=chunk.chunk_idx,
         )
         for chunk, filename, distance in rows
     ]

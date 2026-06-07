@@ -232,6 +232,11 @@ services:
       ADMIN_SECRET: ${ADMIN_SECRET:-change-me-before-deploy}
       APP_ENV: ${APP_ENV:-local}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      RETRIEVAL_MAX_DISTANCE: ${RETRIEVAL_MAX_DISTANCE:-0.75}
+      FAST_RAG_CANDIDATE_K: ${FAST_RAG_CANDIDATE_K:-12}
+      FAST_RAG_TOP_K: ${FAST_RAG_TOP_K:-6}
+      FAST_RAG_PER_DOCUMENT_K: ${FAST_RAG_PER_DOCUMENT_K:-2}
+      FAST_RAG_CONTEXT_MAX_CHARS: ${FAST_RAG_CONTEXT_MAX_CHARS:-8000}
       FASTEMBED_CACHE_PATH: /fastembed_cache
     volumes:
       - fastembed_cache:/fastembed_cache
@@ -276,6 +281,7 @@ services:
       LANGFUSE_HOST: http://langfuse-web:3000
       APP_ENV: ${APP_ENV:-local}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      RETRIEVAL_MAX_DISTANCE: ${RETRIEVAL_MAX_DISTANCE:-0.75}
       FASTEMBED_CACHE_PATH: /fastembed_cache
     volumes:
       - fastembed_cache:/fastembed_cache

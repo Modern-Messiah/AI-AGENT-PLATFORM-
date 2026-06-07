@@ -27,10 +27,10 @@ from packages.rag.embedder import embed_texts
 
 log = logging.getLogger(__name__)
 
-_TTL_SECONDS = 3600       # 1 hour per entry
-_THRESHOLD = 0.92         # cosine similarity required for a hit
-_MAX_SCAN = 500           # max entries to scan per lookup
-_MAX_INDEX = 1000         # hard cap on index size per tenant; oldest entries evicted first
+_TTL_SECONDS = 3600  # 1 hour per entry
+_THRESHOLD = 0.92  # cosine similarity required for a hit
+_MAX_SCAN = 500  # max entries to scan per lookup
+_MAX_INDEX = 1000  # hard cap on index size per tenant; oldest entries evicted first
 
 
 class SemanticCache:
@@ -65,7 +65,7 @@ class SemanticCache:
         best_result: AgentRunOutput | None = None
         expired: list[str] = []
 
-        for eid, raw in zip(entry_ids, raw_values):
+        for eid, raw in zip(entry_ids, raw_values, strict=True):
             if raw is None:
                 expired.append(eid)
                 continue
@@ -77,8 +77,7 @@ class SemanticCache:
                 continue
             cached_vec = np.array(data["vec"], dtype=np.float32)
             sim = float(
-                np.dot(query_vec, cached_vec)
-                / (query_norm * np.linalg.norm(cached_vec) + 1e-8)
+                np.dot(query_vec, cached_vec) / (query_norm * np.linalg.norm(cached_vec) + 1e-8)
             )
             if sim > best_sim:
                 best_sim = sim
@@ -110,6 +109,21 @@ class SemanticCache:
         pipe.expire(self._idx_key(tenant_id), _TTL_SECONDS)
         # Trim to _MAX_INDEX by removing oldest entries (rank 0 … N-_MAX_INDEX-1).
         pipe.zremrangebyrank(self._idx_key(tenant_id), 0, -(_MAX_INDEX + 1))
+        await pipe.execute()
+
+    async def clear(self, tenant_id: str) -> None:
+        """Delete every semantic-cache entry belonging to a tenant."""
+        r = get_redis()
+        idx_key = self._idx_key(tenant_id)
+        entry_ids = [
+            eid.decode() if isinstance(eid, bytes) else eid
+            for eid in await r.zrange(idx_key, 0, -1)
+        ]
+
+        pipe = r.pipeline(transaction=False)
+        if entry_ids:
+            pipe.delete(*(self._entry_key(tenant_id, entry_id) for entry_id in entry_ids))
+        pipe.delete(idx_key)
         await pipe.execute()
 
 

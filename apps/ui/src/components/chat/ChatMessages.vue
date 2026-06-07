@@ -50,7 +50,38 @@
             <span v-if="msg.cached" class="badge badge-purple" style="font-size: 10px; padding: 1px 6px">cache hit</span>
           </div>
           <div v-if="msg.sources && msg.sources.length" class="sources-list">
-            <span v-for="s in msg.sources" :key="s" class="source-chip">📄 {{ s.slice(0, 12) }}…</span>
+            <template v-for="(source, index) in msg.sources" :key="sourceKey(msg, source, index)">
+              <button
+                v-if="isStructuredCitation(source)"
+                :class="[
+                  'source-chip',
+                  'source-chip-button',
+                  {
+                    active: openCitationKey === sourceKey(msg, source, index),
+                    referenced: citationIsReferenced(msg.text, source),
+                  },
+                ]"
+                type="button"
+                @click="toggleCitation(msg, source, index)"
+              >
+                {{ sourceLabel(source) }}
+              </button>
+              <span v-else class="source-chip">📄 {{ source }}</span>
+            </template>
+          </div>
+          <div v-if="expandedCitation(msg)" class="citation-panel">
+            <div class="citation-panel-header">
+              <div>
+                <div class="citation-title">
+                  [{{ expandedCitation(msg).id }}] {{ expandedCitation(msg).filename }}
+                </div>
+                <div class="citation-location">{{ sourceLocation(expandedCitation(msg)) }}</div>
+              </div>
+              <span class="citation-score">
+                score {{ Number(expandedCitation(msg).score || 0).toFixed(3) }}
+              </span>
+            </div>
+            <div class="citation-excerpt">{{ expandedCitation(msg).excerpt }}</div>
           </div>
         </div>
       </div>
@@ -75,11 +106,36 @@
 import { ref, watch, nextTick } from 'vue'
 import { useChatStore } from '@/stores/chat'
 import AppIcon from '@/components/AppIcon.vue'
+import {
+  citationIsReferenced,
+  isStructuredCitation,
+  sourceLabel,
+  sourceLocation,
+} from '@/utils/citations'
 
 defineEmits(['approve', 'reject'])
 
 const chat = useChatStore()
 const containerRef = ref(null)
+const openCitationKey = ref(null)
+
+function sourceKey(msg, source, index) {
+  if (isStructuredCitation(source)) return `${msg.id}:${source.id}:${source.chunk_id}`
+  return `${msg.id}:legacy:${index}:${source}`
+}
+
+function toggleCitation(msg, source, index) {
+  const key = sourceKey(msg, source, index)
+  openCitationKey.value = openCitationKey.value === key ? null : key
+}
+
+function expandedCitation(msg) {
+  if (!openCitationKey.value) return null
+  return (msg.sources || []).find((source, index) => (
+    isStructuredCitation(source)
+    && sourceKey(msg, source, index) === openCitationKey.value
+  )) || null
+}
 
 async function scrollToBottom() {
   await nextTick()
@@ -96,6 +152,56 @@ watch([() => chat.messages.length, () => chat.isActiveSessionLoading(), () => ch
   display: inline-block;
   margin-left: 1px;
   animation: blink 0.8s step-end infinite;
+}
+.source-chip-button {
+  border: 1px solid var(--border);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+.source-chip-button:hover,
+.source-chip-button.active {
+  border-color: var(--purple);
+  color: var(--text);
+}
+.source-chip-button.referenced {
+  background: color-mix(in srgb, var(--purple) 12%, transparent);
+}
+.citation-panel {
+  margin-top: 8px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--s2);
+}
+.citation-panel-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+.citation-title {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  word-break: break-word;
+}
+.citation-location,
+.citation-score {
+  margin-top: 3px;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 10px;
+}
+.citation-score {
+  white-space: nowrap;
+}
+.citation-excerpt {
+  margin-top: 10px;
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
 }
 @keyframes blink {
   0%, 100% { opacity: 1; }
