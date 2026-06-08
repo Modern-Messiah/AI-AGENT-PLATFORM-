@@ -307,9 +307,6 @@ function openDocumentChat() {
 .chunks-list {
   display: grid;
   gap: 10px;
-  max-height: min(58vh, 620px);
-  overflow-y: auto;
-  overscroll-behavior: contain;
   padding: 14px;
 }
 .chunk-card {

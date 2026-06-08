@@ -62,6 +62,29 @@ export function buildNotebookUploadPath(notebookId) {
   return `/notebooks/${notebookId}/documents/upload`
 }
 
-export function buildNotebookQuestionRoute(question, notebookId) {
-  return { path: '/chat', query: { ask: question, notebook: notebookId } }
+function notebookChatTitle(title) {
+  return `Ноутбук: ${String(title || 'Коллекция').trim() || 'Коллекция'}`
+}
+
+export function buildNotebookChatRoute(notebookId, title = '') {
+  return {
+    path: '/chat',
+    query: {
+      notebook: notebookId,
+      fresh: '1',
+      title: notebookChatTitle(title),
+    },
+  }
+}
+
+export function buildNotebookQuestionRoute(question, notebookId, title = '') {
+  return {
+    path: '/chat',
+    query: {
+      ask: question,
+      notebook: notebookId,
+      fresh: '1',
+      title: notebookChatTitle(title),
+    },
+  }
 }

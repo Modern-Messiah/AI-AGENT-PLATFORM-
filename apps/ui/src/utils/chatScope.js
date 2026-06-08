@@ -52,3 +52,21 @@ export function scopeSendOptions(scope) {
   if (scope?.type === 'document' && scope.documentId) return { documentId: scope.documentId }
   return {}
 }
+
+export function scopeSessionTitle(scope, fallbackTitle = '') {
+  const title = String(fallbackTitle || '').trim()
+  if (title) return title
+  if (scope?.type === 'notebook') return 'Ноутбук: новая сессия'
+  if (scope?.type === 'document') return 'Документ: новая сессия'
+  return 'New Chat'
+}
+
+export function scopeWelcomeMessage(scope) {
+  if (scope?.type === 'notebook') {
+    return 'Это отдельный чат по ноутбуку. Следующие ответы будут искать информацию только по документам внутри этого ноутбука.'
+  }
+  if (scope?.type === 'document') {
+    return 'Это отдельный чат по документу. Следующие ответы будут искать информацию только внутри этого файла.'
+  }
+  return ''
+}

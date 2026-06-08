@@ -4,7 +4,9 @@ import assert from 'node:assert/strict'
 import {
   buildChatScopeQuery,
   normalizeChatScope,
+  scopeSessionTitle,
   scopeSendOptions,
+  scopeWelcomeMessage,
 } from '../src/utils/chatScope.js'
 
 
@@ -15,6 +17,8 @@ test('normalizes notebook chat scope from route query', () => {
   assert.equal(scope.notebookId, 'notebook-1')
   assert.equal(scope.documentId, null)
   assert.equal(scope.title, 'Чат по ноутбуку')
+  assert.equal(scopeSessionTitle(scope, 'Ноутбук: Product research'), 'Ноутбук: Product research')
+  assert.match(scopeWelcomeMessage(scope), /только по документам внутри этого ноутбука/)
   assert.equal(scope.backPath, '/notebooks/notebook-1')
 })
 

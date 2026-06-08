@@ -131,16 +131,18 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
-  async function newChat(model) {
+  async function newChat(model, options = {}) {
     const { apiFetch } = useApi()
+    const title = options.title || 'New Chat'
+    const welcome = options.welcome || WELCOME
     const sess = await apiFetch('/sessions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: 'New Chat', model })
+      body: JSON.stringify({ title, model })
     })
     sessions.value = [sess, ...sessions.value]
     activeId.value = sess.id
-    messages.value = [{ id: 'w', role: 'agent', text: WELCOME, time: nowTime(), sources: [] }]
+    messages.value = [{ id: 'w', role: 'agent', text: welcome, time: nowTime(), sources: [] }]
     return sess
   }
 

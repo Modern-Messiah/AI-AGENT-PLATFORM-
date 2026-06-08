@@ -34,7 +34,9 @@ import { useSettingsStore } from '@/stores/settings'
 import {
   buildChatScopeQuery,
   normalizeChatScope,
+  scopeSessionTitle,
   scopeSendOptions,
+  scopeWelcomeMessage,
 } from '@/utils/chatScope'
 import ChatHistory from '@/components/chat/ChatHistory.vue'
 import ChatToolbar from '@/components/chat/ChatToolbar.vue'
@@ -66,21 +68,44 @@ watch(
     () => route.query.ask,
     () => route.query.document,
     () => route.query.notebook,
+    () => route.query.fresh,
+    () => route.query.title,
     () => settings.isConnected,
   ],
-  async ([ask, document, notebook, connected]) => {
-    if (!connected || typeof ask !== 'string' || !ask.trim()) return
+  async ([ask, document, notebook, fresh, title, connected]) => {
+    if (!connected) return
     const documentId = typeof document === 'string' ? document : null
     const notebookId = typeof notebook === 'string' ? notebook : null
+    const wantsFreshSession = fresh === '1' && (documentId || notebookId)
     const askKey = `${ask}:${documentId || ''}:${notebookId || ''}`
+    const scope = normalizeChatScope({ document: documentId, notebook: notebookId })
+
+    if (wantsFreshSession) {
+      await waitForSessionLoad()
+      await chat.newChat(model.value, {
+        title: scopeSessionTitle(scope, typeof title === 'string' ? title : ''),
+        welcome: scopeWelcomeMessage(scope),
+      })
+      await router.replace({ path: '/chat', query: buildChatScopeQuery(scope) })
+      if (typeof ask !== 'string' || !ask.trim()) return
+    }
+
+    if (typeof ask !== 'string' || !ask.trim()) return
     if (consumedAsk.value === askKey) return
     consumedAsk.value = askKey
-    const scope = normalizeChatScope({ document: documentId, notebook: notebookId })
-    await router.replace({ path: '/chat', query: buildChatScopeQuery(scope) })
+    if (!wantsFreshSession) {
+      await router.replace({ path: '/chat', query: buildChatScopeQuery(scope) })
+    }
     await handleSend(ask, { documentId, notebookId })
   },
   { immediate: true },
 )
+
+async function waitForSessionLoad() {
+  for (let i = 0; i < 100 && chat.sessLoading; i++) {
+    await new Promise(resolve => setTimeout(resolve, 25))
+  }
+}
 
 async function clearScope() {
   await router.replace({ path: '/chat' })

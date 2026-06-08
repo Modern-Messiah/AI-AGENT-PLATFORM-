@@ -222,6 +222,7 @@ import AppToast from '@/components/AppToast.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import { buildDocumentRoute, formatFileSize, normalizeDocument } from '@/utils/documents'
 import {
+  buildNotebookChatRoute,
   buildNotebookQuestionRoute,
   buildNotebookUploadPath,
   normalizeNotebookSources,
@@ -385,7 +386,7 @@ async function refreshInsights() {
 }
 
 function askQuestion(question) {
-  router.push(buildNotebookQuestionRoute(question, notebookId.value))
+  router.push(buildNotebookQuestionRoute(question, notebookId.value, normalized.value?.title || ''))
 }
 
 function askSource(source) {
@@ -401,7 +402,7 @@ async function excludeSource(documentId) {
 }
 
 function askDefaultQuestion() {
-  askQuestion(`Сделай обзор коллекции ${normalized.value?.title || ''}`)
+  router.push(buildNotebookChatRoute(notebookId.value, normalized.value?.title || ''))
 }
 </script>
 

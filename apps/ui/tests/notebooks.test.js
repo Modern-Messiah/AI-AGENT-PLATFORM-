@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import {
+  buildNotebookChatRoute,
   buildNotebookRoute,
   buildNotebookUploadPath,
   buildNotebookQuestionRoute,
@@ -41,10 +42,22 @@ test('builds notebook routes', () => {
   assert.deepEqual(buildNotebookRoute('notebook-1'), { path: '/notebooks/notebook-1' })
   assert.equal(buildNotebookUploadPath('notebook-1'), '/notebooks/notebook-1/documents/upload')
   assert.deepEqual(
-    buildNotebookQuestionRoute('Что общее в источниках?', 'notebook-1'),
+    buildNotebookChatRoute('notebook-1', 'Product research'),
     {
       path: '/chat',
-      query: { ask: 'Что общее в источниках?', notebook: 'notebook-1' },
+      query: { notebook: 'notebook-1', fresh: '1', title: 'Ноутбук: Product research' },
+    },
+  )
+  assert.deepEqual(
+    buildNotebookQuestionRoute('Что общее в источниках?', 'notebook-1', 'Product research'),
+    {
+      path: '/chat',
+      query: {
+        ask: 'Что общее в источниках?',
+        notebook: 'notebook-1',
+        fresh: '1',
+        title: 'Ноутбук: Product research',
+      },
     },
   )
 })
