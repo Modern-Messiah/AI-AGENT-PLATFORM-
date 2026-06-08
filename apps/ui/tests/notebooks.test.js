@@ -3,9 +3,11 @@ import assert from 'node:assert/strict'
 
 import {
   buildNotebookChatRoute,
+  buildNotebookDocumentSelection,
   buildNotebookRoute,
   buildNotebookUploadPath,
   buildNotebookQuestionRoute,
+  filterAvailableNotebookDocuments,
   normalizeNotebookSources,
   normalizeNotebook,
 } from '../src/utils/notebooks.js'
@@ -91,4 +93,26 @@ test('normalizes notebook source cards', () => {
   assert.equal(sources[0].createdLabel, '07.06.2026')
   assert.equal(sources[1].isReady, false)
   assert.equal(sources[1].readinessLabel, 'Индексируется')
+})
+
+
+test('builds append-only notebook document selection', () => {
+  assert.deepEqual(
+    buildNotebookDocumentSelection(['doc-1'], ['doc-2', 'doc-1', 'doc-2']),
+    ['doc-1', 'doc-2'],
+  )
+})
+
+
+test('filters addable notebook documents', () => {
+  const docs = [
+    { id: 'doc-1', status: 'done', name: 'Already inside.pdf' },
+    { id: 'doc-2', status: 'done', name: 'Can add.pdf' },
+    { id: 'doc-3', status: 'processing', name: 'Still indexing.pdf' },
+  ]
+
+  assert.deepEqual(
+    filterAvailableNotebookDocuments(docs, ['doc-1']).map(doc => doc.id),
+    ['doc-2'],
+  )
 })

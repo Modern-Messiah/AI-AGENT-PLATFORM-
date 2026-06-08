@@ -85,15 +85,15 @@
           <div class="card-header">
             <div>
               <div class="card-title">Состав ноутбука</div>
-              <div class="card-sub">Можно менять подборку документов</div>
+              <div class="card-sub">Добавьте документы, которых ещё нет в коллекции</div>
             </div>
             <button
               class="btn btn-ghost btn-sm"
               type="button"
-              :disabled="saving"
+              :disabled="saving || pendingAddDocumentIds.length === 0"
               @click="saveDocuments"
             >
-              {{ saving ? 'Сохраняю...' : 'Сохранить' }}
+              {{ saving ? 'Сохраняю...' : addButtonLabel }}
             </button>
           </div>
           <div
@@ -118,16 +118,20 @@
               @change="handleUploadInput"
             />
           </div>
+          <div class="picker-heading">
+            <span>Доступно для добавления</span>
+            <small>{{ availableDocs.length }} документ(ов)</small>
+          </div>
           <div class="doc-picker">
-            <label v-for="doc in readyDocs" :key="doc.id" class="doc-option">
-              <input v-model="selectedDocumentIds" type="checkbox" :value="doc.id" />
+            <label v-for="doc in availableDocs" :key="doc.id" class="doc-option">
+              <input v-model="pendingAddDocumentIds" type="checkbox" :value="doc.id" />
               <span>
                 <strong>{{ doc.name }}</strong>
                 <small>{{ doc.size }} · {{ doc.createdLabel }}</small>
               </span>
             </label>
-            <div v-if="readyDocs.length === 0" class="muted-block">
-              Нет готовых документов для добавления.
+            <div v-if="availableDocs.length === 0" class="muted-block">
+              Все готовые документы уже в ноутбуке. Новые файлы можно загрузить прямо сюда.
             </div>
           </div>
         </div>
@@ -222,9 +226,11 @@ import AppToast from '@/components/AppToast.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import { buildDocumentRoute, formatFileSize, normalizeDocument } from '@/utils/documents'
 import {
+  buildNotebookDocumentSelection,
   buildNotebookChatRoute,
   buildNotebookQuestionRoute,
   buildNotebookUploadPath,
+  filterAvailableNotebookDocuments,
   normalizeNotebookSources,
   normalizeNotebook,
 } from '@/utils/notebooks'
@@ -236,7 +242,7 @@ const settings = useSettingsStore()
 
 const notebook = ref(null)
 const allDocs = ref([])
-const selectedDocumentIds = ref([])
+const pendingAddDocumentIds = ref([])
 const loading = ref(false)
 const saving = ref(false)
 const refreshingInsights = ref(false)
@@ -248,10 +254,18 @@ const fileInput = ref(null)
 
 const notebookId = computed(() => String(route.params.id || ''))
 const normalized = computed(() => notebook.value ? normalizeNotebook(notebook.value) : null)
-const readyDocs = computed(() => allDocs.value.filter(doc => doc.status === 'done'))
+const currentDocumentIds = computed(() => normalized.value?.documentIds || [])
+const availableDocs = computed(() => (
+  filterAvailableNotebookDocuments(allDocs.value, currentDocumentIds.value)
+))
 const includedDocs = computed(() => (normalized.value?.documents || []).map(normalizeDocument))
 const includedSources = computed(() => normalizeNotebookSources(normalized.value?.documents || []))
 const readySourceCount = computed(() => includedSources.value.filter(source => source.isReady).length)
+const addButtonLabel = computed(() => (
+  pendingAddDocumentIds.value.length
+    ? `Добавить (${pendingAddDocumentIds.value.length})`
+    : 'Добавить'
+))
 const suggestedQuestions = computed(() => {
   if (normalized.value?.suggestedQuestions?.length) {
     return normalized.value.suggestedQuestions
@@ -272,7 +286,7 @@ async function loadNotebook() {
   if (!settings.isConnected || !notebookId.value) {
     notebook.value = null
     allDocs.value = []
-    selectedDocumentIds.value = []
+    pendingAddDocumentIds.value = []
     error.value = settings.isConnected ? 'Ноутбук не выбран' : 'Задайте X-API-Key в настройках'
     return
   }
@@ -285,11 +299,11 @@ async function loadNotebook() {
     ])
     notebook.value = notebookData
     allDocs.value = documentRows.map(normalizeDocument)
-    selectedDocumentIds.value = [...(notebookData.document_ids || [])]
+    pendingAddDocumentIds.value = []
   } catch (e) {
     notebook.value = null
     allDocs.value = []
-    selectedDocumentIds.value = []
+    pendingAddDocumentIds.value = []
     error.value = e.message
   } finally {
     loading.value = false
@@ -298,14 +312,18 @@ async function loadNotebook() {
 
 async function saveDocuments(options = {}) {
   saving.value = true
+  const documentIds = options.documentIds || buildNotebookDocumentSelection(
+    currentDocumentIds.value,
+    pendingAddDocumentIds.value,
+  )
   try {
     const data = await apiFetch(`/notebooks/${notebookId.value}/documents`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ document_ids: selectedDocumentIds.value }),
+      body: JSON.stringify({ document_ids: documentIds }),
     })
     notebook.value = data
-    selectedDocumentIds.value = [...(data.document_ids || [])]
+    pendingAddDocumentIds.value = []
     toast.value = { msg: options.successMessage || 'Состав ноутбука сохранён', type: 'success' }
     return true
   } catch (e) {
@@ -376,7 +394,6 @@ async function refreshInsights() {
   try {
     const data = await apiFetch(`/notebooks/${notebookId.value}/insights`, { method: 'POST' })
     notebook.value = data
-    selectedDocumentIds.value = [...(data.document_ids || [])]
     toast.value = { msg: 'Обзор коллекции обновлён', type: 'success' }
   } catch (e) {
     toast.value = { msg: `Ошибка обзора: ${e.message}`, type: 'error' }
@@ -395,10 +412,8 @@ function askSource(source) {
 }
 
 async function excludeSource(documentId) {
-  const previous = [...selectedDocumentIds.value]
-  selectedDocumentIds.value = selectedDocumentIds.value.filter(id => id !== documentId)
-  const saved = await saveDocuments({ successMessage: 'Источник исключён из ноутбука' })
-  if (!saved) selectedDocumentIds.value = previous
+  const documentIds = currentDocumentIds.value.filter(id => id !== documentId)
+  await saveDocuments({ documentIds, successMessage: 'Источник исключён из ноутбука' })
 }
 
 function askDefaultQuestion() {
@@ -560,6 +575,22 @@ function askDefaultQuestion() {
   color: var(--muted);
   font-size: 11px;
   line-height: 1.4;
+}
+.picker-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 14px 14px 0;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.picker-heading small {
+  color: var(--muted2);
+  font-size: 10px;
 }
 .doc-picker {
   display: grid;

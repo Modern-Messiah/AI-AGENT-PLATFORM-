@@ -54,6 +54,22 @@ export function normalizeNotebookSources(documents = []) {
   })
 }
 
+export function buildNotebookDocumentSelection(currentIds = [], addIds = []) {
+  const seen = new Set()
+  const merged = []
+  for (const id of [...currentIds, ...addIds]) {
+    if (!id || seen.has(id)) continue
+    seen.add(id)
+    merged.push(id)
+  }
+  return merged
+}
+
+export function filterAvailableNotebookDocuments(documents = [], currentIds = []) {
+  const current = new Set(currentIds)
+  return documents.filter(doc => doc.status === 'done' && !current.has(doc.id))
+}
+
 export function buildNotebookRoute(notebookId) {
   return { path: `/notebooks/${notebookId}` }
 }
