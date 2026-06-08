@@ -27,6 +27,10 @@ export function buildNotebookRoute(notebookId) {
   return { path: `/notebooks/${notebookId}` }
 }
 
+export function buildNotebookUploadPath(notebookId) {
+  return `/notebooks/${notebookId}/documents/upload`
+}
+
 export function buildNotebookQuestionRoute(question, notebookId) {
   return { path: '/chat', query: { ask: question, notebook: notebookId } }
 }

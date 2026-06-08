@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 
 import {
   buildNotebookRoute,
+  buildNotebookUploadPath,
   buildNotebookQuestionRoute,
   normalizeNotebook,
 } from '../src/utils/notebooks.js'
@@ -37,6 +38,7 @@ test('normalizes API notebooks for the notebook table', () => {
 
 test('builds notebook routes', () => {
   assert.deepEqual(buildNotebookRoute('notebook-1'), { path: '/notebooks/notebook-1' })
+  assert.equal(buildNotebookUploadPath('notebook-1'), '/notebooks/notebook-1/documents/upload')
   assert.deepEqual(
     buildNotebookQuestionRoute('Что общее в источниках?', 'notebook-1'),
     {

@@ -96,6 +96,28 @@
               {{ saving ? 'Сохраняю...' : 'Сохранить' }}
             </button>
           </div>
+          <div
+            :class="['inline-upload', { 'drag-over': draggingUpload }]"
+            @dragover.prevent="draggingUpload = true"
+            @dragleave="draggingUpload = false"
+            @drop="handleUploadDrop"
+            @click="fileInput.click()"
+          >
+            <div>
+              <strong>{{ uploading ? 'Загружаю файл...' : 'Загрузить файл в этот ноутбук' }}</strong>
+              <span>Файл сразу попадёт в коллекцию и начнёт индексироваться</span>
+            </div>
+            <button class="btn btn-ghost btn-sm" type="button" :disabled="uploading">
+              Выбрать
+            </button>
+            <input
+              ref="fileInput"
+              type="file"
+              multiple
+              style="display: none"
+              @change="handleUploadInput"
+            />
+          </div>
           <div class="doc-picker">
             <label v-for="doc in readyDocs" :key="doc.id" class="doc-option">
               <input v-model="selectedDocumentIds" type="checkbox" :value="doc.id" />
@@ -149,7 +171,11 @@ import { useSettingsStore } from '@/stores/settings'
 import AppToast from '@/components/AppToast.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import { normalizeDocument } from '@/utils/documents'
-import { buildNotebookQuestionRoute, normalizeNotebook } from '@/utils/notebooks'
+import {
+  buildNotebookQuestionRoute,
+  buildNotebookUploadPath,
+  normalizeNotebook,
+} from '@/utils/notebooks'
 
 const route = useRoute()
 const router = useRouter()
@@ -162,8 +188,11 @@ const selectedDocumentIds = ref([])
 const loading = ref(false)
 const saving = ref(false)
 const refreshingInsights = ref(false)
+const uploading = ref(false)
+const draggingUpload = ref(false)
 const error = ref('')
 const toast = ref(null)
+const fileInput = ref(null)
 
 const notebookId = computed(() => String(route.params.id || ''))
 const normalized = computed(() => notebook.value ? normalizeNotebook(notebook.value) : null)
@@ -229,6 +258,61 @@ async function saveDocuments() {
   } finally {
     saving.value = false
   }
+}
+
+async function uploadFiles(files) {
+  if (!settings.isConnected) {
+    toast.value = { msg: 'Задайте X-API-Key в настройках', type: 'error' }
+    return
+  }
+  const uploadList = Array.from(files || []).filter(file => file.size > 0)
+  if (!uploadList.length) return
+
+  uploading.value = true
+  const uploadedDocumentIds = []
+  try {
+    for (const file of uploadList) {
+      const form = new FormData()
+      form.append('file', file)
+      const doc = await apiFetch(buildNotebookUploadPath(notebookId.value), {
+        method: 'POST',
+        body: form,
+      })
+      uploadedDocumentIds.push(doc.id)
+    }
+    await loadNotebook()
+    uploadedDocumentIds.forEach(pollUploadedDocument)
+    toast.value = { msg: `Загружено: ${uploadList.length}`, type: 'success' }
+  } catch (e) {
+    toast.value = { msg: `Ошибка загрузки: ${e.message}`, type: 'error' }
+  } finally {
+    uploading.value = false
+  }
+}
+
+async function pollUploadedDocument(documentId) {
+  for (let i = 0; i < 120; i++) {
+    await new Promise(resolve => setTimeout(resolve, 5000))
+    try {
+      const doc = await apiFetch(`/documents/${documentId}`)
+      if (doc.status === 'done' || doc.status === 'failed') {
+        await loadNotebook()
+        return
+      }
+    } catch {}
+  }
+  await loadNotebook()
+}
+
+function handleUploadDrop(event) {
+  event.preventDefault()
+  draggingUpload.value = false
+  uploadFiles(event.dataTransfer.files)
+}
+
+function handleUploadInput(event) {
+  uploadFiles(event.target.files)
+  event.target.value = ''
 }
 
 async function refreshInsights() {
@@ -368,6 +452,36 @@ function askDefaultQuestion() {
 .ask-main {
   width: 100%;
   justify-content: center;
+}
+.inline-upload {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 14px 14px 0;
+  padding: 12px;
+  border: 1px dashed var(--border2);
+  border-radius: 12px;
+  background: color-mix(in oklch, var(--accent) 4%, var(--s2));
+  cursor: pointer;
+}
+.inline-upload.drag-over {
+  border-color: var(--accent);
+  background: color-mix(in oklch, var(--accent) 8%, var(--s2));
+}
+.inline-upload strong,
+.inline-upload span {
+  display: block;
+}
+.inline-upload strong {
+  color: var(--text);
+  font-size: 12px;
+}
+.inline-upload span {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
 }
 .doc-picker {
   display: grid;

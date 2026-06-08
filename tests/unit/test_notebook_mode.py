@@ -17,6 +17,7 @@ def test_notebook_routes_are_registered() -> None:
     assert ("/notebooks/{notebook_id}", "GET") in routes
     assert ("/notebooks/{notebook_id}", "DELETE") in routes
     assert ("/notebooks/{notebook_id}/documents", "PUT") in routes
+    assert ("/notebooks/{notebook_id}/documents/upload", "POST") in routes
     assert ("/notebooks/{notebook_id}/insights", "POST") in routes
 
 

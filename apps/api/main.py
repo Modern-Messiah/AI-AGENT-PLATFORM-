@@ -19,6 +19,7 @@ Endpoints:
   POST /notebooks                    — create a document collection
   GET  /notebooks/{id}               — collection detail
   PUT  /notebooks/{id}/documents     — replace collection documents
+  POST /notebooks/{id}/documents/upload — upload and attach a file
   POST /notebooks/{id}/insights      — rebuild collection overview
   GET  /analytics/usage              — cost/token aggregate for a tenant
   POST /auth/keys                    — create an API key (admin only)
@@ -1283,6 +1284,84 @@ async def replace_notebook_documents(
         notebook.insights_updated_at = None
         await s.flush()
         response = _notebook_response(notebook, documents)
+    return response
+
+
+@app.post("/notebooks/{notebook_id}/documents/upload", response_model=DocumentResponse, status_code=202)
+async def upload_notebook_document(
+    notebook_id: uuid.UUID,
+    request: Request,
+    tenant_id: TenantID,
+    file: UploadFile = File(...),
+) -> DocumentResponse:
+    cl = request.headers.get("content-length")
+    if cl and int(cl) > settings.max_upload_bytes * 2:
+        raise HTTPException(status_code=413, detail=f"file exceeds {settings.max_upload_bytes // (1024 * 1024)} MB limit")
+
+    data = await _read_with_limit(file, settings.max_upload_bytes)
+    if not data:
+        raise HTTPException(status_code=400, detail="empty file")
+
+    document_id = uuid.uuid4()
+    filename = file.filename or "unnamed"
+    object_key = f"{tenant_id}/{document_id}/{filename}"
+
+    async with tenant_session(tenant_id) as s:
+        notebook = (
+            await s.execute(
+                select(Notebook).where(Notebook.id == notebook_id, Notebook.tenant_id == tenant_id)
+            )
+        ).scalar_one_or_none()
+        if notebook is None:
+            raise HTTPException(status_code=404, detail="notebook not found")
+
+        object_store.put(object_key, data, content_type=file.content_type or "application/octet-stream")
+        doc = Document(
+            id=document_id,
+            tenant_id=tenant_id,
+            filename=filename,
+            mime_type=file.content_type or "application/octet-stream",
+            object_key=object_key,
+            size_bytes=len(data),
+            status=DocumentStatus.pending,
+        )
+        s.add(doc)
+        s.add(NotebookDocument(
+            notebook_id=notebook_id,
+            document_id=document_id,
+            tenant_id=tenant_id,
+        ))
+        notebook.summary = None
+        notebook.suggested_questions = []
+        notebook.key_topics = []
+        notebook.insights_updated_at = None
+        await s.flush()
+        response = _document_response(doc)
+
+    await _invalidate_semantic_cache(tenant_id, f"notebook-document-upload:{notebook_id}:{document_id}")
+
+    client: Client = app.state.temporal
+    try:
+        await client.start_workflow(
+            IngestionWorkflow.run,
+            IngestionInput(
+                document_id=str(document_id),
+                tenant_id=tenant_id,
+                object_key=object_key,
+                filename=filename,
+            ),
+            id=f"ingest-{tenant_id}-{document_id}",
+            task_queue=settings.temporal_task_queue,
+        )
+    except Exception as e:
+        async with tenant_session(tenant_id) as s:
+            await s.execute(
+                update(Document)
+                .where(Document.id == document_id)
+                .values(status=DocumentStatus.failed, error="Failed to start ingestion workflow")
+            )
+        raise HTTPException(status_code=503, detail="ingestion service unavailable") from e
+
     return response
 
 
