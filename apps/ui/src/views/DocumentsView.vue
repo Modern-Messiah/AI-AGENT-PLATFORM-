@@ -141,7 +141,7 @@
                       :key="question"
                       class="question-chip"
                       type="button"
-                      @click="askQuestion(question, doc.id)"
+                      @click="askQuestion(question, doc)"
                     >
                       {{ question }}
                     </button>
@@ -212,8 +212,8 @@ function hasInsights(doc) {
   return Boolean(doc.summary || doc.suggestedQuestions?.length)
 }
 
-function askQuestion(question, documentId) {
-  router.push(buildQuestionRoute(question, documentId))
+function askQuestion(question, doc) {
+  router.push(buildQuestionRoute(question, doc.id, doc.name))
 }
 
 function openDocument(doc) {

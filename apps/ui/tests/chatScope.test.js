@@ -4,6 +4,7 @@ import assert from 'node:assert/strict'
 import {
   buildChatScopeQuery,
   normalizeChatScope,
+  sessionScopeMeta,
   scopeSessionTitle,
   scopeSendOptions,
   scopeWelcomeMessage,
@@ -49,4 +50,23 @@ test('normalizes global chat when route has no scope', () => {
   assert.equal(scope.type, 'global')
   assert.deepEqual(buildChatScopeQuery(scope), {})
   assert.deepEqual(scopeSendOptions(scope), {})
+})
+
+
+test('extracts visible session scope metadata from scoped titles', () => {
+  assert.deepEqual(sessionScopeMeta('Ноутбук: Это команды линукс'), {
+    type: 'notebook',
+    badge: 'Ноутбук',
+    title: 'Это команды линукс',
+    subtitle: 'Чат по ноутбуку',
+  })
+
+  assert.deepEqual(sessionScopeMeta('Документ: Vim_Cheat_Sheet.pdf'), {
+    type: 'document',
+    badge: 'Документ',
+    title: 'Vim_Cheat_Sheet.pdf',
+    subtitle: 'Чат по документу',
+  })
+
+  assert.equal(sessionScopeMeta('New Chat'), null)
 })

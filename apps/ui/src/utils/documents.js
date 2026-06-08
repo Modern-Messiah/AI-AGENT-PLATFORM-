@@ -46,14 +46,26 @@ export function canReindexDocument(doc) {
   )
 }
 
-export function buildQuestionRoute(question, documentId = null) {
+function documentChatTitle(title) {
+  return `Документ: ${String(title || 'Документ').trim() || 'Документ'}`
+}
+
+export function buildQuestionRoute(question, documentId = null, title = '') {
   const query = { ask: question }
-  if (documentId) query.document = documentId
+  if (documentId) {
+    query.document = documentId
+    if (title) {
+      query.fresh = '1'
+      query.title = documentChatTitle(title)
+    }
+  }
   return { path: '/chat', query }
 }
 
-export function buildDocumentChatRoute(documentId) {
-  return { path: '/chat', query: { document: documentId } }
+export function buildDocumentChatRoute(documentId, title = '') {
+  const query = { document: documentId, fresh: '1' }
+  if (title) query.title = documentChatTitle(title)
+  return { path: '/chat', query }
 }
 
 export function buildDocumentRoute(documentId) {

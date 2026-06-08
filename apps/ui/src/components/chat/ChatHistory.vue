@@ -17,7 +17,13 @@
            :class="{ active: chat.activeId === s.id }"
            @click="chat.selectSession(s.id)">
         <div style="flex: 1; min-width: 0">
-          <div class="session-title">{{ s.title }}</div>
+          <div class="session-title">{{ sessionTitle(s) }}</div>
+          <div v-if="sessionMeta(s)" class="session-scope">
+            <span :class="['session-scope-badge', `is-${sessionMeta(s).type}`]">
+              {{ sessionMeta(s).badge }}
+            </span>
+            <span class="session-scope-copy">{{ sessionMeta(s).subtitle }}</span>
+          </div>
           <div class="session-meta">{{ s.updated_at ? new Date(s.updated_at).toLocaleDateString('ru') : '' }}</div>
         </div>
         <button class="btn btn-ghost btn-sm del-btn" style="padding: 2px 5px; flex-shrink: 0"
@@ -47,6 +53,7 @@ import { useChatStore } from '@/stores/chat'
 import { useSettingsStore } from '@/stores/settings'
 import AppIcon from '@/components/AppIcon.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
+import { sessionScopeMeta } from '@/utils/chatScope'
 
 const props = defineProps({ model: String })
 const emit = defineEmits(['toast'])
@@ -56,6 +63,14 @@ const settings = useSettingsStore()
 
 const confirmId    = ref(null)
 const confirmTitle = ref('')
+
+function sessionMeta(sess) {
+  return sessionScopeMeta(sess?.title)
+}
+
+function sessionTitle(sess) {
+  return sessionMeta(sess)?.title || sess?.title || 'New Chat'
+}
 
 function askDelete(sess) {
   confirmTitle.value = sess.title || sess.id
@@ -86,3 +101,35 @@ async function handleNew() {
   }
 }
 </script>
+
+<style scoped>
+.session-scope {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  min-width: 0;
+}
+.session-scope-badge {
+  flex-shrink: 0;
+  padding: 2px 6px;
+  border: 1px solid color-mix(in oklch, var(--accent) 35%, transparent);
+  border-radius: 999px;
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 9px;
+  line-height: 1.2;
+}
+.session-scope-badge.is-document {
+  border-color: color-mix(in oklch, var(--purple) 38%, transparent);
+  color: var(--purple);
+}
+.session-scope-copy {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 10.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+</style>

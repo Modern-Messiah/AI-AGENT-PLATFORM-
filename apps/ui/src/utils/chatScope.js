@@ -61,6 +61,20 @@ export function scopeSessionTitle(scope, fallbackTitle = '') {
   return 'New Chat'
 }
 
+export function sessionScopeMeta(title = '') {
+  const match = String(title || '').trim().match(/^(Ноутбук|Документ):\s*(.+)$/)
+  if (!match) return null
+
+  const badge = match[1]
+  const type = badge === 'Ноутбук' ? 'notebook' : 'document'
+  return {
+    type,
+    badge,
+    title: match[2].trim(),
+    subtitle: type === 'notebook' ? 'Чат по ноутбуку' : 'Чат по документу',
+  }
+}
+
 export function scopeWelcomeMessage(scope) {
   if (scope?.type === 'notebook') {
     return 'Это отдельный чат по ноутбуку. Следующие ответы будут искать информацию только по документам внутри этого ноутбука.'

@@ -185,11 +185,11 @@ function scrollToTargetChunk() {
 }
 
 function askQuestion(question) {
-  router.push(buildQuestionRoute(question, documentId.value))
+  router.push(buildQuestionRoute(question, documentId.value, normalized.value?.name || ''))
 }
 
 function openDocumentChat() {
-  router.push(buildDocumentChatRoute(documentId.value))
+  router.push(buildDocumentChatRoute(documentId.value, normalized.value?.name || ''))
 }
 </script>
 

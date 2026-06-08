@@ -70,6 +70,19 @@ test('builds chat route for suggested questions', () => {
     buildQuestionRoute('Что внутри manual.pdf?', 'doc-1'),
     { path: '/chat', query: { ask: 'Что внутри manual.pdf?', document: 'doc-1' } },
   )
+
+  assert.deepEqual(
+    buildQuestionRoute('Что внутри manual.pdf?', 'doc-1', 'manual.pdf'),
+    {
+      path: '/chat',
+      query: {
+        ask: 'Что внутри manual.pdf?',
+        document: 'doc-1',
+        fresh: '1',
+        title: 'Документ: manual.pdf',
+      },
+    },
+  )
 })
 
 
@@ -78,9 +91,9 @@ test('builds document detail route', () => {
 })
 
 
-test('builds document-scoped chat route without auto ask', () => {
-  assert.deepEqual(buildDocumentChatRoute('doc-1'), {
+test('builds document-scoped chat route as a fresh titled session', () => {
+  assert.deepEqual(buildDocumentChatRoute('doc-1', 'manual.pdf'), {
     path: '/chat',
-    query: { document: 'doc-1' },
+    query: { document: 'doc-1', fresh: '1', title: 'Документ: manual.pdf' },
   })
 })
