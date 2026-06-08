@@ -137,7 +137,7 @@
         </div>
       </div>
 
-      <div class="card">
+      <div class="card sources-card">
         <div class="card-header">
           <div>
             <div class="card-title">Источники ноутбука</div>
@@ -423,10 +423,14 @@ function askDefaultQuestion() {
 
 <style scoped>
 .notebook-detail {
+  display: grid;
+  grid-template-rows: auto auto minmax(220px, 1fr);
+  gap: 20px;
   height: 100%;
   min-height: 0;
   min-width: 0;
-  padding-bottom: 56px;
+  overflow: hidden;
+  padding-bottom: 24px;
 }
 .notebook-detail-hero {
   display: flex;
@@ -628,9 +632,20 @@ function askDefaultQuestion() {
   font-size: 12px;
   line-height: 1.5;
 }
+.sources-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.sources-card > .card-header {
+  flex-shrink: 0;
+}
 .source-list {
   display: grid;
+  flex: 1;
   gap: 12px;
+  min-height: 0;
+  overflow-y: auto;
   padding: 14px;
 }
 .source-card {
@@ -694,6 +709,11 @@ function askDefaultQuestion() {
 }
 
 @media (max-width: 900px) {
+  .notebook-detail {
+    display: flex;
+    overflow-y: auto;
+    padding-bottom: 56px;
+  }
   .notebook-detail-hero,
   .detail-status {
     align-items: flex-start;
