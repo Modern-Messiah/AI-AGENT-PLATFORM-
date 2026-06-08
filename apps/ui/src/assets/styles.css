@@ -35,12 +35,21 @@ html, body, #app { height: 100%; background: var(--bg); color: var(--text); font
   border-right: 1px solid var(--border);
   display: flex; flex-direction: column;
   padding: 0 0 16px 0;
+  transition: width 0.18s ease;
 }
+.sidebar.collapsed { width: 60px; }
 .sidebar-logo {
+  position: relative;
   padding: 20px 18px 16px;
   display: flex; align-items: center; gap: 10px;
   border-bottom: 1px solid var(--border);
   margin-bottom: 8px;
+}
+.sidebar.collapsed .sidebar-logo {
+  gap: 0;
+  justify-content: center;
+  padding-right: 12px;
+  padding-left: 12px;
 }
 .logo-mark {
   width: 28px; height: 28px;
@@ -49,8 +58,34 @@ html, body, #app { height: 100%; background: var(--bg); color: var(--text); font
   display: flex; align-items: center; justify-content: center;
   font-size: 13px; font-weight: 600; color: #fff; flex-shrink: 0;
 }
+.logo-copy { min-width: 0; overflow: hidden; transition: opacity 0.12s, transform 0.12s; }
 .logo-text { font-size: 13px; font-weight: 600; color: var(--text); letter-spacing: -0.2px; }
 .logo-sub { font-size: 10px; color: var(--muted); font-family: var(--mono); }
+.sidebar-toggle {
+  margin-left: auto;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--s2);
+  color: var(--muted2);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.sidebar-toggle:hover { background: var(--s3); border-color: var(--border2); color: var(--text); }
+.sidebar-toggle:focus-visible { outline: 2px solid color-mix(in oklch, var(--accent) 55%, transparent); outline-offset: 2px; }
+.sidebar-toggle-mark { font-size: 18px; line-height: 1; transform: translateY(-1px); }
+.sidebar.collapsed .sidebar-toggle {
+  position: absolute;
+  right: -13px;
+  top: 22px;
+  z-index: 6;
+  background: var(--s1);
+  box-shadow: 0 0 0 1px var(--border), 0 8px 18px rgba(0,0,0,0.22);
+}
 
 .nav-item {
   display: flex; align-items: center; gap: 10px;
@@ -67,10 +102,35 @@ html, body, #app { height: 100%; background: var(--bg); color: var(--text); font
 .nav-item:hover { background: var(--s2); color: var(--text); }
 .nav-item.active { background: var(--s3); color: var(--text); }
 .nav-item .nav-icon { width: 16px; height: 16px; opacity: 0.85; flex-shrink: 0; }
+.nav-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; transition: opacity 0.12s, transform 0.12s; }
 
 .sidebar-section { padding: 8px 18px 4px; font-size: 10px; font-weight: 600; color: var(--muted); letter-spacing: 0.08em; text-transform: uppercase; margin-top: 8px; }
+.sidebar.collapsed .sidebar-section {
+  height: 14px;
+  padding: 7px 0 0;
+  overflow: hidden;
+  color: transparent;
+  font-size: 0;
+}
+.sidebar.collapsed .nav-item {
+  justify-content: center;
+  gap: 0;
+  padding-right: 0;
+  padding-left: 0;
+  margin-right: 8px;
+  margin-left: 8px;
+}
+.sidebar.collapsed .logo-copy,
+.sidebar.collapsed .nav-label,
+.sidebar.collapsed .tenant-info {
+  width: 0;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-4px);
+}
 
 .sidebar-bottom { margin-top: auto; border-top: 1px solid var(--border); padding-top: 12px; }
+.sidebar.collapsed .sidebar-bottom { padding-top: 10px; }
 .tenant-pill {
   margin: 0 8px 8px;
   padding: 8px 12px;
@@ -80,11 +140,17 @@ html, body, #app { height: 100%; background: var(--bg); color: var(--text); font
   cursor: pointer;
   transition: background 0.12s;
 }
+.sidebar.collapsed .tenant-pill {
+  gap: 0;
+  justify-content: center;
+  padding-right: 0;
+  padding-left: 0;
+}
 .tenant-pill:hover { background: var(--s3); }
 .tenant-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); flex-shrink: 0; box-shadow: 0 0 6px var(--green); }
 .tenant-dot.off { background: var(--muted); box-shadow: none; }
 .tenant-dot.invalid { background: var(--red); box-shadow: 0 0 6px var(--red); }
-.tenant-info { font-size: 12px; flex: 1; min-width: 0; }
+.tenant-info { font-size: 12px; flex: 1; min-width: 0; transition: opacity 0.12s, transform 0.12s; }
 .tenant-name { color: var(--text); font-weight: 500; }
 .tenant-key { color: var(--muted); font-family: var(--mono); font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 

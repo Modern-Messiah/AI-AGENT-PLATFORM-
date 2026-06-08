@@ -1,6 +1,10 @@
 <template>
   <div class="layout">
-    <AppSidebar @open-settings="showSettings = true" />
+    <AppSidebar
+      :collapsed="sidebarCollapsed"
+      @toggle="toggleSidebar"
+      @open-settings="showSettings = true"
+    />
     <div class="main">
       <AppTopbar :title="meta.title" :sub="meta.sub" />
       <div class="content">
@@ -12,16 +16,18 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, RouterView } from 'vue-router'
 import AppSidebar from './components/AppSidebar.vue'
 import AppTopbar from './components/AppTopbar.vue'
 import SettingsModal from './components/SettingsModal.vue'
 import { useSettingsStore } from './stores/settings'
+import { readStoredSidebarCollapsed, toggleSidebarCollapsed } from './utils/sidebarCollapse'
 
 const route = useRoute()
 const settings = useSettingsStore()
 const showSettings = ref(!settings.isConnected)
+const sidebarCollapsed = ref(false)
 
 const PAGE_META = {
   '/chat':       { title: 'AI Agent Chat',  sub: 'PydanticAI · Temporal · Kimi K2' },
@@ -38,5 +44,21 @@ const meta = computed(() => {
     return { title: 'Ноутбук', sub: 'Чат по выбранной коллекции' }
   }
   return PAGE_META[route.path] || { title: 'AI Agent Platform', sub: '' }
+})
+
+function sidebarStorage() {
+  try {
+    return globalThis.localStorage
+  } catch {
+    return null
+  }
+}
+
+function toggleSidebar() {
+  sidebarCollapsed.value = toggleSidebarCollapsed(sidebarCollapsed.value, sidebarStorage())
+}
+
+onMounted(() => {
+  sidebarCollapsed.value = readStoredSidebarCollapsed(sidebarStorage())
 })
 </script>

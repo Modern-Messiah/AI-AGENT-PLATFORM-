@@ -1,11 +1,20 @@
 <template>
-  <div class="sidebar">
+  <div class="sidebar" :class="{ collapsed }">
     <div class="sidebar-logo">
       <div class="logo-mark">A</div>
-      <div>
+      <div class="logo-copy">
         <div class="logo-text">AgentPlatform</div>
         <div class="logo-sub">v1.0.0 · local</div>
       </div>
+      <button
+        class="sidebar-toggle"
+        type="button"
+        :aria-label="collapsed ? 'Развернуть боковую панель' : 'Свернуть боковую панель'"
+        :title="collapsed ? 'Развернуть панель' : 'Свернуть панель'"
+        @click="$emit('toggle')"
+      >
+        <span class="sidebar-toggle-mark">{{ collapsed ? '›' : '‹' }}</span>
+      </button>
     </div>
 
     <div class="sidebar-section">Навигация</div>
@@ -13,15 +22,16 @@
       :to="item.path"
       class="nav-item"
       :class="{ active: isNavActive(item.path) }"
+      :title="item.label"
     >
       <AppIcon :name="item.icon" class="nav-icon" />
-      {{ item.label }}
+      <span class="nav-label">{{ item.label }}</span>
     </RouterLink>
 
     <div class="sidebar-section">Конфигурация</div>
-    <div class="nav-item" @click="$emit('openSettings')">
+    <div class="nav-item" title="Настройки" @click="$emit('openSettings')">
       <AppIcon name="settings" class="nav-icon" />
-      Настройки
+      <span class="nav-label">Настройки</span>
     </div>
 
     <div class="sidebar-bottom">
@@ -46,7 +56,10 @@ import { useRoute, RouterLink } from 'vue-router'
 import { useSettingsStore } from '@/stores/settings'
 import AppIcon from './AppIcon.vue'
 
-defineEmits(['openSettings'])
+defineProps({
+  collapsed: { type: Boolean, default: false },
+})
+defineEmits(['openSettings', 'toggle'])
 
 const route = useRoute()
 const settings = useSettingsStore()
