@@ -305,7 +305,7 @@ html, body, #app { height: 100%; background: var(--bg); color: var(--text); font
 .send-btn:disabled { opacity: 0.3; cursor: not-allowed; }
 
 /* DOCUMENTS */
-.screen-body { flex: 1; overflow-y: auto; padding: 24px; display: flex; flex-direction: column; gap: 20px; }
+.screen-body { flex: 1; min-height: 0; min-width: 0; overflow-y: auto; padding: 24px; display: flex; flex-direction: column; gap: 20px; }
 
 .drop-zone {
   border: 2px dashed var(--border2);

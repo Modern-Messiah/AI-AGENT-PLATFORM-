@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import {
+  buildDocumentChatRoute,
   buildDocumentRoute,
   buildQuestionRoute,
   canReindexDocument,
@@ -74,4 +75,12 @@ test('builds chat route for suggested questions', () => {
 
 test('builds document detail route', () => {
   assert.deepEqual(buildDocumentRoute('doc-1'), { path: '/documents/doc-1' })
+})
+
+
+test('builds document-scoped chat route without auto ask', () => {
+  assert.deepEqual(buildDocumentChatRoute('doc-1'), {
+    path: '/chat',
+    query: { document: 'doc-1' },
+  })
 })

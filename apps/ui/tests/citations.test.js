@@ -2,8 +2,13 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import {
+  buildCitationDocumentRoute,
   buildCitationRoute,
   citationIsReferenced,
+  citationGroupIsReferenced,
+  citationGroupLabel,
+  citationGroupMarker,
+  groupCitationsByDocument,
   isStructuredCitation,
   sourceLabel,
   sourceLocation,
@@ -37,6 +42,28 @@ test('formats citation labels without truncating filenames', () => {
     sourceLabel({ ...citation, page: null }),
     '[2] corporate-contract.pdf · фрагмент 15',
   )
+})
+
+
+test('groups multiple citation fragments from the same document', () => {
+  const groups = groupCitationsByDocument([
+    { ...citation, id: 1, chunk_id: 'chunk-1', chunk_index: 0 },
+    { ...citation, id: 2, chunk_id: 'chunk-2', chunk_index: 2 },
+    { ...citation, id: 3, document_id: 'document-2', filename: 'other.pdf' },
+    'legacy.txt',
+  ])
+
+  assert.equal(groups.length, 3)
+  assert.equal(groups[0].type, 'document')
+  assert.equal(groups[0].filename, 'corporate-contract.pdf')
+  assert.equal(groups[0].fragmentCount, 2)
+  assert.deepEqual(groups[0].citations.map(item => item.chunk_id), ['chunk-1', 'chunk-2'])
+  assert.equal(citationGroupMarker(groups[0]), '[1-2]')
+  assert.equal(citationGroupLabel(groups[0]), '2 фрагмента')
+  assert.equal(citationGroupIsReferenced('Answer uses [2].', groups[0]), true)
+  assert.equal(citationGroupIsReferenced('Answer uses [3].', groups[0]), false)
+  assert.deepEqual(buildCitationDocumentRoute(groups[0]), { path: '/documents/document-1' })
+  assert.equal(groups[2].type, 'legacy')
 })
 
 

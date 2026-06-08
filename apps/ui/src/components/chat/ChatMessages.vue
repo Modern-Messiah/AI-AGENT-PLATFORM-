@@ -50,51 +50,75 @@
             <span v-if="msg.cached" class="badge badge-purple" style="font-size: 10px; padding: 1px 6px">cache hit</span>
           </div>
           <div v-if="msg.sources && msg.sources.length" class="sources-list">
-            <template v-for="(source, index) in msg.sources" :key="sourceKey(msg, source, index)">
+            <template v-for="(group, index) in citationGroups(msg)" :key="citationGroupKey(msg, group, index)">
               <button
-                v-if="isStructuredCitation(source)"
+                v-if="group.type === 'document'"
                 :class="[
                   'source-chip',
                   'source-chip-button',
                   {
-                    active: openCitationKey === sourceKey(msg, source, index),
-                    referenced: citationIsReferenced(msg.text, source),
+                    active: openCitationKey === citationGroupKey(msg, group, index),
+                    referenced: citationGroupIsReferenced(msg.text, group),
                   },
                 ]"
                 type="button"
-                @click="toggleCitation(msg, source, index)"
+                @click="toggleCitationGroup(msg, group, index)"
               >
-                <span class="source-chip-index">[{{ source.id }}]</span>
-                <span class="source-chip-name">{{ source.filename }}</span>
+                <span class="source-chip-index">{{ citationGroupMarker(group) }}</span>
+                <span class="source-chip-name">{{ group.filename }}</span>
                 <span class="source-chip-separator">·</span>
-                <span class="source-chip-location">{{ sourceLocation(source).toLowerCase() }}</span>
+                <span class="source-chip-location">{{ citationGroupLabel(group) }}</span>
               </button>
-              <span v-else class="source-chip">📄 {{ source }}</span>
+              <span v-else class="source-chip">📄 {{ group.label }}</span>
             </template>
           </div>
-          <div v-if="expandedCitation(msg)" class="citation-panel">
+          <div v-if="expandedCitationGroup(msg)" class="citation-panel">
             <div class="citation-panel-header">
               <div class="citation-heading">
-                <div class="citation-kicker">Источник [{{ expandedCitation(msg).id }}]</div>
+                <div class="citation-kicker">Источник {{ citationGroupMarker(expandedCitationGroup(msg)) }}</div>
                 <div class="citation-title">
-                  {{ expandedCitation(msg).filename }}
+                  {{ expandedCitationGroup(msg).filename }}
                 </div>
-                <div class="citation-location">{{ sourceLocation(expandedCitation(msg)) }}</div>
+                <div class="citation-location">{{ citationGroupLabel(expandedCitationGroup(msg)) }}</div>
               </div>
               <span class="citation-score">
-                {{ sourceScoreLabel(expandedCitation(msg)) }}
+                {{ sourceScoreLabel(expandedCitationGroup(msg).citations[0]) }}
               </span>
             </div>
             <div class="citation-excerpt-wrap">
-              <div class="citation-excerpt-label">Фрагмент из документа</div>
-              <div class="citation-excerpt">{{ expandedCitation(msg).excerpt }}</div>
+              <div class="citation-excerpt-label">Найденные фрагменты</div>
+              <div class="citation-fragments">
+                <article
+                  v-for="citation in expandedCitationGroup(msg).citations"
+                  :key="citation.chunk_id || citation.id"
+                  class="citation-fragment"
+                >
+                  <div class="citation-fragment-header">
+                    <div>
+                      <div class="citation-fragment-title">
+                        [{{ citation.id }}] {{ sourceLocation(citation) }}
+                      </div>
+                    </div>
+                    <span class="citation-score citation-score-inline">
+                      {{ sourceScoreLabel(citation) }}
+                    </span>
+                  </div>
+                  <div class="citation-excerpt">{{ citation.excerpt }}</div>
+                  <RouterLink
+                    class="btn btn-ghost btn-sm citation-open"
+                    :to="buildCitationRoute(citation)"
+                  >
+                    Открыть фрагмент
+                  </RouterLink>
+                </article>
+              </div>
             </div>
             <div class="citation-actions">
               <RouterLink
                 class="btn btn-ghost btn-sm citation-open"
-                :to="buildCitationRoute(expandedCitation(msg))"
+                :to="buildCitationDocumentRoute(expandedCitationGroup(msg))"
               >
-                Открыть источник
+                Открыть документ
               </RouterLink>
             </div>
           </div>
@@ -122,9 +146,12 @@ import { ref, watch, nextTick } from 'vue'
 import { useChatStore } from '@/stores/chat'
 import AppIcon from '@/components/AppIcon.vue'
 import {
+  buildCitationDocumentRoute,
   buildCitationRoute,
-  citationIsReferenced,
-  isStructuredCitation,
+  citationGroupIsReferenced,
+  citationGroupLabel,
+  citationGroupMarker,
+  groupCitationsByDocument,
   sourceLocation,
   sourceScoreLabel,
 } from '@/utils/citations'
@@ -135,21 +162,24 @@ const chat = useChatStore()
 const containerRef = ref(null)
 const openCitationKey = ref(null)
 
-function sourceKey(msg, source, index) {
-  if (isStructuredCitation(source)) return `${msg.id}:${source.id}:${source.chunk_id}`
-  return `${msg.id}:legacy:${index}:${source}`
+function citationGroups(msg) {
+  return groupCitationsByDocument(msg.sources || [])
 }
 
-function toggleCitation(msg, source, index) {
-  const key = sourceKey(msg, source, index)
+function citationGroupKey(msg, group, index) {
+  return `${msg.id}:${group.key || index}`
+}
+
+function toggleCitationGroup(msg, group, index) {
+  const key = citationGroupKey(msg, group, index)
   openCitationKey.value = openCitationKey.value === key ? null : key
 }
 
-function expandedCitation(msg) {
+function expandedCitationGroup(msg) {
   if (!openCitationKey.value) return null
-  return (msg.sources || []).find((source, index) => (
-    isStructuredCitation(source)
-    && sourceKey(msg, source, index) === openCitationKey.value
+  return citationGroups(msg).find((group, index) => (
+    group.type === 'document'
+    && citationGroupKey(msg, group, index) === openCitationKey.value
   )) || null
 }
 
@@ -287,15 +317,47 @@ watch([() => chat.messages.length, () => chat.isActiveSessionLoading(), () => ch
   letter-spacing: 0.07em;
   text-transform: uppercase;
 }
+.citation-fragments {
+  display: grid;
+  gap: 10px;
+  max-height: 430px;
+  overflow-y: auto;
+  padding-right: 4px;
+  overscroll-behavior: contain;
+}
+.citation-fragment {
+  padding: 12px;
+  border: 1px solid color-mix(in oklch, var(--border2) 82%, transparent);
+  border-radius: 12px;
+  background: color-mix(in oklch, var(--s1) 70%, transparent);
+}
+.citation-fragment-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  margin-bottom: 9px;
+}
+.citation-fragment-title {
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+}
+.citation-score-inline {
+  margin-top: 0;
+  font-size: 10px;
+}
 .citation-excerpt {
   color: var(--text);
-  max-height: 340px;
-  overflow: auto;
   padding-left: 12px;
   border-left: 2px solid color-mix(in oklch, var(--accent) 45%, var(--border));
   font-size: 13px;
   line-height: 1.65;
   white-space: pre-wrap;
+}
+.citation-fragment .citation-open {
+  margin-top: 10px;
 }
 .citation-actions {
   display: flex;

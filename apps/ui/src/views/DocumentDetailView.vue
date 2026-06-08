@@ -1,5 +1,5 @@
 <template>
-  <div class="screen-body">
+  <div class="screen-body document-detail">
     <div class="detail-hero">
       <div>
         <button class="back-link" type="button" @click="router.push('/documents')">
@@ -69,14 +69,14 @@
                 {{ question }}
               </button>
             </div>
-            <button class="btn btn-primary ask-main" type="button" @click="askDefaultQuestion">
+            <button class="btn btn-primary ask-main" type="button" @click="openDocumentChat">
               Открыть чат по этому документу
             </button>
           </div>
         </div>
       </div>
 
-      <div class="card">
+      <div class="card chunks-card">
         <div class="card-header">
           <div>
             <div class="card-title">Фрагменты индекса</div>
@@ -121,7 +121,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useApi } from '@/composables/useApi'
 import { useSettingsStore } from '@/stores/settings'
 import StatusBadge from '@/components/StatusBadge.vue'
-import { buildQuestionRoute, normalizeDocument } from '@/utils/documents'
+import { buildDocumentChatRoute, buildQuestionRoute, normalizeDocument } from '@/utils/documents'
 
 const route = useRoute()
 const router = useRouter()
@@ -188,13 +188,18 @@ function askQuestion(question) {
   router.push(buildQuestionRoute(question, documentId.value))
 }
 
-function askDefaultQuestion() {
-  const firstQuestion = normalized.value?.suggestedQuestions?.[0]
-  askQuestion(firstQuestion || `Расскажи главное из документа ${normalized.value?.name || ''}`)
+function openDocumentChat() {
+  router.push(buildDocumentChatRoute(documentId.value))
 }
 </script>
 
 <style scoped>
+.document-detail {
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  padding-bottom: 48px;
+}
 .detail-hero {
   display: flex;
   justify-content: space-between;
@@ -296,9 +301,15 @@ function askDefaultQuestion() {
   width: 100%;
   justify-content: center;
 }
+.chunks-card {
+  min-height: 0;
+}
 .chunks-list {
   display: grid;
   gap: 10px;
+  max-height: min(58vh, 620px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 14px;
 }
 .chunk-card {

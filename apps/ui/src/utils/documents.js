@@ -52,6 +52,10 @@ export function buildQuestionRoute(question, documentId = null) {
   return { path: '/chat', query }
 }
 
+export function buildDocumentChatRoute(documentId) {
+  return { path: '/chat', query: { document: documentId } }
+}
+
 export function buildDocumentRoute(documentId) {
   return { path: `/documents/${documentId}` }
 }
