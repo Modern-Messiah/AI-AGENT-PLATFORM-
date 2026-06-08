@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+from types import SimpleNamespace
+
 from apps.worker.activities import ingestion
 from apps.worker.activities.ingestion import (
     IngestionInput,
@@ -39,13 +42,20 @@ async def test_chunk_and_embed_preserves_segment_metadata(monkeypatch) -> None:
 
 
 class _FakeSession:
+    def __init__(self, results=None) -> None:
+        self.results = list(results or [])
+        self.statements = []
+
     async def execute(self, statement) -> None:
-        self.statement = statement
+        self.statements.append(statement)
+        if self.results:
+            return self.results.pop(0)
+        return None
 
 
 class _FakeTenantSession:
-    def __init__(self) -> None:
-        self.session = _FakeSession()
+    def __init__(self, results=None) -> None:
+        self.session = _FakeSession(results)
 
     async def __aenter__(self) -> _FakeSession:
         return self.session
@@ -55,7 +65,7 @@ class _FakeTenantSession:
 
 
 async def test_mark_done_invalidates_tenant_semantic_cache(monkeypatch) -> None:
-    tenant_session = _FakeTenantSession()
+    tenant_session = _FakeTenantSession([None, _ScalarListResult([])])
     cleared: list[str] = []
 
     monkeypatch.setattr(ingestion, "tenant_session", lambda tenant_id: tenant_session)
@@ -75,3 +85,71 @@ async def test_mark_done_invalidates_tenant_semantic_cache(monkeypatch) -> None:
     )
 
     assert cleared == ["tenant-a"]
+
+
+class _ScalarListResult:
+    def __init__(self, values) -> None:
+        self.values = values
+
+    def scalars(self):
+        return self
+
+    def all(self):
+        return self.values
+
+
+async def test_mark_done_refreshes_linked_notebook_insights(monkeypatch) -> None:
+    document_id = "5ef2d843-ddaf-4ae3-a73d-d25f27fb8621"
+    notebook = SimpleNamespace(
+        id="notebook-a",
+        title="Product research",
+        summary="Old stale overview.",
+        suggested_questions=["Old question?"],
+        key_topics=["Old"],
+        insights_updated_at=None,
+        updated_at=datetime(2026, 6, 7, tzinfo=timezone.utc),
+    )
+    documents = [
+        SimpleNamespace(
+            filename="q1.pdf",
+            summary="Revenue grew by 24 percent in Q1. Enterprise demand improved.",
+            suggested_questions=["Какие факты есть в q1.pdf?"],
+        ),
+        SimpleNamespace(
+            filename="plan.md",
+            summary="Expansion focuses on enterprise customers and onboarding.",
+            suggested_questions=["Какие выводы можно сделать из plan.md?"],
+        ),
+    ]
+    tenant_session = _FakeTenantSession(
+        [
+            None,
+            _ScalarListResult([notebook]),
+            _ScalarListResult(documents),
+        ]
+    )
+
+    monkeypatch.setattr(ingestion, "tenant_session", lambda tenant_id: tenant_session)
+
+    async def fake_clear(tenant_id: str) -> None:
+        return None
+
+    monkeypatch.setattr(ingestion.semantic_cache, "clear", fake_clear)
+
+    await mark_done(
+        IngestionInput(
+            document_id=document_id,
+            tenant_id="tenant-a",
+            object_key="tenant-a/file.pdf",
+            filename="file.pdf",
+        )
+    )
+
+    assert notebook.summary.startswith("q1.pdf: Revenue grew by 24 percent in Q1.")
+    assert notebook.suggested_questions == [
+        "Что объединяет документы в Product research?",
+        "Какие ключевые темы повторяются в Product research?",
+        "Какие выводы можно сделать по коллекции Product research?",
+    ]
+    assert "Revenue" in notebook.key_topics
+    assert notebook.insights_updated_at is not None

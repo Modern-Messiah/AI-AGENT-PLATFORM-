@@ -9,14 +9,27 @@ from __future__ import annotations
 import logging
 import uuid
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 
 from packages.cache.semantic import semantic_cache
 from packages.rag import build_document_insights, chunk_segments, embed_texts, parse_to_segments
 from packages.rag.parser import ParsedSegment
-from packages.rag.summaries import DocumentInsights
-from packages.storage import Chunk, Document, DocumentStatus, object_store
+from packages.rag.summaries import (
+    DocumentInsights,
+    NotebookInsightSource,
+    build_notebook_insights,
+)
+from packages.storage import (
+    Chunk,
+    Document,
+    DocumentStatus,
+    Notebook,
+    NotebookDocument,
+    object_store,
+)
 from packages.storage.db import tenant_session
-from sqlalchemy import update
+from sqlalchemy import select, update
+from sqlalchemy.ext.asyncio import AsyncSession
 from temporalio import activity
 
 log = logging.getLogger(__name__)
@@ -120,14 +133,95 @@ async def store_chunks(input: IngestionInput, batch: ChunkBatch) -> int:
     return len(batch.contents)
 
 
+async def _refresh_notebook_insights_for_document(
+    session: AsyncSession,
+    *,
+    tenant_id: str,
+    document_id: uuid.UUID,
+) -> int:
+    notebooks = (
+        await session.execute(
+            select(Notebook)
+            .join(NotebookDocument, NotebookDocument.notebook_id == Notebook.id)
+            .where(
+                Notebook.tenant_id == tenant_id,
+                NotebookDocument.tenant_id == tenant_id,
+                NotebookDocument.document_id == document_id,
+            )
+            .order_by(Notebook.created_at)
+        )
+    ).scalars().all()
+    if not notebooks:
+        return 0
+
+    refreshed = 0
+    now = datetime.now(timezone.utc)
+    for notebook in notebooks:
+        ready_documents = (
+            await session.execute(
+                select(Document)
+                .join(NotebookDocument, NotebookDocument.document_id == Document.id)
+                .where(
+                    Document.tenant_id == tenant_id,
+                    Document.status == DocumentStatus.done,
+                    NotebookDocument.tenant_id == tenant_id,
+                    NotebookDocument.notebook_id == notebook.id,
+                )
+                .order_by(NotebookDocument.created_at, Document.created_at.desc())
+            )
+        ).scalars().all()
+        insights = build_notebook_insights(
+            [
+                NotebookInsightSource(
+                    filename=doc.filename,
+                    summary=doc.summary or "",
+                    suggested_questions=doc.suggested_questions or [],
+                )
+                for doc in ready_documents
+            ],
+            title=notebook.title,
+        )
+        if not insights.summary:
+            notebook.summary = None
+            notebook.suggested_questions = []
+            notebook.key_topics = []
+            notebook.insights_updated_at = None
+            continue
+
+        notebook.summary = insights.summary
+        notebook.suggested_questions = insights.suggested_questions
+        notebook.key_topics = insights.key_topics
+        notebook.insights_updated_at = now
+        notebook.updated_at = now
+        refreshed += 1
+    return refreshed
+
+
 @activity.defn
 async def mark_done(input: IngestionInput) -> None:
+    document_id = uuid.UUID(input.document_id)
     async with tenant_session(input.tenant_id) as s:
         await s.execute(
             update(Document)
-            .where(Document.id == uuid.UUID(input.document_id))
+            .where(Document.id == document_id)
             .values(status=DocumentStatus.done)
         )
+
+    try:
+        async with tenant_session(input.tenant_id) as s:
+            await _refresh_notebook_insights_for_document(
+                s,
+                tenant_id=input.tenant_id,
+                document_id=document_id,
+            )
+    except Exception as exc:
+        log.warning(
+            "notebook insights refresh failed | tenant=%s document=%s error=%s",
+            input.tenant_id,
+            input.document_id,
+            exc,
+        )
+
     try:
         await semantic_cache.clear(input.tenant_id)
     except Exception as exc:
