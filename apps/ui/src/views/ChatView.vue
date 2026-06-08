@@ -1,6 +1,22 @@
 <template>
-  <div class="chat-layout">
-    <ChatHistory :model="model" @toast="setToast" />
+  <div ref="chatLayoutRef" class="chat-layout" :class="{ 'is-resizing-history': isResizingHistory }">
+    <ChatHistory :model="model" :width="historyWidth" @toast="setToast" />
+
+    <button
+      class="chat-history-resizer"
+      type="button"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Изменить ширину списка сессий"
+      :aria-valuemin="CHAT_HISTORY_MIN_WIDTH"
+      :aria-valuemax="maxHistoryWidth()"
+      :aria-valuenow="historyWidth"
+      title="Потяните, чтобы изменить ширину списка сессий"
+      @pointerdown="startHistoryResize"
+      @mousedown="startHistoryResize"
+      @touchstart.prevent="startHistoryResize"
+      @keydown="handleHistoryResizeKeydown"
+    ></button>
 
     <div class="chat-main">
       <ChatToolbar v-model:model="model" v-model:requireApproval="requireApproval" />
@@ -27,7 +43,7 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useChatStore } from '@/stores/chat'
 import { useSettingsStore } from '@/stores/settings'
@@ -39,6 +55,14 @@ import {
   scopeSendOptions,
   scopeWelcomeMessage,
 } from '@/utils/chatScope'
+import {
+  CHAT_HISTORY_DEFAULT_WIDTH,
+  CHAT_HISTORY_MAX_WIDTH,
+  CHAT_HISTORY_MIN_WIDTH,
+  clampPaneWidth,
+  readStoredPaneWidth,
+  storePaneWidth,
+} from '@/utils/paneResize'
 import ChatHistory from '@/components/chat/ChatHistory.vue'
 import ChatToolbar from '@/components/chat/ChatToolbar.vue'
 import ChatMessages from '@/components/chat/ChatMessages.vue'
@@ -54,6 +78,11 @@ const model = ref('moonshot/kimi-k2.6')
 const requireApproval = ref(false)
 const toast = ref(null)
 const consumedAsk = ref('')
+const chatLayoutRef = ref(null)
+const historyWidth = ref(CHAT_HISTORY_DEFAULT_WIDTH)
+const isResizingHistory = ref(false)
+let previousBodyCursor = ''
+let previousBodyUserSelect = ''
 const currentScope = computed(() => normalizeChatScope(route.query))
 const activeSessionMeta = computed(() => {
   const active = chat.sessions.find(session => session.id === chat.activeId)
@@ -69,6 +98,153 @@ const displayScope = computed(() => {
 })
 
 function setToast(t) { toast.value = t }
+
+function paneStorage() {
+  try {
+    return globalThis.localStorage
+  } catch {
+    return null
+  }
+}
+
+function applyHistoryWidth(clientX) {
+  const rect = chatLayoutRef.value?.getBoundingClientRect()
+  if (!rect) return
+
+  updateHistoryWidth(clientX - rect.left)
+}
+
+function historyResizeClientX(event) {
+  return event.touches?.[0]?.clientX ?? event.changedTouches?.[0]?.clientX ?? event.clientX
+}
+
+function maxHistoryWidth() {
+  const rect = chatLayoutRef.value?.getBoundingClientRect()
+  if (!rect) return CHAT_HISTORY_MAX_WIDTH
+
+  return Math.max(
+    CHAT_HISTORY_MIN_WIDTH,
+    Math.min(CHAT_HISTORY_MAX_WIDTH, rect.width - 360),
+  )
+}
+
+function updateHistoryWidth(width) {
+  historyWidth.value = clampPaneWidth(width, CHAT_HISTORY_MIN_WIDTH, maxHistoryWidth())
+}
+
+function persistHistoryWidth() {
+  storePaneWidth(paneStorage(), historyWidth.value)
+}
+
+function setResizeCursor() {
+  previousBodyCursor = document.body.style.cursor
+  previousBodyUserSelect = document.body.style.userSelect
+  document.body.style.cursor = 'col-resize'
+  document.body.style.userSelect = 'none'
+}
+
+function restoreResizeCursor() {
+  document.body.style.cursor = previousBodyCursor
+  document.body.style.userSelect = previousBodyUserSelect
+  previousBodyCursor = ''
+  previousBodyUserSelect = ''
+}
+
+function startHistoryResize(event) {
+  if (isResizingHistory.value) return
+  if (event.button !== undefined && event.button !== 0) return
+
+  const clientX = historyResizeClientX(event)
+  if (!Number.isFinite(clientX)) return
+
+  event.preventDefault()
+  applyHistoryWidth(clientX)
+  isResizingHistory.value = true
+  setResizeCursor()
+  window.addEventListener('pointermove', handleHistoryResize)
+  window.addEventListener('pointerup', stopHistoryResize)
+  window.addEventListener('pointercancel', stopHistoryResize)
+  window.addEventListener('mousemove', handleHistoryResize)
+  window.addEventListener('mouseup', stopHistoryResize)
+  window.addEventListener('touchmove', handleHistoryResize, { passive: false })
+  window.addEventListener('touchend', stopHistoryResize)
+  window.addEventListener('touchcancel', stopHistoryResize)
+}
+
+function handleHistoryResize(event) {
+  const clientX = historyResizeClientX(event)
+  if (!Number.isFinite(clientX)) return
+
+  if (event.cancelable) {
+    event.preventDefault()
+  }
+  applyHistoryWidth(clientX)
+}
+
+function stopHistoryResize() {
+  if (!isResizingHistory.value) return
+
+  restoreResizeCursor()
+  isResizingHistory.value = false
+  removeHistoryResizeListeners()
+  persistHistoryWidth()
+}
+
+function handleWindowResize() {
+  updateHistoryWidth(historyWidth.value)
+}
+
+function handleHistoryResizeKeydown(event) {
+  const step = event.shiftKey ? 40 : 16
+  const keyDelta = {
+    ArrowLeft: -step,
+    ArrowRight: step,
+  }[event.key]
+
+  if (keyDelta !== undefined) {
+    event.preventDefault()
+    updateHistoryWidth(historyWidth.value + keyDelta)
+    persistHistoryWidth()
+    return
+  }
+
+  if (event.key === 'Home') {
+    event.preventDefault()
+    updateHistoryWidth(CHAT_HISTORY_MIN_WIDTH)
+    persistHistoryWidth()
+    return
+  }
+
+  if (event.key === 'End') {
+    event.preventDefault()
+    updateHistoryWidth(maxHistoryWidth())
+    persistHistoryWidth()
+  }
+}
+
+function removeHistoryResizeListeners() {
+  window.removeEventListener('pointermove', handleHistoryResize)
+  window.removeEventListener('pointerup', stopHistoryResize)
+  window.removeEventListener('pointercancel', stopHistoryResize)
+  window.removeEventListener('mousemove', handleHistoryResize)
+  window.removeEventListener('mouseup', stopHistoryResize)
+  window.removeEventListener('touchmove', handleHistoryResize)
+  window.removeEventListener('touchend', stopHistoryResize)
+  window.removeEventListener('touchcancel', stopHistoryResize)
+}
+
+onMounted(() => {
+  updateHistoryWidth(readStoredPaneWidth(paneStorage()))
+  window.addEventListener('resize', handleWindowResize)
+})
+
+onBeforeUnmount(() => {
+  removeHistoryResizeListeners()
+  window.removeEventListener('resize', handleWindowResize)
+  if (isResizingHistory.value) {
+    restoreResizeCursor()
+  }
+})
 
 watch(() => settings.apiKey, async (key) => {
   if (!key) { chat.reset(); return }
@@ -182,6 +358,39 @@ async function rejectHitl(workflowId) {
   display: flex;
   flex-shrink: 0;
   gap: 8px;
+}
+.chat-history-resizer {
+  position: relative;
+  z-index: 3;
+  flex: 0 0 10px;
+  margin-right: -5px;
+  margin-left: -5px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: col-resize;
+  outline: none;
+  touch-action: none;
+}
+.chat-history-resizer::before {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  background: var(--border);
+  content: '';
+  transform: translateX(-50%);
+  transition: background 0.12s, box-shadow 0.12s;
+}
+.chat-history-resizer:hover::before,
+.chat-history-resizer:focus-visible::before,
+.chat-layout.is-resizing-history .chat-history-resizer::before {
+  background: var(--accent);
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--accent) 35%, transparent);
+}
+.chat-layout.is-resizing-history {
+  user-select: none;
 }
 @media (max-width: 760px) {
   .scope-banner {

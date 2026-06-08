@@ -166,7 +166,7 @@ html, body, #app { height: 100%; background: var(--bg); color: var(--text); font
 .session-title { font-size: 12.5px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .session-meta { font-size: 11px; color: var(--muted); margin-top: 2px; font-family: var(--mono); }
 
-.chat-main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.chat-main { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
 
 .chat-toolbar {
   padding: 10px 20px;

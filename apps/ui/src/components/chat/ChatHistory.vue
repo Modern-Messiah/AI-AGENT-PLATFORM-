@@ -1,5 +1,5 @@
 <template>
-  <div class="chat-history">
+  <div class="chat-history" :style="{ width: `${width}px` }">
     <div class="chat-history-header">
       <span>Сессии</span>
       <button class="btn btn-ghost btn-sm" style="padding: 3px 7px; gap: 4px" @click="handleNew">
@@ -55,7 +55,10 @@ import AppIcon from '@/components/AppIcon.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
 import { sessionScopeMeta } from '@/utils/chatScope'
 
-const props = defineProps({ model: String })
+const props = defineProps({
+  model: String,
+  width: { type: Number, default: 220 },
+})
 const emit = defineEmits(['toast'])
 
 const chat = useChatStore()
