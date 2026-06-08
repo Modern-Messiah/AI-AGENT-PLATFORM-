@@ -195,10 +195,14 @@ function openDocumentChat() {
 
 <style scoped>
 .document-detail {
+  display: grid;
+  grid-template-rows: auto auto minmax(220px, 1fr);
+  gap: 20px;
   height: 100%;
   min-height: 0;
   min-width: 0;
-  padding-bottom: 48px;
+  overflow: hidden;
+  padding-bottom: 24px;
 }
 .detail-hero {
   display: flex;
@@ -302,11 +306,19 @@ function openDocumentChat() {
   justify-content: center;
 }
 .chunks-card {
+  display: flex;
+  flex-direction: column;
   min-height: 0;
+}
+.chunks-card > .card-header {
+  flex-shrink: 0;
 }
 .chunks-list {
   display: grid;
+  flex: 1;
   gap: 10px;
+  min-height: 0;
+  overflow-y: auto;
   padding: 14px;
 }
 .chunk-card {
@@ -338,6 +350,11 @@ function openDocumentChat() {
 }
 
 @media (max-width: 900px) {
+  .document-detail {
+    display: flex;
+    overflow-y: auto;
+    padding-bottom: 56px;
+  }
   .detail-hero,
   .detail-status {
     align-items: flex-start;
