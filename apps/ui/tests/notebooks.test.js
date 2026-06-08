@@ -5,6 +5,7 @@ import {
   buildNotebookRoute,
   buildNotebookUploadPath,
   buildNotebookQuestionRoute,
+  normalizeNotebookSources,
   normalizeNotebook,
 } from '../src/utils/notebooks.js'
 
@@ -46,4 +47,35 @@ test('builds notebook routes', () => {
       query: { ask: 'Что общее в источниках?', notebook: 'notebook-1' },
     },
   )
+})
+
+
+test('normalizes notebook source cards', () => {
+  const sources = normalizeNotebookSources([
+    {
+      id: 'doc-1',
+      filename: 'manual.pdf',
+      status: 'done',
+      size_bytes: 2048,
+      created_at: '2026-06-07T09:00:00Z',
+      summary: 'Manual overview.',
+      suggested_questions: ['Что важно в manual.pdf?'],
+    },
+    {
+      id: 'doc-2',
+      filename: 'draft.md',
+      status: 'processing',
+      size_bytes: 0,
+      created_at: '2026-06-07T10:00:00Z',
+    },
+  ])
+
+  assert.equal(sources[0].name, 'manual.pdf')
+  assert.equal(sources[0].isReady, true)
+  assert.equal(sources[0].readinessLabel, 'Готов для вопросов')
+  assert.equal(sources[0].summary, 'Manual overview.')
+  assert.deepEqual(sources[0].suggestedQuestions, ['Что важно в manual.pdf?'])
+  assert.equal(sources[0].createdLabel, '07.06.2026')
+  assert.equal(sources[1].isReady, false)
+  assert.equal(sources[1].readinessLabel, 'Индексируется')
 })

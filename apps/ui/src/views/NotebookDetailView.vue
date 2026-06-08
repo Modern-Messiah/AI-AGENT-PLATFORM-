@@ -101,7 +101,7 @@
             @dragover.prevent="draggingUpload = true"
             @dragleave="draggingUpload = false"
             @drop="handleUploadDrop"
-            @click="fileInput.click()"
+            @click="fileInput?.click()"
           >
             <div>
               <strong>{{ uploading ? 'Загружаю файл...' : 'Загрузить файл в этот ноутбук' }}</strong>
@@ -136,24 +136,74 @@
       <div class="card">
         <div class="card-header">
           <div>
-            <div class="card-title">Документы внутри</div>
-            <div class="card-sub">{{ normalized.documentCount }} источник(ов)</div>
+            <div class="card-title">Источники ноутбука</div>
+            <div class="card-sub">
+              {{ includedSources.length }} источник(ов), {{ readySourceCount }} готово для вопросов
+            </div>
           </div>
           <button class="btn btn-ghost btn-sm" type="button" @click="loadNotebook">
             Обновить
           </button>
         </div>
-        <div v-if="includedDocs.length === 0" class="empty">
+        <div v-if="includedSources.length === 0" class="empty">
           <div class="empty-title">Коллекция пустая</div>
           <div class="empty-sub">Добавьте хотя бы один готовый документ и сохраните состав</div>
         </div>
-        <div v-else class="included-list">
-          <article v-for="doc in includedDocs" :key="doc.id" class="included-card">
-            <div>
-              <strong>{{ doc.name }}</strong>
-              <small>{{ doc.size }} · {{ doc.createdLabel }}</small>
+        <div v-else class="source-list">
+          <article v-for="source in includedSources" :key="source.id" class="source-card">
+            <div class="source-main">
+              <div class="source-title-row">
+                <RouterLink class="source-title" :to="buildDocumentRoute(source.id)">
+                  {{ source.name }}
+                </RouterLink>
+                <StatusBadge :status="source.status" />
+              </div>
+              <div class="source-meta">
+                <span>{{ source.readinessLabel }}</span>
+                <span>{{ formatFileSize(source.sizeBytes) }}</span>
+                <span>{{ source.createdLabel }}</span>
+              </div>
+              <p v-if="source.summary" class="source-summary">{{ source.summary }}</p>
+              <p v-else-if="source.error" class="source-summary source-error">
+                {{ source.error }}
+              </p>
+              <p v-else class="source-summary">
+                Summary появится после индексации источника.
+              </p>
+              <div v-if="source.suggestedQuestions.length" class="source-questions">
+                <button
+                  v-for="question in source.suggestedQuestions.slice(0, 3)"
+                  :key="question"
+                  class="question-chip"
+                  type="button"
+                  :disabled="!source.isReady"
+                  @click="askQuestion(question)"
+                >
+                  {{ question }}
+                </button>
+              </div>
             </div>
-            <StatusBadge :status="doc.status" />
+            <div class="source-actions">
+              <RouterLink class="btn btn-ghost btn-sm" :to="buildDocumentRoute(source.id)">
+                Открыть
+              </RouterLink>
+              <button
+                class="btn btn-ghost btn-sm"
+                type="button"
+                :disabled="!source.isReady"
+                @click="askSource(source)"
+              >
+                Спросить
+              </button>
+              <button
+                class="btn btn-ghost btn-sm"
+                type="button"
+                :disabled="saving"
+                @click="excludeSource(source.id)"
+              >
+                Исключить
+              </button>
+            </div>
           </article>
         </div>
       </div>
@@ -170,10 +220,11 @@ import { useApi } from '@/composables/useApi'
 import { useSettingsStore } from '@/stores/settings'
 import AppToast from '@/components/AppToast.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
-import { normalizeDocument } from '@/utils/documents'
+import { buildDocumentRoute, formatFileSize, normalizeDocument } from '@/utils/documents'
 import {
   buildNotebookQuestionRoute,
   buildNotebookUploadPath,
+  normalizeNotebookSources,
   normalizeNotebook,
 } from '@/utils/notebooks'
 
@@ -198,6 +249,8 @@ const notebookId = computed(() => String(route.params.id || ''))
 const normalized = computed(() => notebook.value ? normalizeNotebook(notebook.value) : null)
 const readyDocs = computed(() => allDocs.value.filter(doc => doc.status === 'done'))
 const includedDocs = computed(() => (normalized.value?.documents || []).map(normalizeDocument))
+const includedSources = computed(() => normalizeNotebookSources(normalized.value?.documents || []))
+const readySourceCount = computed(() => includedSources.value.filter(source => source.isReady).length)
 const suggestedQuestions = computed(() => {
   if (normalized.value?.suggestedQuestions?.length) {
     return normalized.value.suggestedQuestions
@@ -242,7 +295,7 @@ async function loadNotebook() {
   }
 }
 
-async function saveDocuments() {
+async function saveDocuments(options = {}) {
   saving.value = true
   try {
     const data = await apiFetch(`/notebooks/${notebookId.value}/documents`, {
@@ -252,9 +305,11 @@ async function saveDocuments() {
     })
     notebook.value = data
     selectedDocumentIds.value = [...(data.document_ids || [])]
-    toast.value = { msg: 'Состав ноутбука сохранён', type: 'success' }
+    toast.value = { msg: options.successMessage || 'Состав ноутбука сохранён', type: 'success' }
+    return true
   } catch (e) {
     toast.value = { msg: `Ошибка сохранения: ${e.message}`, type: 'error' }
+    return false
   } finally {
     saving.value = false
   }
@@ -331,6 +386,18 @@ async function refreshInsights() {
 
 function askQuestion(question) {
   router.push(buildNotebookQuestionRoute(question, notebookId.value))
+}
+
+function askSource(source) {
+  const question = source.suggestedQuestions?.[0] || `Что важно в ${source.name}?`
+  askQuestion(question)
+}
+
+async function excludeSource(documentId) {
+  const previous = [...selectedDocumentIds.value]
+  selectedDocumentIds.value = selectedDocumentIds.value.filter(id => id !== documentId)
+  const saved = await saveDocuments({ successMessage: 'Источник исключён из ноутбука' })
+  if (!saved) selectedDocumentIds.value = previous
 }
 
 function askDefaultQuestion() {
@@ -449,6 +516,10 @@ function askDefaultQuestion() {
   border-color: var(--accent);
   color: var(--text);
 }
+.question-chip:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
 .ask-main {
   width: 100%;
   justify-content: center;
@@ -519,34 +590,69 @@ function askDefaultQuestion() {
   font-size: 12px;
   line-height: 1.5;
 }
-.included-list {
+.source-list {
   display: grid;
-  gap: 10px;
+  gap: 12px;
   padding: 14px;
 }
-.included-card {
+.source-card {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: color-mix(in oklch, var(--s2) 74%, transparent);
+}
+.source-main {
+  min-width: 0;
+}
+.source-title-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  padding: 12px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: color-mix(in oklch, var(--s2) 74%, transparent);
+  gap: 12px;
 }
-.included-card strong,
-.included-card small {
+.source-title {
   display: block;
-}
-.included-card strong {
   color: var(--text);
-  font-size: 12px;
+  font-size: 13px;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+  text-decoration: none;
 }
-.included-card small {
+.source-title:hover {
+  color: var(--accent);
+}
+.source-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
   margin-top: 4px;
   color: var(--muted);
   font-family: var(--mono);
   font-size: 10px;
+}
+.source-summary {
+  margin: 10px 0 0;
+  color: var(--muted2);
+  font-size: 12px;
+  line-height: 1.55;
+}
+.source-error {
+  color: var(--red);
+}
+.source-questions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 12px;
+}
+.source-actions {
+  display: flex;
+  align-items: flex-start;
+  flex-shrink: 0;
+  gap: 8px;
 }
 
 @media (max-width: 900px) {
@@ -559,6 +665,15 @@ function askDefaultQuestion() {
   }
   .detail-grid {
     grid-template-columns: 1fr;
+  }
+  .source-card,
+  .source-title-row,
+  .source-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .source-actions {
+    flex-wrap: wrap;
   }
 }
 </style>

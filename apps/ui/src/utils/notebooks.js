@@ -23,6 +23,37 @@ export function normalizeNotebook(notebook) {
   }
 }
 
+export function normalizeNotebookSources(documents = []) {
+  return documents.map(doc => {
+    const status = doc.status || 'pending'
+    const isReady = status === 'done'
+    const isFailed = status === 'failed'
+    const isProcessing = status === 'processing' || status === 'pending'
+
+    return {
+      id: doc.id,
+      name: doc.filename || doc.name || 'unnamed',
+      status,
+      isReady,
+      isFailed,
+      isProcessing,
+      readinessLabel: isReady
+        ? 'Готов для вопросов'
+        : isFailed
+          ? 'Ошибка индексации'
+          : 'Индексируется',
+      error: doc.error || null,
+      sizeBytes: doc.size_bytes || doc.sizeBytes || 0,
+      summary: doc.summary || '',
+      suggestedQuestions: Array.isArray(doc.suggested_questions)
+        ? doc.suggested_questions
+        : (doc.suggestedQuestions || []),
+      createdAt: doc.created_at || doc.createdAt || null,
+      createdLabel: doc.created_at ? new Date(doc.created_at).toLocaleDateString('ru') : '—',
+    }
+  })
+}
+
 export function buildNotebookRoute(notebookId) {
   return { path: `/notebooks/${notebookId}` }
 }
