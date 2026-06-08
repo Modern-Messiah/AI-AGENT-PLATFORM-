@@ -24,6 +24,16 @@ export function sourceLabel(source) {
   return `[${source.id}] ${source.filename} · ${location}`
 }
 
+export function sourceScoreLabel(source) {
+  if (!isStructuredCitation(source)) return ''
+  const score = Number(source.score)
+  if (!Number.isFinite(score)) return 'релевантность —'
+
+  const percent = score <= 1 ? score * 100 : score
+  const clamped = Math.max(0, Math.min(100, Math.round(percent)))
+  return `релевантность ${clamped}%`
+}
+
 export function citationIsReferenced(answer, source) {
   if (!isStructuredCitation(source)) return false
   return String(answer ?? '').includes(`[${source.id}]`)

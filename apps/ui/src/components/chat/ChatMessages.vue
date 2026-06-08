@@ -64,30 +64,39 @@
                 type="button"
                 @click="toggleCitation(msg, source, index)"
               >
-                {{ sourceLabel(source) }}
+                <span class="source-chip-index">[{{ source.id }}]</span>
+                <span class="source-chip-name">{{ source.filename }}</span>
+                <span class="source-chip-separator">·</span>
+                <span class="source-chip-location">{{ sourceLocation(source).toLowerCase() }}</span>
               </button>
               <span v-else class="source-chip">📄 {{ source }}</span>
             </template>
           </div>
           <div v-if="expandedCitation(msg)" class="citation-panel">
             <div class="citation-panel-header">
-              <div>
+              <div class="citation-heading">
+                <div class="citation-kicker">Источник [{{ expandedCitation(msg).id }}]</div>
                 <div class="citation-title">
-                  [{{ expandedCitation(msg).id }}] {{ expandedCitation(msg).filename }}
+                  {{ expandedCitation(msg).filename }}
                 </div>
                 <div class="citation-location">{{ sourceLocation(expandedCitation(msg)) }}</div>
               </div>
               <span class="citation-score">
-                score {{ Number(expandedCitation(msg).score || 0).toFixed(3) }}
+                {{ sourceScoreLabel(expandedCitation(msg)) }}
               </span>
             </div>
-            <div class="citation-excerpt">{{ expandedCitation(msg).excerpt }}</div>
-            <RouterLink
-              class="btn btn-ghost btn-sm citation-open"
-              :to="buildCitationRoute(expandedCitation(msg))"
-            >
-              Открыть источник
-            </RouterLink>
+            <div class="citation-excerpt-wrap">
+              <div class="citation-excerpt-label">Фрагмент из документа</div>
+              <div class="citation-excerpt">{{ expandedCitation(msg).excerpt }}</div>
+            </div>
+            <div class="citation-actions">
+              <RouterLink
+                class="btn btn-ghost btn-sm citation-open"
+                :to="buildCitationRoute(expandedCitation(msg))"
+              >
+                Открыть источник
+              </RouterLink>
+            </div>
           </div>
         </div>
       </div>
@@ -116,8 +125,8 @@ import {
   buildCitationRoute,
   citationIsReferenced,
   isStructuredCitation,
-  sourceLabel,
   sourceLocation,
+  sourceScoreLabel,
 } from '@/utils/citations'
 
 defineEmits(['approve', 'reject'])
@@ -161,57 +170,140 @@ watch([() => chat.messages.length, () => chat.isActiveSessionLoading(), () => ch
   animation: blink 0.8s step-end infinite;
 }
 .source-chip-button {
-  border: 1px solid var(--border);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: min(100%, 360px);
+  padding: 5px 10px;
+  border: 1px solid color-mix(in oklch, var(--border2) 82%, transparent);
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--s2) 88%, transparent);
+  color: var(--muted2);
   cursor: pointer;
-  font: inherit;
+  font-family: var(--font);
+  font-size: 11.5px;
+  line-height: 1.2;
   text-align: left;
+  transition: border-color 0.12s, background 0.12s, color 0.12s, box-shadow 0.12s;
 }
 .source-chip-button:hover,
 .source-chip-button.active {
-  border-color: var(--purple);
+  border-color: color-mix(in oklch, var(--accent) 72%, var(--border));
+  background: color-mix(in oklch, var(--accent) 13%, var(--s2));
   color: var(--text);
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--accent) 10%, transparent);
 }
 .source-chip-button.referenced {
-  background: color-mix(in srgb, var(--purple) 12%, transparent);
+  border-color: color-mix(in oklch, var(--accent) 48%, var(--border));
+  background: color-mix(in oklch, var(--accent) 9%, var(--s2));
+}
+.source-chip-index {
+  color: var(--accent);
+  flex-shrink: 0;
+  font-family: var(--mono);
+  font-weight: 700;
+}
+.source-chip-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.source-chip-separator,
+.source-chip-location {
+  color: var(--muted);
+  flex-shrink: 0;
+}
+.source-chip-location {
+  font-family: var(--mono);
+  font-size: 10.5px;
 }
 .citation-panel {
-  margin-top: 8px;
-  padding: 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--s2);
+  margin-top: 10px;
+  width: min(100%, 760px);
+  overflow: hidden;
+  border: 1px solid color-mix(in oklch, var(--border2) 88%, transparent);
+  border-radius: 14px;
+  background:
+    linear-gradient(135deg, color-mix(in oklch, var(--accent) 7%, transparent), transparent 42%),
+    var(--s2);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.22);
 }
 .citation-panel-header {
   display: flex;
   justify-content: space-between;
-  gap: 12px;
+  gap: 16px;
   align-items: flex-start;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in oklch, var(--s3) 58%, transparent);
+}
+.citation-heading {
+  min-width: 0;
+}
+.citation-kicker {
+  margin-bottom: 4px;
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 .citation-title {
   color: var(--text);
-  font-size: 12px;
-  font-weight: 600;
+  font-size: 13.5px;
+  font-weight: 700;
+  line-height: 1.35;
   word-break: break-word;
 }
-.citation-location,
+.citation-location {
+  margin-top: 4px;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11px;
+}
 .citation-score {
-  margin-top: 3px;
+  margin-top: 1px;
+  padding: 4px 9px;
+  border: 1px solid color-mix(in oklch, var(--green) 25%, transparent);
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--green) 10%, transparent);
+  color: var(--green);
+  flex-shrink: 0;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  white-space: nowrap;
+}
+.citation-excerpt-wrap {
+  padding: 14px 16px 12px;
+}
+.citation-excerpt-label {
+  margin-bottom: 8px;
   color: var(--muted);
   font-family: var(--mono);
   font-size: 10px;
-}
-.citation-score {
-  white-space: nowrap;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
 }
 .citation-excerpt {
-  margin-top: 10px;
   color: var(--text);
-  font-size: 12px;
-  line-height: 1.55;
+  max-height: 340px;
+  overflow: auto;
+  padding-left: 12px;
+  border-left: 2px solid color-mix(in oklch, var(--accent) 45%, var(--border));
+  font-size: 13px;
+  line-height: 1.65;
   white-space: pre-wrap;
 }
+.citation-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 16px 14px;
+}
 .citation-open {
-  margin-top: 10px;
+  margin-top: 0;
 }
 @keyframes blink {
   0%, 100% { opacity: 1; }

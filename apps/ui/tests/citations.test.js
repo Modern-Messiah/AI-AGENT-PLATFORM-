@@ -7,6 +7,7 @@ import {
   isStructuredCitation,
   sourceLabel,
   sourceLocation,
+  sourceScoreLabel,
 } from '../src/utils/citations.js'
 
 
@@ -17,6 +18,7 @@ const citation = {
   filename: 'corporate-contract.pdf',
   page: 8,
   chunk_index: 14,
+  score: 0.567,
   excerpt: 'Exact supporting excerpt.',
 }
 
@@ -30,6 +32,7 @@ test('recognizes structured and legacy sources', () => {
 test('formats citation labels without truncating filenames', () => {
   assert.equal(sourceLabel(citation), '[2] corporate-contract.pdf · стр. 8')
   assert.equal(sourceLocation(citation), 'Страница 8')
+  assert.equal(sourceScoreLabel(citation), 'релевантность 57%')
   assert.equal(
     sourceLabel({ ...citation, page: null }),
     '[2] corporate-contract.pdf · фрагмент 15',
