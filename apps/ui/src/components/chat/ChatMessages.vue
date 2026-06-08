@@ -82,6 +82,12 @@
               </span>
             </div>
             <div class="citation-excerpt">{{ expandedCitation(msg).excerpt }}</div>
+            <RouterLink
+              class="btn btn-ghost btn-sm citation-open"
+              :to="buildCitationRoute(expandedCitation(msg))"
+            >
+              Открыть источник
+            </RouterLink>
           </div>
         </div>
       </div>
@@ -107,6 +113,7 @@ import { ref, watch, nextTick } from 'vue'
 import { useChatStore } from '@/stores/chat'
 import AppIcon from '@/components/AppIcon.vue'
 import {
+  buildCitationRoute,
   citationIsReferenced,
   isStructuredCitation,
   sourceLabel,
@@ -202,6 +209,9 @@ watch([() => chat.messages.length, () => chat.isActiveSessionLoading(), () => ch
   font-size: 12px;
   line-height: 1.55;
   white-space: pre-wrap;
+}
+.citation-open {
+  margin-top: 10px;
 }
 @keyframes blink {
   0%, 100% { opacity: 1; }

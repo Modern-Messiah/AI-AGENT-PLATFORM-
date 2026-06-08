@@ -28,3 +28,15 @@ export function citationIsReferenced(answer, source) {
   if (!isStructuredCitation(source)) return false
   return String(answer ?? '').includes(`[${source.id}]`)
 }
+
+export function buildCitationRoute(source) {
+  if (!isStructuredCitation(source) || !source.document_id) {
+    return { path: '/documents' }
+  }
+
+  const route = { path: `/documents/${source.document_id}` }
+  if (source.chunk_id) {
+    route.query = { chunk: source.chunk_id }
+  }
+  return route
+}

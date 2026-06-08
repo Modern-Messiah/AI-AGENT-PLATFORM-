@@ -96,10 +96,16 @@
         </div>
 
         <div v-else class="chunks-list">
-          <article v-for="chunk in chunks" :key="chunk.chunk_id" class="chunk-card">
+          <article
+            v-for="chunk in chunks"
+            :id="chunkDomId(chunk)"
+            :key="chunk.chunk_id"
+            :class="['chunk-card', { 'chunk-card-target': isTargetChunk(chunk) }]"
+          >
             <div class="chunk-meta">
               <span>#{{ chunk.chunk_index + 1 }}</span>
               <span v-if="chunk.page">стр. {{ chunk.page }}</span>
+              <span v-if="isTargetChunk(chunk)">выбранный источник</span>
             </div>
             <p>{{ chunk.excerpt }}</p>
           </article>
@@ -110,7 +116,7 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useApi } from '@/composables/useApi'
 import { useSettingsStore } from '@/stores/settings'
@@ -129,8 +135,12 @@ const error = ref('')
 
 const documentId = computed(() => String(route.params.id || ''))
 const normalized = computed(() => document.value ? normalizeDocument(document.value) : null)
+const targetChunkId = computed(() => (
+  typeof route.query.chunk === 'string' ? route.query.chunk : ''
+))
 
 watch([() => settings.apiKey, documentId], loadDocument, { immediate: true })
+watch(targetChunkId, () => scrollToTargetChunk())
 
 async function loadDocument() {
   if (!settings.isConnected || !documentId.value) {
@@ -149,6 +159,8 @@ async function loadDocument() {
     ])
     document.value = doc
     chunks.value = chunkRows
+    await nextTick()
+    scrollToTargetChunk()
   } catch (e) {
     document.value = null
     chunks.value = []
@@ -156,6 +168,20 @@ async function loadDocument() {
   } finally {
     loading.value = false
   }
+}
+
+function chunkDomId(chunk) {
+  return `chunk-${chunk.chunk_id}`
+}
+
+function isTargetChunk(chunk) {
+  return Boolean(targetChunkId.value && chunk.chunk_id === targetChunkId.value)
+}
+
+function scrollToTargetChunk() {
+  if (!targetChunkId.value) return
+  const el = globalThis.document?.getElementById(chunkDomId({ chunk_id: targetChunkId.value }))
+  el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
 }
 
 function askQuestion(question) {
@@ -280,6 +306,12 @@ function askDefaultQuestion() {
   border: 1px solid var(--border);
   border-radius: 12px;
   background: color-mix(in oklch, var(--s2) 74%, transparent);
+  scroll-margin: 100px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.chunk-card-target {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--accent) 40%, transparent);
 }
 .chunk-meta {
   display: flex;

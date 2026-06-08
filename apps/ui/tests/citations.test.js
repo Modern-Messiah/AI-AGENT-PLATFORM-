@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import {
+  buildCitationRoute,
   citationIsReferenced,
   isStructuredCitation,
   sourceLabel,
@@ -11,6 +12,8 @@ import {
 
 const citation = {
   id: 2,
+  document_id: 'document-1',
+  chunk_id: 'chunk-9',
   filename: 'corporate-contract.pdf',
   page: 8,
   chunk_index: 14,
@@ -37,4 +40,12 @@ test('formats citation labels without truncating filenames', () => {
 test('detects whether the answer contains a citation marker', () => {
   assert.equal(citationIsReferenced('The answer is supported [2].', citation), true)
   assert.equal(citationIsReferenced('The answer has no marker.', citation), false)
+})
+
+
+test('builds route to the cited document chunk', () => {
+  assert.deepEqual(buildCitationRoute(citation), {
+    path: '/documents/document-1',
+    query: { chunk: 'chunk-9' },
+  })
 })
