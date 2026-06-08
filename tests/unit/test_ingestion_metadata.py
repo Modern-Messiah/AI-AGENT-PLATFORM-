@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
+from temporalio.converter import default
+
 from apps.worker.activities import ingestion
 from apps.worker.activities.ingestion import (
     IngestionInput,
@@ -12,6 +14,26 @@ from apps.worker.activities.ingestion import (
 )
 from packages.rag.parser import ParsedSegment
 from packages.rag.summaries import DocumentInsights
+
+
+def test_parsed_doc_round_trips_through_temporal_payload_converter() -> None:
+    converter = default().payload_converter
+    parsed = ParsedDoc(
+        segments=[
+            ParsedSegment(
+                text="Page four evidence.",
+                metadata={"page": 4},
+            )
+        ],
+        insights=DocumentInsights(summary="Page four evidence summary."),
+    )
+
+    payloads = converter.to_payloads([parsed])
+    [decoded] = converter.from_payloads(payloads, type_hints=[ParsedDoc])
+
+    assert decoded.segments[0].text == "Page four evidence."
+    assert decoded.segments[0].metadata == {"page": 4}
+    assert decoded.insights.summary == "Page four evidence summary."
 
 
 async def test_chunk_and_embed_preserves_segment_metadata(monkeypatch) -> None:

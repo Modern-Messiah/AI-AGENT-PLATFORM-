@@ -20,7 +20,7 @@ _md = MarkItDown()
 @dataclass
 class ParsedSegment:
     text: str
-    metadata: dict[str, object] = field(default_factory=dict)
+    metadata: dict = field(default_factory=dict)
 
 
 def _parse_pdf(data: bytes) -> list[ParsedSegment]:

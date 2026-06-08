@@ -19,7 +19,7 @@ _splitter = RecursiveCharacterTextSplitter(
 @dataclass
 class TextChunk:
     content: str
-    metadata: dict[str, object] = field(default_factory=dict)
+    metadata: dict = field(default_factory=dict)
 
 
 def chunk_segments(segments: list[ParsedSegment]) -> list[TextChunk]:

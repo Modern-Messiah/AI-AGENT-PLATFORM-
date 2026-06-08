@@ -55,7 +55,7 @@ class ParsedDoc:
 class ChunkBatch:
     contents: list[str]
     embeddings: list[list[float]]
-    metadata: list[dict[str, object]] = field(default_factory=list)
+    metadata: list[dict] = field(default_factory=list)
     summary: str = ""
     suggested_questions: list[str] = field(default_factory=list)
 
