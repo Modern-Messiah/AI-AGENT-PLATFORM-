@@ -1,5 +1,5 @@
 <template>
-  <div class="screen-body">
+  <div class="screen-body notebook-detail">
     <div class="notebook-detail-hero">
       <div>
         <button class="back-link" type="button" @click="router.push('/notebooks')">
@@ -407,6 +407,12 @@ function askDefaultQuestion() {
 </script>
 
 <style scoped>
+.notebook-detail {
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  padding-bottom: 56px;
+}
 .notebook-detail-hero {
   display: flex;
   justify-content: space-between;
