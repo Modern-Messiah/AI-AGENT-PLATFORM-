@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import AsyncIterator
 
-from openai import AsyncOpenAI
+from openai import APIStatusError, AsyncOpenAI
 from pydantic_ai.models.openai import OpenAIModel
 from pydantic_ai.models import openai as pai_openai
 from pydantic_ai.providers.openai import OpenAIProvider
@@ -14,7 +14,7 @@ from packages.core import settings
 
 _PROVIDER_CONFIG: dict[str, tuple[str, str]] = {
     "moonshot": ("https://api.moonshot.ai/v1", settings.moonshot_api_key),
-    "deepseek": ("https://api.deepseek.com/v1", settings.deepseek_api_key),
+    "deepseek": ("https://api.deepseek.com", settings.deepseek_api_key),
 }
 
 
@@ -51,6 +51,41 @@ def _provider_extra_body(provider_key: str, model_id: str) -> dict | None:
     return None
 
 
+def _provider_error_message(provider_key: str, status_code: int, body: object) -> str:
+    provider_names = {
+        "deepseek": "DeepSeek",
+        "moonshot": "Moonshot/Kimi",
+    }
+    provider_name = provider_names.get(provider_key, provider_key or "LLM provider")
+
+    provider_message = ""
+    if isinstance(body, dict):
+        error = body.get("error")
+        if isinstance(error, dict):
+            provider_message = str(error.get("message") or "")
+        elif error:
+            provider_message = str(error)
+    elif body:
+        provider_message = str(body)
+
+    if status_code == 401 and provider_key == "deepseek":
+        return (
+            "DeepSeek authentication failed: backend DEEPSEEK_API_KEY is invalid "
+            "or expired. Create a new key in the DeepSeek Platform and update .env."
+            + (f" Provider said: {provider_message}" if provider_message else "")
+        )
+    if status_code == 401 and provider_key == "moonshot":
+        return (
+            "Moonshot/Kimi authentication failed: backend MOONSHOT_API_KEY is invalid "
+            "or expired. Update .env with a valid provider key."
+            + (f" Provider said: {provider_message}" if provider_message else "")
+        )
+    return (
+        f"{provider_name} request failed with HTTP {status_code}."
+        + (f" Provider said: {provider_message}" if provider_message else "")
+    )
+
+
 class ProviderCompatOpenAIModel(OpenAIModel):
     """OpenAI-compatible model with provider quirks required by Kimi/DeepSeek.
 
@@ -65,10 +100,12 @@ class ProviderCompatOpenAIModel(OpenAIModel):
         model_id: str,
         *,
         provider: OpenAIProvider,
+        provider_key: str = "",
         extra_body: dict | None = None,
         force_tool_choice_auto: bool = False,
     ) -> None:
         super().__init__(model_id, provider=provider)
+        self._provider_key = provider_key
         self._extra_body = extra_body
         self._force_tool_choice_auto = force_tool_choice_auto
 
@@ -133,7 +170,7 @@ class ProviderCompatOpenAIModel(OpenAIModel):
                 raise pai_openai.ModelHTTPError(
                     status_code=status_code,
                     model_name=self.model_name,
-                    body=e.body,
+                    body=_provider_error_message(self._provider_key, status_code, e.body),
                 ) from e
             raise
 
@@ -141,7 +178,7 @@ class ProviderCompatOpenAIModel(OpenAIModel):
 def build_model(model_name: str | None = None) -> OpenAIModel:
     """Return a PydanticAI model for the given provider/model string.
 
-    Format: "provider/model-name"  e.g. "deepseek/deepseek-chat"
+    Format: "provider/model-name"  e.g. "deepseek/deepseek-v4-flash"
     Falls back to settings.strong_model when model_name is None.
     """
     provider_key, model_id, base_url, api_key = _resolve_model(model_name)
@@ -157,6 +194,7 @@ def build_model(model_name: str | None = None) -> OpenAIModel:
     return ProviderCompatOpenAIModel(
         model_id,
         provider=provider,
+        provider_key=provider_key,
         extra_body=extra_body,
         force_tool_choice_auto=force_tool_choice_auto,
     )
@@ -188,7 +226,13 @@ async def stream_chat_text(
     if temperature is not None:
         params["temperature"] = temperature
 
-    stream = await client.chat.completions.create(**params)  # type: ignore[arg-type]
+    try:
+        stream = await client.chat.completions.create(**params)  # type: ignore[arg-type]
+    except APIStatusError as exc:
+        raise RuntimeError(
+            _provider_error_message(provider_key, exc.status_code, exc.body)
+        ) from exc
+
     async for chunk in stream:
         if chunk.usage is not None:
             yield ChatStreamEvent(

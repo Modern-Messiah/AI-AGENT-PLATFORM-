@@ -883,8 +883,22 @@ async def get_usage(
         GROUP BY model, provider
         ORDER BY total_cost_usd DESC
     """
+    daily_sql = """
+        SELECT
+            toDate(event_time)       AS day,
+            sum(total_tokens)        AS total_tokens,
+            round(sum(cost_usd), 6)  AS total_cost_usd,
+            round(avg(latency_ms))   AS avg_latency_ms,
+            count()                  AS call_count
+        FROM analytics.llm_usage_events
+        WHERE tenant_id = {tenant_id:String}
+          AND event_time >= now() - toIntervalDay({days:UInt32})
+        GROUP BY day
+        ORDER BY day ASC
+    """
     try:
         rows = await ch_client.query(sql, {"tenant_id": tenant_id, "days": days})
+        daily_rows = await ch_client.query(daily_sql, {"tenant_id": tenant_id, "days": days})
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"ClickHouse error: {e}") from e
 
@@ -894,6 +908,7 @@ async def get_usage(
         "days": days,
         "total_cost_usd": round(total_cost, 6),
         "breakdown": rows,
+        "daily": daily_rows,
     }
 
 

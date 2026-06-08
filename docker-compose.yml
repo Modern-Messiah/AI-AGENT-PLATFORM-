@@ -225,7 +225,7 @@ services:
       MOONSHOT_API_KEY: ${MOONSHOT_API_KEY:-}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       STRONG_MODEL: ${STRONG_MODEL:-moonshot/kimi-k2-turbo-preview}
-      WEAK_MODEL: ${WEAK_MODEL:-deepseek/deepseek-chat}
+      WEAK_MODEL: ${WEAK_MODEL:-deepseek/deepseek-v4-flash}
       LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
       LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
       LANGFUSE_HOST: http://langfuse-web:3000
@@ -275,7 +275,7 @@ services:
       MOONSHOT_API_KEY: ${MOONSHOT_API_KEY:-}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       STRONG_MODEL: ${STRONG_MODEL:-moonshot/kimi-k2-turbo-preview}
-      WEAK_MODEL: ${WEAK_MODEL:-deepseek/deepseek-chat}
+      WEAK_MODEL: ${WEAK_MODEL:-deepseek/deepseek-v4-flash}
       LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
       LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
       LANGFUSE_HOST: http://langfuse-web:3000

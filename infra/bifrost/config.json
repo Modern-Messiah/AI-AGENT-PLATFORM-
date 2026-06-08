@@ -13,7 +13,7 @@
       "keys": [
         {
           "value": "env.DEEPSEEK_API_KEY",
-          "models": ["deepseek-chat"],
+          "models": ["deepseek-v4-flash"],
           "weight": 1.0
         }
       ]

@@ -783,7 +783,7 @@ sequenceDiagram
 | `LOG_LEVEL` | Уровень логов. | `INFO`, `DEBUG`, `WARNING`. | Нет. |
 | `ADMIN_SECRET` | Защищает `POST /auth/keys`. | Придумать; в prod обязательно сменить. | Да для создания API keys. |
 | `STRONG_MODEL` | Основная сильная модель. | Формат `provider/model`, например `moonshot/kimi-k2-turbo-preview`. | Да для LLM. |
-| `WEAK_MODEL` | Дешёвая/простая модель. | Формат `provider/model`, например `deepseek/deepseek-chat`. | Нет, но полезна. |
+| `WEAK_MODEL` | Дешёвая/простая модель. | Формат `provider/model`, например `deepseek/deepseek-v4-flash`. | Нет, но полезна. |
 | `AGENT_QUERY_MAX_CHARS` | Максимальная длина вопроса. | Число символов, default `12000`. | Нет. |
 | `AGENT_RATE_LIMIT_PER_MINUTE` | Лимит agent-запросов на tenant в минуту. | Число, default `20`. | Нет. |
 | `LLM_TIMEOUT_SECONDS` | Таймаут LLM request. | Число секунд, default `60`. | Нет. |

@@ -4,7 +4,7 @@ Prices are approximate and should be verified against provider billing pages.
 Models are matched by the short name after the provider prefix
 (e.g. "moonshot/kimi-k2.6" → "kimi-k2.6").
 
-Sources (checked 2026-05-01):
+Sources (checked 2026-06-08):
   Moonshot: https://platform.moonshot.ai/docs/pricing
   DeepSeek:  https://api-docs.deepseek.com/quick_start/pricing
 """
@@ -20,7 +20,7 @@ _PRICING: dict[str, dict[str, float]] = {
     "kimi-k2-0711-preview":  {"input": 0.60, "output": 2.50},
 
     # ── DeepSeek ─────────────────────────────────────────────────────────────
-    # deepseek-v4-pro: 75% discount active until 2026-05-31 ($1.74/$3.48 after)
+    # Current official V4-Pro rates: cache-miss input $0.435 / output $0.87.
     "deepseek-v4-pro":       {"input": 0.435, "output": 0.87},
     "deepseek-v4-flash":     {"input": 0.14,  "output": 0.28},
     "deepseek-chat":         {"input": 0.14,  "output": 0.28},  # aliases to v4-flash
