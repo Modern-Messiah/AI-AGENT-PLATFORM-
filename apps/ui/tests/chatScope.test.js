@@ -58,14 +58,14 @@ test('extracts visible session scope metadata from scoped titles', () => {
     type: 'notebook',
     badge: 'Ноутбук',
     title: 'Это команды линукс',
-    subtitle: 'Чат по ноутбуку',
+    subtitle: 'Чат по ноутбуку «Это команды линукс»',
   })
 
   assert.deepEqual(sessionScopeMeta('Документ: Vim_Cheat_Sheet.pdf'), {
     type: 'document',
     badge: 'Документ',
     title: 'Vim_Cheat_Sheet.pdf',
-    subtitle: 'Чат по документу',
+    subtitle: 'Чат по документу «Vim_Cheat_Sheet.pdf»',
   })
 
   assert.equal(sessionScopeMeta('New Chat'), null)

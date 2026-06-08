@@ -67,11 +67,14 @@ export function sessionScopeMeta(title = '') {
 
   const badge = match[1]
   const type = badge === 'Ноутбук' ? 'notebook' : 'document'
+  const sourceTitle = match[2].trim()
   return {
     type,
     badge,
-    title: match[2].trim(),
-    subtitle: type === 'notebook' ? 'Чат по ноутбуку' : 'Чат по документу',
+    title: sourceTitle,
+    subtitle: type === 'notebook'
+      ? `Чат по ноутбуку «${sourceTitle}»`
+      : `Чат по документу «${sourceTitle}»`,
   }
 }
 

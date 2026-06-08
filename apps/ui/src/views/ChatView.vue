@@ -4,14 +4,14 @@
 
     <div class="chat-main">
       <ChatToolbar v-model:model="model" v-model:requireApproval="requireApproval" />
-      <div v-if="currentScope.type !== 'global'" class="scope-banner">
+      <div v-if="displayScope.type !== 'global'" class="scope-banner">
         <div>
-          <strong>{{ currentScope.title }}</strong>
-          <span>{{ currentScope.description }}</span>
+          <strong>{{ displayScope.title }}</strong>
+          <span>{{ displayScope.description }}</span>
         </div>
         <div class="scope-actions">
-          <RouterLink class="btn btn-ghost btn-sm" :to="currentScope.backPath">
-            {{ currentScope.backLabel }}
+          <RouterLink class="btn btn-ghost btn-sm" :to="displayScope.backPath">
+            {{ displayScope.backLabel }}
           </RouterLink>
           <button class="btn btn-ghost btn-sm" type="button" @click="clearScope">
             Обычный чат
@@ -34,6 +34,7 @@ import { useSettingsStore } from '@/stores/settings'
 import {
   buildChatScopeQuery,
   normalizeChatScope,
+  sessionScopeMeta,
   scopeSessionTitle,
   scopeSendOptions,
   scopeWelcomeMessage,
@@ -54,6 +55,18 @@ const requireApproval = ref(false)
 const toast = ref(null)
 const consumedAsk = ref('')
 const currentScope = computed(() => normalizeChatScope(route.query))
+const activeSessionMeta = computed(() => {
+  const active = chat.sessions.find(session => session.id === chat.activeId)
+  return sessionScopeMeta(active?.title)
+})
+const displayScope = computed(() => {
+  const scope = currentScope.value
+  const meta = activeSessionMeta.value
+  if (scope.type !== 'global' && meta?.type === scope.type) {
+    return { ...scope, title: meta.subtitle }
+  }
+  return scope
+})
 
 function setToast(t) { toast.value = t }
 
