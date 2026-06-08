@@ -2,7 +2,11 @@
   <div class="modal-overlay" @click.self="!validating && $emit('close')">
     <div class="modal">
       <div class="modal-title">Настройки подключения</div>
-      <div class="modal-sub">API-ключ хранится в localStorage браузера</div>
+      <div class="modal-sub">
+        {{ keyManagedByEnv
+          ? 'X-API-Key берётся из env и не хранится в localStorage'
+          : 'API-ключ хранится в localStorage браузера' }}
+      </div>
 
       <div class="form-group">
         <label class="form-label">API Base URL</label>
@@ -10,7 +14,11 @@
                :disabled="validating" />
       </div>
 
-      <div class="form-group">
+      <div v-if="keyManagedByEnv" class="env-note">
+        Ключ задан через <span>VITE_API_KEY</span>. В интерфейсе можно менять только Base URL.
+      </div>
+
+      <div v-else class="form-group">
         <label class="form-label">X-API-Key</label>
         <input class="form-input" type="password" v-model="localKey"
                placeholder="Вставьте raw_key из POST /auth/keys"
@@ -23,7 +31,7 @@
 
       <div class="form-actions">
         <button class="btn btn-ghost" :disabled="validating" @click="$emit('close')">Отмена</button>
-        <button class="btn btn-primary" :disabled="validating || !localKey.trim()" @click="save">
+        <button class="btn btn-primary" :disabled="validating || (!keyManagedByEnv && !localKey.trim())" @click="save">
           <div v-if="validating" class="spinner" style="width: 12px; height: 12px; border-width: 1.5px"></div>
           {{ validating ? 'Проверка…' : 'Сохранить' }}
         </button>
@@ -33,7 +41,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
 
 const emit = defineEmits(['close'])
@@ -43,9 +51,10 @@ const localKey  = ref(settings.apiKey)
 const localBase = ref(settings.baseUrl)
 const validating = ref(false)
 const error = ref('')
+const keyManagedByEnv = computed(() => settings.isKeyManagedByEnv)
 
 async function save() {
-  const key  = localKey.value.trim()
+  const key  = keyManagedByEnv.value ? settings.apiKey : localKey.value.trim()
   const base = localBase.value.trim() || '/api'
   if (!key) return
 
@@ -73,3 +82,20 @@ async function save() {
   }
 }
 </script>
+
+<style scoped>
+.env-note {
+  margin-bottom: 16px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in oklch, var(--accent) 28%, transparent);
+  border-radius: 10px;
+  background: color-mix(in oklch, var(--accent) 8%, transparent);
+  color: var(--muted2);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.env-note span {
+  color: var(--text);
+  font-family: var(--mono);
+}
+</style>

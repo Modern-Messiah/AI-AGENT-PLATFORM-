@@ -25,7 +25,11 @@
     </div>
 
     <div class="sidebar-bottom">
-      <div class="tenant-pill" @click="$emit('openSettings')" title="Изменить API-ключ">
+      <div
+        class="tenant-pill"
+        @click="$emit('openSettings')"
+        :title="settings.isKeyManagedByEnv ? 'API-ключ задан через env' : 'Изменить API-ключ'"
+      >
         <div :class="['tenant-dot', dotClass]"></div>
         <div class="tenant-info">
           <div class="tenant-name">{{ statusLabel }}</div>
@@ -57,6 +61,7 @@ const dotClass = computed(() => {
 const statusLabel = computed(() => {
   if (!settings.isConnected)  return 'No API Key'
   if (settings.isKeyInvalid)  return 'Неверный ключ'
+  if (settings.isKeyManagedByEnv) return 'Env API Key'
   return 'Connected'
 })
 

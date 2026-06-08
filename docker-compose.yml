@@ -292,6 +292,9 @@ services:
     build:
       context: apps/ui
       dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api}
+        VITE_API_KEY: ${VITE_API_KEY:-}
     container_name: aap-ui
     depends_on:
       api:

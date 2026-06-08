@@ -10,7 +10,7 @@
     </label>
     <span v-if="requireApproval" class="badge badge-yellow" style="margin-left: 4px">HITL on</span>
     <span style="margin-left: auto; font-size: 11px; color: var(--muted); font-family: var(--mono)">
-      {{ settings.isConnected ? `key: …${settings.apiKey.slice(-6)}` : 'no key' }}
+      {{ settings.isConnected ? `${settings.isKeyManagedByEnv ? 'env key' : 'key'}: …${settings.apiKey.slice(-6)}` : 'no key' }}
     </span>
   </div>
 </template>

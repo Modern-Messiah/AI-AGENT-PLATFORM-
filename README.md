@@ -184,13 +184,24 @@ uv sync
 make worker   # Temporal worker
 make api      # FastAPI на :8000
 
-# 6. Дёрни агента
+# 6. Создай внутренний tenant API key платформы
+curl -X POST http://localhost:8000/auth/keys \
+  -H 'Content-Type: application/json' \
+  -H 'X-Admin-Secret: change-me-before-deploy' \
+  -d '{"tenant_id":"demo","name":"local"}'
+
+# Скопируй raw_key из ответа. Для локального/private UI можно положить его в .env:
+#   VITE_API_KEY=<raw_key>
+# Это НЕ MOONSHOT_API_KEY / DEEPSEEK_API_KEY. VITE_* попадёт в browser bundle.
+
+# 7. Дёрни агента
 curl -X POST http://localhost:8000/agent/run \
   -H 'Content-Type: application/json' \
-  -d '{"tenant_id":"demo","user_query":"Что такое durable execution?"}'
+  -H 'X-API-Key: <raw_key>' \
+  -d '{"user_query":"Что такое durable execution?"}'
 
-# 7. Смотри trace в Langfuse: http://localhost:3000
-# 8. Смотри workflow в Temporal UI: http://localhost:8233
+# 8. Смотри trace в Langfuse: http://localhost:3000
+# 9. Смотри workflow в Temporal UI: http://localhost:8233
 ```
 
 **Порты:**
