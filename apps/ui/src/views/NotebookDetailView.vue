@@ -710,7 +710,7 @@ function askDefaultQuestion() {
 
 @media (min-width: 901px) {
   .sources-card {
-    min-height: clamp(360px, 45vh, 560px);
+    min-height: clamp(520px, 55vh, 720px);
   }
 }
 

@@ -26,6 +26,6 @@ test('desktop notebook detail remains vertically scrollable', () => {
 test('notebook sources card has a spacious adaptive height', () => {
   assert.match(
     viewSource,
-    /@media \(min-width:\s*901px\)\s*\{\s*\.sources-card\s*\{\s*min-height:\s*clamp\(360px,\s*45vh,\s*560px\)/,
+    /@media \(min-width:\s*901px\)\s*\{\s*\.sources-card\s*\{\s*min-height:\s*clamp\(520px,\s*55vh,\s*720px\)/,
   )
 })
