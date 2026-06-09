@@ -44,14 +44,14 @@ export function normalizeNotebookSources(documents = []) {
           : 'Индексируется',
       error: doc.error || null,
       sizeBytes: doc.size_bytes || doc.sizeBytes || 0,
-      summary: doc.summary || '',
-      suggestedQuestions: Array.isArray(doc.suggested_questions)
-        ? doc.suggested_questions
-        : (doc.suggestedQuestions || []),
       createdAt: doc.created_at || doc.createdAt || null,
       createdLabel: doc.created_at ? new Date(doc.created_at).toLocaleDateString('ru') : '—',
     }
   })
+}
+
+export function notebookOverviewQuestions(notebook) {
+  return Array.isArray(notebook?.suggestedQuestions) ? notebook.suggestedQuestions : []
 }
 
 export function buildNotebookDocumentSelection(currentIds = [], addIds = []) {

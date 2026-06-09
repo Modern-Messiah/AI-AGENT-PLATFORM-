@@ -29,3 +29,9 @@ test('notebook sources card has a spacious adaptive height', () => {
     /@media \(min-width:\s*901px\)\s*\{\s*\.sources-card\s*\{\s*min-height:\s*clamp\(520px,\s*55vh,\s*720px\)/,
   )
 })
+
+test('notebook source cards stay compact', () => {
+  assert.doesNotMatch(viewSource, /class="source-summary/)
+  assert.doesNotMatch(viewSource, /class="source-questions"/)
+  assert.doesNotMatch(viewSource, /Summary появится после индексации источника/)
+})

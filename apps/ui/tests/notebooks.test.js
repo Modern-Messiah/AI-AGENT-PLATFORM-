@@ -8,6 +8,7 @@ import {
   buildNotebookUploadPath,
   buildNotebookQuestionRoute,
   filterAvailableNotebookDocuments,
+  notebookOverviewQuestions,
   normalizeNotebookSources,
   normalizeNotebook,
 } from '../src/utils/notebooks.js'
@@ -88,11 +89,32 @@ test('normalizes notebook source cards', () => {
   assert.equal(sources[0].name, 'manual.pdf')
   assert.equal(sources[0].isReady, true)
   assert.equal(sources[0].readinessLabel, 'Готов для вопросов')
-  assert.equal(sources[0].summary, 'Manual overview.')
-  assert.deepEqual(sources[0].suggestedQuestions, ['Что важно в manual.pdf?'])
+  assert.equal('summary' in sources[0], false)
+  assert.equal('suggestedQuestions' in sources[0], false)
   assert.equal(sources[0].createdLabel, '07.06.2026')
   assert.equal(sources[1].isReady, false)
   assert.equal(sources[1].readinessLabel, 'Индексируется')
+})
+
+test('uses only collection-level questions in the notebook overview', () => {
+  assert.deepEqual(
+    notebookOverviewQuestions({
+      suggestedQuestions: ['Что объединяет документы?'],
+      documents: [
+        { suggested_questions: ['Что внутри manual.pdf?'] },
+      ],
+    }),
+    ['Что объединяет документы?'],
+  )
+  assert.deepEqual(
+    notebookOverviewQuestions({
+      suggestedQuestions: [],
+      documents: [
+        { suggested_questions: ['Что внутри manual.pdf?'] },
+      ],
+    }),
+    [],
+  )
 })
 
 

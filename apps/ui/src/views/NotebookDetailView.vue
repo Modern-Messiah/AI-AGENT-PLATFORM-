@@ -45,7 +45,7 @@
             <button
               class="btn btn-ghost btn-sm"
               type="button"
-              :disabled="refreshingInsights || includedDocs.length === 0"
+              :disabled="refreshingInsights || includedSources.length === 0"
               @click="refreshInsights"
             >
               {{ refreshingInsights ? 'Обновляю...' : 'Обновить обзор' }}
@@ -167,25 +167,9 @@
                 <span>{{ formatFileSize(source.sizeBytes) }}</span>
                 <span>{{ source.createdLabel }}</span>
               </div>
-              <p v-if="source.summary" class="source-summary">{{ source.summary }}</p>
-              <p v-else-if="source.error" class="source-summary source-error">
+              <p v-if="source.error" class="source-error">
                 {{ source.error }}
               </p>
-              <p v-else class="source-summary">
-                Summary появится после индексации источника.
-              </p>
-              <div v-if="source.suggestedQuestions.length" class="source-questions">
-                <button
-                  v-for="question in source.suggestedQuestions.slice(0, 3)"
-                  :key="question"
-                  class="question-chip"
-                  type="button"
-                  :disabled="!source.isReady"
-                  @click="askQuestion(question)"
-                >
-                  {{ question }}
-                </button>
-              </div>
             </div>
             <div class="source-actions">
               <RouterLink class="btn btn-ghost btn-sm" :to="buildDocumentRoute(source.id)">
@@ -231,6 +215,7 @@ import {
   buildNotebookQuestionRoute,
   buildNotebookUploadPath,
   filterAvailableNotebookDocuments,
+  notebookOverviewQuestions,
   normalizeNotebookSources,
   normalizeNotebook,
 } from '@/utils/notebooks'
@@ -258,7 +243,6 @@ const currentDocumentIds = computed(() => normalized.value?.documentIds || [])
 const availableDocs = computed(() => (
   filterAvailableNotebookDocuments(allDocs.value, currentDocumentIds.value)
 ))
-const includedDocs = computed(() => (normalized.value?.documents || []).map(normalizeDocument))
 const includedSources = computed(() => normalizeNotebookSources(normalized.value?.documents || []))
 const readySourceCount = computed(() => includedSources.value.filter(source => source.isReady).length)
 const addButtonLabel = computed(() => (
@@ -266,19 +250,7 @@ const addButtonLabel = computed(() => (
     ? `Добавить (${pendingAddDocumentIds.value.length})`
     : 'Добавить'
 ))
-const suggestedQuestions = computed(() => {
-  if (normalized.value?.suggestedQuestions?.length) {
-    return normalized.value.suggestedQuestions
-  }
-  const questions = []
-  for (const doc of includedDocs.value) {
-    for (const question of doc.suggestedQuestions || []) {
-      if (!questions.includes(question)) questions.push(question)
-      if (questions.length >= 4) return questions
-    }
-  }
-  return questions
-})
+const suggestedQuestions = computed(() => notebookOverviewQuestions(normalized.value))
 
 watch([() => settings.apiKey, notebookId], loadNotebook, { immediate: true })
 
@@ -407,8 +379,7 @@ function askQuestion(question) {
 }
 
 function askSource(source) {
-  const question = source.suggestedQuestions?.[0] || `Что важно в ${source.name}?`
-  askQuestion(question)
+  askQuestion(`Что важно в ${source.name}?`)
 }
 
 async function excludeSource(documentId) {
@@ -686,20 +657,11 @@ function askDefaultQuestion() {
   font-family: var(--mono);
   font-size: 10px;
 }
-.source-summary {
+.source-error {
   margin: 10px 0 0;
-  color: var(--muted2);
+  color: var(--red);
   font-size: 12px;
   line-height: 1.55;
-}
-.source-error {
-  color: var(--red);
-}
-.source-questions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 7px;
-  margin-top: 12px;
 }
 .source-actions {
   display: flex;
