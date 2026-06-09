@@ -201,7 +201,7 @@ function openDocumentChat() {
   height: 100%;
   min-height: 0;
   min-width: 0;
-  overflow: hidden;
+  overflow-y: auto;
   padding-bottom: 24px;
 }
 .detail-hero {
@@ -347,6 +347,12 @@ function openDocumentChat() {
   color: var(--muted2);
   font-size: 12px;
   line-height: 1.6;
+}
+
+@media (min-width: 901px) {
+  .chunks-card {
+    min-height: clamp(520px, 55vh, 720px);
+  }
 }
 
 @media (max-width: 900px) {
