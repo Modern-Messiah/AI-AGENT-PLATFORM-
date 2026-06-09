@@ -429,7 +429,7 @@ function askDefaultQuestion() {
   height: 100%;
   min-height: 0;
   min-width: 0;
-  overflow: hidden;
+  overflow-y: auto;
   padding-bottom: 24px;
 }
 .notebook-detail-hero {
