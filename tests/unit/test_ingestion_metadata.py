@@ -120,7 +120,7 @@ class _ScalarListResult:
         return self.values
 
 
-async def test_mark_done_refreshes_linked_notebook_insights(monkeypatch) -> None:
+async def test_mark_done_invalidates_linked_notebook_insights(monkeypatch) -> None:
     document_id = "5ef2d843-ddaf-4ae3-a73d-d25f27fb8621"
     notebook = SimpleNamespace(
         id="notebook-a",
@@ -131,23 +131,10 @@ async def test_mark_done_refreshes_linked_notebook_insights(monkeypatch) -> None
         insights_updated_at=None,
         updated_at=datetime(2026, 6, 7, tzinfo=timezone.utc),
     )
-    documents = [
-        SimpleNamespace(
-            filename="q1.pdf",
-            summary="Revenue grew by 24 percent in Q1. Enterprise demand improved.",
-            suggested_questions=["Какие факты есть в q1.pdf?"],
-        ),
-        SimpleNamespace(
-            filename="plan.md",
-            summary="Expansion focuses on enterprise customers and onboarding.",
-            suggested_questions=["Какие выводы можно сделать из plan.md?"],
-        ),
-    ]
     tenant_session = _FakeTenantSession(
         [
             None,
             _ScalarListResult([notebook]),
-            _ScalarListResult(documents),
         ]
     )
 
@@ -167,11 +154,7 @@ async def test_mark_done_refreshes_linked_notebook_insights(monkeypatch) -> None
         )
     )
 
-    assert notebook.summary.startswith("q1.pdf: Revenue grew by 24 percent in Q1.")
-    assert notebook.suggested_questions == [
-        "Что объединяет документы в Product research?",
-        "Какие ключевые темы повторяются в Product research?",
-        "Какие выводы можно сделать по коллекции Product research?",
-    ]
-    assert "Revenue" in notebook.key_topics
-    assert notebook.insights_updated_at is not None
+    assert notebook.summary is None
+    assert notebook.suggested_questions == []
+    assert notebook.key_topics == []
+    assert notebook.insights_updated_at is None

@@ -1,4 +1,12 @@
-from packages.llm.client import _provider_extra_body, _provider_error_message, _resolve_model
+from types import SimpleNamespace
+
+from packages.llm import client
+from packages.llm.client import (
+    _provider_error_message,
+    _provider_extra_body,
+    _resolve_model,
+    complete_chat_json,
+)
 
 
 def test_deepseek_v4_uses_official_openai_compatible_base_url() -> None:
@@ -25,3 +33,37 @@ def test_deepseek_auth_errors_point_to_provider_key() -> None:
     assert "DEEPSEEK_API_KEY" in message
     assert "tenant" not in message.lower()
     assert "****c62b" in message
+
+
+async def test_complete_chat_json_uses_deepseek_json_mode(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeCompletions:
+        async def create(self, **kwargs):
+            captured.update(kwargs)
+            return SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(content='{"summary":"ok"}')
+                    )
+                ]
+            )
+
+    class FakeAsyncOpenAI:
+        def __init__(self, **kwargs):
+            captured["client"] = kwargs
+            self.chat = SimpleNamespace(completions=FakeCompletions())
+
+    monkeypatch.setattr(client, "AsyncOpenAI", FakeAsyncOpenAI)
+
+    result = await complete_chat_json(
+        "deepseek/deepseek-v4-flash",
+        [{"role": "user", "content": "Return json."}],
+        max_tokens=1200,
+    )
+
+    assert result == '{"summary":"ok"}'
+    assert captured["model"] == "deepseek-v4-flash"
+    assert captured["response_format"] == {"type": "json_object"}
+    assert captured["max_tokens"] == 1200
+    assert captured["extra_body"] == {"thinking": {"type": "disabled"}}

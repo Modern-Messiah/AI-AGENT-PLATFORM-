@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+import json
 import re
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 
+from pydantic import BaseModel, Field
+
+from packages.llm import complete_chat_json
 from packages.rag.parser import ParsedSegment
 
 _SPACE_RE = re.compile(r"\s+")
@@ -24,6 +29,7 @@ class NotebookInsightSource:
     filename: str
     summary: str = ""
     suggested_questions: list[str] = field(default_factory=list)
+    chunks: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -143,4 +149,98 @@ def build_notebook_insights(
             f"Какие выводы можно сделать по коллекции {title}?",
         ],
         key_topics=_extract_key_topics(topic_text),
+    )
+
+
+_AI_NOTEBOOK_MODEL = "deepseek/deepseek-v4-flash"
+_AI_NOTEBOOK_MAX_CONTEXT_CHARS = 60_000
+_AI_NOTEBOOK_MAX_SOURCE_CHARS = 8_000
+_AI_NOTEBOOK_MAX_TOKENS = 1_200
+
+
+class _GeneratedNotebookInsights(BaseModel):
+    summary: str = Field(min_length=40, max_length=1_400)
+    key_topics: list[str] = Field(min_length=3, max_length=6)
+    suggested_questions: list[str] = Field(min_length=3, max_length=3)
+
+
+def _source_context(sources: list[NotebookInsightSource]) -> list[dict[str, str]]:
+    source_texts: list[tuple[str, str]] = []
+    for source in sources:
+        parts = [source.summary, *source.chunks]
+        text = _normalize_text(" ".join(part for part in parts if part.strip()))
+        if text:
+            source_texts.append((source.filename, text))
+
+    if not source_texts:
+        return []
+
+    per_source_chars = min(
+        _AI_NOTEBOOK_MAX_SOURCE_CHARS,
+        max(200, _AI_NOTEBOOK_MAX_CONTEXT_CHARS // len(source_texts)),
+    )
+    return [
+        {
+            "filename": filename,
+            "content": _trim_at_word(text, per_source_chars),
+        }
+        for filename, text in source_texts
+    ]
+
+
+async def generate_notebook_insights(
+    sources: list[NotebookInsightSource],
+    *,
+    title: str,
+    complete_json: Callable[..., Awaitable[str]] | None = None,
+) -> NotebookInsights:
+    """Generate a concise collection-wide overview from indexed source text."""
+    source_context = _source_context(sources)
+    if not source_context:
+        return NotebookInsights()
+
+    completion = complete_json or complete_chat_json
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "Ты создаёшь обзор коллекции документов строго по переданным источникам. "
+                "Верни только валидный JSON без markdown. Формат JSON: "
+                '{"summary":"2-4 предложения","key_topics":["тема"],'
+                '"suggested_questions":["вопрос"]}. '
+                "summary должен синтезировать содержание всех источников, а не копировать "
+                "сырой текст, команды или начинаться с имени файла. key_topics: 3-6 коротких "
+                "тем без дублей. suggested_questions: ровно 3 конкретных вопроса на русском "
+                "для дальнейшего чата; вместе они должны охватывать разные источники. "
+                "Не выдумывай факты и не используй название коллекции как подстановку "
+                "в шаблонный вопрос."
+            ),
+        },
+        {
+            "role": "user",
+            "content": (
+                "Создай JSON-обзор этой коллекции:\n"
+                + json.dumps(
+                    {
+                        "title": title.strip(),
+                        "sources": source_context,
+                    },
+                    ensure_ascii=False,
+                )
+            ),
+        },
+    ]
+    raw = await completion(
+        _AI_NOTEBOOK_MODEL,
+        messages,
+        max_tokens=_AI_NOTEBOOK_MAX_TOKENS,
+    )
+    generated = _GeneratedNotebookInsights.model_validate_json(raw)
+
+    return NotebookInsights(
+        summary=_normalize_text(generated.summary),
+        key_topics=[_normalize_text(topic) for topic in generated.key_topics],
+        suggested_questions=[
+            _normalize_text(question) for question in generated.suggested_questions
+        ],
     )

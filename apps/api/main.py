@@ -60,7 +60,7 @@ from packages.rag import (
     NotebookInsightSource,
     build_citations,
     build_grounded_messages,
-    build_notebook_insights,
+    generate_notebook_insights,
     retrieve_chunks,
     select_diverse_chunks,
 )
@@ -432,6 +432,43 @@ async def _load_notebook_documents(db, tenant_id: str, notebook_id: uuid.UUID) -
             .order_by(NotebookDocument.created_at, Document.created_at.desc())
         )
     ).scalars().all()
+
+
+async def _load_notebook_insight_sources(
+    db,
+    *,
+    tenant_id: str,
+    documents: list[Document],
+) -> list[NotebookInsightSource]:
+    if not documents:
+        return []
+
+    document_ids = [doc.id for doc in documents]
+    chunks = (
+        await db.execute(
+            select(Chunk)
+            .where(
+                Chunk.document_id.in_(document_ids),
+                Chunk.tenant_id == tenant_id,
+            )
+            .order_by(Chunk.document_id, Chunk.chunk_idx)
+        )
+    ).scalars().all()
+    chunks_by_document: dict[uuid.UUID, list[str]] = {
+        document_id: [] for document_id in document_ids
+    }
+    for chunk in chunks:
+        chunks_by_document.setdefault(chunk.document_id, []).append(chunk.content)
+
+    return [
+        NotebookInsightSource(
+            filename=doc.filename,
+            summary=doc.summary or "",
+            suggested_questions=doc.suggested_questions or [],
+            chunks=chunks_by_document.get(doc.id, []),
+        )
+        for doc in documents
+    ]
 
 
 def _metadata_page(metadata: dict[str, object]) -> int | None:
@@ -1399,19 +1436,51 @@ async def rebuild_notebook_insights(
         if not ready_documents:
             raise HTTPException(status_code=409, detail="notebook has no indexed documents yet")
 
-        insights = build_notebook_insights(
-            [
-                NotebookInsightSource(
-                    filename=doc.filename,
-                    summary=doc.summary or "",
-                    suggested_questions=doc.suggested_questions or [],
-                )
-                for doc in ready_documents
-            ],
-            title=notebook.title,
+        title = notebook.title
+        ready_document_ids = {doc.id for doc in ready_documents}
+        insight_sources = await _load_notebook_insight_sources(
+            s,
+            tenant_id=tenant_id,
+            documents=ready_documents,
         )
-        if not insights.summary:
-            raise HTTPException(status_code=409, detail="notebook documents have no insights yet")
+
+    try:
+        insights = await generate_notebook_insights(insight_sources, title=title)
+    except Exception as exc:
+        log.exception(
+            "notebook insight generation failed | tenant=%s notebook=%s",
+            tenant_id,
+            notebook_id,
+        )
+        raise HTTPException(
+            status_code=502,
+            detail=f"DeepSeek overview generation failed: {exc}",
+        ) from exc
+
+    if not insights.summary:
+        raise HTTPException(status_code=409, detail="notebook documents have no extractable text")
+
+    async with tenant_session(tenant_id) as s:
+        notebook = (
+            await s.execute(
+                select(Notebook).where(
+                    Notebook.id == notebook_id,
+                    Notebook.tenant_id == tenant_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if notebook is None:
+            raise HTTPException(status_code=404, detail="notebook not found")
+
+        documents = await _load_notebook_documents(s, tenant_id, notebook_id)
+        current_ready_ids = {
+            doc.id for doc in documents if doc.status == DocumentStatus.done
+        }
+        if current_ready_ids != ready_document_ids:
+            raise HTTPException(
+                status_code=409,
+                detail="notebook sources changed while the overview was generated; retry",
+            )
 
         now = datetime.now(timezone.utc)
         notebook.summary = insights.summary

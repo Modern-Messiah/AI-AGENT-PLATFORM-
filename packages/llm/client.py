@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from typing import AsyncIterator
 
 from openai import APIStatusError, AsyncOpenAI
-from pydantic_ai.models.openai import OpenAIModel
 from pydantic_ai.models import openai as pai_openai
+from pydantic_ai.models.openai import OpenAIModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
 from packages.core import settings
@@ -246,3 +246,38 @@ async def stream_chat_text(
         delta = chunk.choices[0].delta.content or ""
         if delta:
             yield ChatStreamEvent(type="token", content=delta)
+
+
+async def complete_chat_json(
+    model_name: str | None,
+    messages: list[dict[str, str]],
+    *,
+    max_tokens: int,
+) -> str:
+    """Return one JSON response from an OpenAI-compatible chat provider."""
+    provider_key, model_id, base_url, api_key = _resolve_model(model_name)
+    client = AsyncOpenAI(base_url=base_url, api_key=api_key or "not-set")
+
+    extra: dict = {}
+    extra_body = _provider_extra_body(provider_key, model_id)
+    if extra_body is not None:
+        extra["extra_body"] = extra_body
+
+    try:
+        response = await client.chat.completions.create(
+            model=model_id,
+            messages=messages,  # type: ignore[arg-type]
+            response_format={"type": "json_object"},
+            max_tokens=max_tokens,
+            timeout=settings.llm_timeout_seconds if settings.llm_timeout_seconds > 0 else None,
+            **extra,
+        )
+    except APIStatusError as exc:
+        raise RuntimeError(
+            _provider_error_message(provider_key, exc.status_code, exc.body)
+        ) from exc
+
+    content = response.choices[0].message.content if response.choices else None
+    if not content:
+        raise RuntimeError("LLM provider returned an empty JSON response")
+    return content

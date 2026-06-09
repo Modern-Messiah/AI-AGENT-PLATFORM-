@@ -37,3 +37,10 @@ test('notebook source cards stay compact', () => {
   assert.doesNotMatch(viewSource, /class="source-questions"/)
   assert.doesNotMatch(viewSource, /Summary появится после индексации источника/)
 })
+
+test('notebook overview explains generated sections and chat questions', () => {
+  assert.match(viewSource, />Краткий обзор</)
+  assert.match(viewSource, />Ключевые темы</)
+  assert.match(viewSource, />Вопросы для чата</)
+  assert.match(viewSource, /Нажмите на вопрос, чтобы открыть чат/)
+})

@@ -52,25 +52,35 @@
             </button>
           </div>
           <div class="detail-card-body">
-            <p v-if="normalized.summary" class="summary-text">{{ normalized.summary }}</p>
+            <template v-if="normalized.summary">
+              <div class="overview-label">Краткий обзор</div>
+              <p class="summary-text">{{ normalized.summary }}</p>
+            </template>
             <div v-else class="muted-block">
               Нажмите «Обновить обзор», чтобы собрать краткое описание, темы и вопросы по этой коллекции.
             </div>
-            <div v-if="normalized.keyTopics.length" class="topic-row">
-              <span v-for="topic in normalized.keyTopics" :key="topic" class="topic-chip">
-                {{ topic }}
-              </span>
+            <div v-if="normalized.keyTopics.length" class="overview-section">
+              <div class="overview-label">Ключевые темы</div>
+              <div class="topic-row">
+                <span v-for="topic in normalized.keyTopics" :key="topic" class="topic-chip">
+                  {{ topic }}
+                </span>
+              </div>
             </div>
-            <div v-if="suggestedQuestions.length" class="detail-questions">
-              <button
-                v-for="question in suggestedQuestions"
-                :key="question"
-                class="question-chip"
-                type="button"
-                @click="askQuestion(question)"
-              >
-                {{ question }}
-              </button>
+            <div v-if="suggestedQuestions.length" class="overview-section">
+              <div class="overview-label">Вопросы для чата</div>
+              <div class="overview-hint">Нажмите на вопрос, чтобы открыть чат по этой коллекции.</div>
+              <div class="detail-questions">
+                <button
+                  v-for="question in suggestedQuestions"
+                  :key="question"
+                  class="question-chip"
+                  type="button"
+                  @click="askQuestion(question)"
+                >
+                  {{ question }}
+                </button>
+              </div>
             </div>
             <div v-else-if="normalized.description" class="summary-note">
               {{ normalized.description }}
@@ -465,6 +475,21 @@ function askDefaultQuestion() {
 .detail-card-body {
   padding: 16px 18px;
 }
+.overview-section {
+  margin-top: 14px;
+}
+.overview-label {
+  margin-bottom: 7px;
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 700;
+}
+.overview-hint {
+  margin: -2px 0 8px;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.45;
+}
 .summary-text {
   margin: 0 0 14px;
   color: var(--muted2);
@@ -481,7 +506,7 @@ function askDefaultQuestion() {
   display: flex;
   flex-wrap: wrap;
   gap: 7px;
-  margin: 12px 0 14px;
+  margin-bottom: 14px;
 }
 .topic-chip {
   padding: 5px 8px;

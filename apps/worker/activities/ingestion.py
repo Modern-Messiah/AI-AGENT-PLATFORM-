@@ -9,16 +9,11 @@ from __future__ import annotations
 import logging
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
 
 from packages.cache.semantic import semantic_cache
 from packages.rag import build_document_insights, chunk_segments, embed_texts, parse_to_segments
 from packages.rag.parser import ParsedSegment
-from packages.rag.summaries import (
-    DocumentInsights,
-    NotebookInsightSource,
-    build_notebook_insights,
-)
+from packages.rag.summaries import DocumentInsights
 from packages.storage import (
     Chunk,
     Document,
@@ -133,7 +128,7 @@ async def store_chunks(input: IngestionInput, batch: ChunkBatch) -> int:
     return len(batch.contents)
 
 
-async def _refresh_notebook_insights_for_document(
+async def _invalidate_notebook_insights_for_document(
     session: AsyncSession,
     *,
     tenant_id: str,
@@ -154,47 +149,12 @@ async def _refresh_notebook_insights_for_document(
     if not notebooks:
         return 0
 
-    refreshed = 0
-    now = datetime.now(timezone.utc)
     for notebook in notebooks:
-        ready_documents = (
-            await session.execute(
-                select(Document)
-                .join(NotebookDocument, NotebookDocument.document_id == Document.id)
-                .where(
-                    Document.tenant_id == tenant_id,
-                    Document.status == DocumentStatus.done,
-                    NotebookDocument.tenant_id == tenant_id,
-                    NotebookDocument.notebook_id == notebook.id,
-                )
-                .order_by(NotebookDocument.created_at, Document.created_at.desc())
-            )
-        ).scalars().all()
-        insights = build_notebook_insights(
-            [
-                NotebookInsightSource(
-                    filename=doc.filename,
-                    summary=doc.summary or "",
-                    suggested_questions=doc.suggested_questions or [],
-                )
-                for doc in ready_documents
-            ],
-            title=notebook.title,
-        )
-        if not insights.summary:
-            notebook.summary = None
-            notebook.suggested_questions = []
-            notebook.key_topics = []
-            notebook.insights_updated_at = None
-            continue
-
-        notebook.summary = insights.summary
-        notebook.suggested_questions = insights.suggested_questions
-        notebook.key_topics = insights.key_topics
-        notebook.insights_updated_at = now
-        notebook.updated_at = now
-        refreshed += 1
-    return refreshed
+        notebook.summary = None
+        notebook.suggested_questions = []
+        notebook.key_topics = []
+        notebook.insights_updated_at = None
+    return len(notebooks)
 
 
 @activity.defn
@@ -209,7 +169,7 @@ async def mark_done(input: IngestionInput) -> None:
 
     try:
         async with tenant_session(input.tenant_id) as s:
-            await _refresh_notebook_insights_for_document(
+            await _invalidate_notebook_insights_for_document(
                 s,
                 tenant_id=input.tenant_id,
                 document_id=document_id,
