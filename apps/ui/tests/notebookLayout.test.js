@@ -22,3 +22,10 @@ test('desktop notebook detail remains vertically scrollable', () => {
   assert.match(desktopLayoutRule, /overflow-y:\s*auto/)
   assert.doesNotMatch(desktopLayoutRule, /overflow:\s*hidden/)
 })
+
+test('notebook sources card has a spacious adaptive height', () => {
+  assert.match(
+    viewSource,
+    /@media \(min-width:\s*901px\)\s*\{\s*\.sources-card\s*\{\s*min-height:\s*clamp\(360px,\s*45vh,\s*560px\)/,
+  )
+})

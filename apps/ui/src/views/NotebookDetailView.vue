@@ -708,6 +708,12 @@ function askDefaultQuestion() {
   gap: 8px;
 }
 
+@media (min-width: 901px) {
+  .sources-card {
+    min-height: clamp(360px, 45vh, 560px);
+  }
+}
+
 @media (max-width: 900px) {
   .notebook-detail {
     display: flex;
