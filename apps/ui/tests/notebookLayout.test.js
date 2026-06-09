@@ -16,6 +16,8 @@ test('notebook source list has a dedicated scrollable layout region', () => {
   assert.match(viewSource, /\.notebook-detail\s*\{[^}]*display:\s*grid/s)
   assert.match(viewSource, /\.sources-card\s*\{[^}]*display:\s*flex/s)
   assert.match(viewSource, /\.source-list\s*\{[^}]*overflow-y:\s*auto/s)
+  assert.match(viewSource, /\.source-list\s*\{[^}]*align-content:\s*start/s)
+  assert.match(viewSource, /\.source-list\s*\{[^}]*grid-auto-rows:\s*max-content/s)
 })
 
 test('desktop notebook detail remains vertically scrollable', () => {

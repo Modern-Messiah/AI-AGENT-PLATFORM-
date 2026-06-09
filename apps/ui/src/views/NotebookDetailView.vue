@@ -614,7 +614,9 @@ function askDefaultQuestion() {
 .source-list {
   display: grid;
   flex: 1;
+  align-content: start;
   gap: 12px;
+  grid-auto-rows: max-content;
   min-height: 0;
   overflow-y: auto;
   padding: 14px;
