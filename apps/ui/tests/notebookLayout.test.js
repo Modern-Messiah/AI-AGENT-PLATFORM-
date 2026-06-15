@@ -9,6 +9,10 @@ const viewSource = readFileSync(
   resolve(__dirname, '../src/views/NotebookDetailView.vue'),
   'utf8',
 )
+const listViewSource = readFileSync(
+  resolve(__dirname, '../src/views/NotebooksView.vue'),
+  'utf8',
+)
 const desktopLayoutRule = viewSource.match(/\.notebook-detail\s*\{([^}]*)\}/)?.[1] || ''
 
 test('notebook source list has a dedicated scrollable layout region', () => {
@@ -43,4 +47,29 @@ test('notebook overview explains generated sections and chat questions', () => {
   assert.match(viewSource, /t\('notebookDetail\.topics'\)/)
   assert.match(viewSource, /t\('notebookDetail\.questions'\)/)
   assert.match(viewSource, /t\('notebookDetail\.questionsHint'\)/)
+})
+
+
+test('notebook topic preview has airy spacing around wrapped tags', () => {
+  assert.match(
+    listViewSource,
+    /\.notebook-open \.topic-preview\s*\{[^}]*display:\s*flex[^}]*gap:\s*9px 10px[^}]*margin-top:\s*24px/s,
+  )
+})
+
+
+test('desktop notebook collection keeps its header fixed and scrolls the list', () => {
+  assert.match(listViewSource, /class="card notebook-collection"/)
+  assert.match(
+    listViewSource,
+    /@media \(min-width:\s*901px\)\s*\{[^}]*\.notebook-collection\s*\{[^}]*height:\s*clamp\(560px,\s*65vh,\s*760px\)/s,
+  )
+  assert.match(
+    listViewSource,
+    /\.notebook-collection\s*\{[^}]*display:\s*flex[^}]*flex-direction:\s*column/s,
+  )
+  assert.match(
+    listViewSource,
+    /\.notebook-collection \.notebook-list\s*\{[^}]*overflow-y:\s*auto/s,
+  )
 })

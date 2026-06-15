@@ -58,7 +58,7 @@
         </div>
       </div>
 
-      <div class="card">
+      <div class="card notebook-collection">
         <div class="card-header">
           <div>
             <div class="card-title">{{ t('notebooks.mine') }}</div>
@@ -300,8 +300,18 @@ function openNotebook(id) {
 }
 .notebook-list {
   display: grid;
+  align-content: start;
   gap: 10px;
+  min-height: 0;
   padding: 14px;
+}
+.notebook-collection {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+}
+.notebook-collection .notebook-list {
+  overflow-y: auto;
 }
 .notebook-card {
   display: flex;
@@ -341,11 +351,11 @@ function openNotebook(id) {
   font-style: normal;
   line-height: 1.45;
 }
-.topic-preview {
+.notebook-open .topic-preview {
   display: flex;
   flex-wrap: wrap;
-  gap: 5px;
-  margin-top: 8px;
+  gap: 9px 10px;
+  margin-top: 24px;
 }
 .topic-preview strong {
   padding: 3px 6px;
@@ -355,6 +365,12 @@ function openNotebook(id) {
   font-family: var(--mono);
   font-size: 9px;
   font-weight: 500;
+}
+
+@media (min-width: 901px) {
+  .notebook-collection {
+    height: clamp(560px, 65vh, 760px);
+  }
 }
 
 @media (max-width: 900px) {
