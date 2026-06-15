@@ -1,19 +1,17 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { useApi } from '@/composables/useApi'
+import { useSettingsStore } from '@/stores/settings'
+import { formatLocaleTime, translate } from '@/i18n'
 
-const WELCOME = 'Привет! Я готов отвечать на вопросы о вашей кодовой базе и документах. Что хотите узнать?'
 const LS_HITL_KEY = 'chatPendingHitl'
 
-function fmtTime(iso) {
-  if (!iso) return '—'
-  try { return new Date(iso).toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' }) } catch { return '—' }
-}
-function nowTime() {
-  return new Date().toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' })
-}
-
 export const useChatStore = defineStore('chat', () => {
+  const settings = useSettingsStore()
+  const t = (key, params) => translate(settings.locale, key, params)
+  const welcome = () => t('chat.welcome')
+  const fmtTime = iso => formatLocaleTime(iso, settings.locale)
+  const nowTime = () => formatLocaleTime(null, settings.locale)
   const sessions = ref([])
   const activeId = ref(null)
   const messages = ref([])
@@ -113,10 +111,10 @@ export const useChatStore = defineStore('chat', () => {
           time: fmtTime(m.created_at), sources: m.sources || [], cached: m.cached
         }))
       } else {
-        messages.value = [{ id: 'w', role: 'agent', text: WELCOME, time: '—', sources: [] }]
+        messages.value = [{ id: 'w', role: 'agent', text: welcome(), time: '—', sources: [] }]
       }
     } catch {
-      messages.value = [{ id: 'w', role: 'agent', text: WELCOME, time: '—', sources: [] }]
+      messages.value = [{ id: 'w', role: 'agent', text: welcome(), time: '—', sources: [] }]
     } finally {
       // Re-inject a pending HITL card if one exists for this session and the session is
       // still active (guard against rapid session switches causing cross-session injection).
@@ -133,8 +131,8 @@ export const useChatStore = defineStore('chat', () => {
 
   async function newChat(model, options = {}) {
     const { apiFetch } = useApi()
-    const title = options.title || 'New Chat'
-    const welcome = options.welcome || WELCOME
+    const title = options.title || t('chat.newChat')
+    const welcomeText = options.welcome || welcome()
     const sess = await apiFetch('/sessions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -142,7 +140,7 @@ export const useChatStore = defineStore('chat', () => {
     })
     sessions.value = [sess, ...sessions.value]
     activeId.value = sess.id
-    messages.value = [{ id: 'w', role: 'agent', text: welcome, time: nowTime(), sources: [] }]
+    messages.value = [{ id: 'w', role: 'agent', text: welcomeText, time: nowTime(), sources: [] }]
     return sess
   }
 
@@ -190,7 +188,7 @@ export const useChatStore = defineStore('chat', () => {
     }).catch(e => console.error('Failed to persist user message:', e))
 
     const curSess = sessions.value.find(s => s.id === sessId)
-    if (curSess?.title === 'New Chat') {
+    if (['New Chat', 'Новый чат', t('chat.newChat')].includes(curSess?.title)) {
       const title = query.slice(0, 40) + (query.length > 40 ? '…' : '')
       apiFetch(`/sessions/${sessId}`, {
         method: 'PATCH',
@@ -223,7 +221,7 @@ export const useChatStore = defineStore('chat', () => {
       } catch (e) {
         _stopLoading(sessId)
         if (activeId.value === sessId) {
-          messages.value.push({ id: 'e' + Date.now(), role: 'agent', text: `Ошибка: ${e.message}`, time: nowTime(), sources: [], error: true })
+          messages.value.push({ id: 'e' + Date.now(), role: 'agent', text: t('common.error', { message: e.message }), time: nowTime(), sources: [], error: true })
         }
         throw e
       }
@@ -312,7 +310,7 @@ export const useChatStore = defineStore('chat', () => {
           } else if (event.type === 'error') {
             if (activeStreamController === streamController) activeStreamController = null
             _stopLoading(sessId)
-            const errMsg = { id: 'e' + Date.now(), role: 'agent', text: `Ошибка: ${event.message}`, time: nowTime(), sources: [], error: true }
+            const errMsg = { id: 'e' + Date.now(), role: 'agent', text: t('common.error', { message: event.message }), time: nowTime(), sources: [], error: true }
             if (activeId.value === sessId) {
               if (streamMsg) {
                 const idx = messages.value.findIndex(m => m.id === streamMsg.id)
@@ -330,7 +328,7 @@ export const useChatStore = defineStore('chat', () => {
       if (activeStreamController === streamController) activeStreamController = null
       _stopLoading(sessId)
       if (e?.name === 'AbortError') return null
-      const errMsg = { id: 'e' + Date.now(), role: 'agent', text: `Ошибка: ${e.message}`, time: nowTime(), sources: [], error: true }
+      const errMsg = { id: 'e' + Date.now(), role: 'agent', text: t('common.error', { message: e.message }), time: nowTime(), sources: [], error: true }
       if (activeId.value === sessId) {
         if (streamMsg) {
           const idx = messages.value.findIndex(m => m.id === streamMsg.id)
@@ -400,7 +398,7 @@ export const useChatStore = defineStore('chat', () => {
     } catch (e) {
       if (activeId.value === origSessId) {
         messages.value = messages.value.filter(m => !isThis(m))
-        messages.value.push({ id: 'e' + Date.now(), role: 'agent', text: `HITL error: ${e.message}`, time: nowTime(), sources: [], error: true })
+        messages.value.push({ id: 'e' + Date.now(), role: 'agent', text: t('common.error', { message: e.message }), time: nowTime(), sources: [], error: true })
       }
       _clearPendingByWorkflow(workflowId)
     }

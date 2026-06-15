@@ -70,3 +70,18 @@ test('extracts visible session scope metadata from scoped titles', () => {
 
   assert.equal(sessionScopeMeta('New Chat'), null)
 })
+
+
+test('localizes scoped chat metadata while accepting English session titles', () => {
+  const scope = normalizeChatScope({ document: 'doc-1' }, 'en')
+  assert.equal(scope.title, 'Document chat')
+  assert.equal(scope.backLabel, 'Open document')
+  assert.equal(scopeSessionTitle(scope, '', 'en'), 'Document: new session')
+  assert.equal(scopeWelcomeMessage(scope, 'en'), 'This is a separate document chat. The following answers will search only inside this file.')
+  assert.deepEqual(sessionScopeMeta('Document: manual.pdf', 'en'), {
+    type: 'document',
+    badge: 'Document',
+    title: 'manual.pdf',
+    subtitle: 'Chat with document “manual.pdf”',
+  })
+})

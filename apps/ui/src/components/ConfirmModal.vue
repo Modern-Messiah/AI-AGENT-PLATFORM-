@@ -9,16 +9,16 @@
           </div>
         </div>
 
-        <div class="confirm-title">{{ heading }}</div>
+        <div class="confirm-title">{{ heading || t('chat.deleteSession') }}</div>
         <div class="confirm-session-name">{{ title }}</div>
 
         <div class="confirm-warning">
-          Все сообщения будут удалены безвозвратно
+          {{ t('chat.deleteWarning') }}
         </div>
 
         <div class="confirm-actions">
-          <button ref="cancelBtn" class="btn btn-ghost" @click="$emit('cancel')">Отмена</button>
-          <button class="btn btn-danger" @click="$emit('confirm')">Удалить</button>
+          <button ref="cancelBtn" class="btn btn-ghost" @click="$emit('cancel')">{{ t('common.cancel') }}</button>
+          <button class="btn btn-danger" @click="$emit('confirm')">{{ t('common.delete') }}</button>
         </div>
 
       </div>
@@ -29,14 +29,16 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
 import AppIcon from '@/components/AppIcon.vue'
+import { useI18n } from '@/composables/useI18n'
 
 const props = defineProps({
   title:   { type: String, required: true },
-  heading: { type: String, default: 'Удалить сессию?' },
+  heading: { type: String, default: '' },
 })
 const emit = defineEmits(['confirm', 'cancel'])
 
 const cancelBtn = ref(null)
+const { t } = useI18n()
 
 function onKey(e) {
   if (e.key === 'Escape') emit('cancel')

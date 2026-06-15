@@ -4,7 +4,7 @@
       <textarea
         class="chat-textarea"
         ref="textareaRef"
-        :placeholder="settings.isConnected ? 'Задайте вопрос агенту…' : 'Настройте API-ключ в боковой панели…'"
+        :placeholder="settings.isConnected ? t('chat.inputPlaceholder') : t('chat.disconnectedPlaceholder')"
         :disabled="!settings.isConnected"
         v-model="input"
         rows="1"
@@ -18,9 +18,9 @@
       </button>
     </div>
     <div style="display: flex; gap: 12px; margin-top: 8px; font-size: 11px; color: var(--muted)">
-      <span>Enter — отправить · Shift+Enter — новая строка</span>
+      <span>{{ t('chat.inputHint') }}</span>
       <span v-if="tooLong" style="color: var(--red)">{{ input.length }} / {{ MAX_QUERY_CHARS }}</span>
-      <span v-if="requireApproval" style="color: var(--yellow)">⚠ HITL on — ответы требуют подтверждения</span>
+      <span v-if="requireApproval" style="color: var(--yellow)">{{ t('chat.approvalWarning') }}</span>
     </div>
   </div>
 </template>
@@ -29,6 +29,7 @@
 import { computed, ref } from 'vue'
 import { useChatStore } from '@/stores/chat'
 import { useSettingsStore } from '@/stores/settings'
+import { useI18n } from '@/composables/useI18n'
 import AppIcon from '@/components/AppIcon.vue'
 
 const props = defineProps({
@@ -39,6 +40,7 @@ const emit = defineEmits(['send'])
 
 const chat = useChatStore()
 const settings = useSettingsStore()
+const { t } = useI18n()
 const input = ref('')
 const textareaRef = ref(null)
 const MAX_QUERY_CHARS = 12000

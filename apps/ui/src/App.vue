@@ -22,28 +22,29 @@ import AppSidebar from './components/AppSidebar.vue'
 import AppTopbar from './components/AppTopbar.vue'
 import SettingsModal from './components/SettingsModal.vue'
 import { useSettingsStore } from './stores/settings'
+import { useI18n } from './composables/useI18n'
 import { readStoredSidebarCollapsed, toggleSidebarCollapsed } from './utils/sidebarCollapse'
 
 const route = useRoute()
 const settings = useSettingsStore()
+const { t } = useI18n()
 const showSettings = ref(!settings.isConnected)
 const sidebarCollapsed = ref(false)
 
-const PAGE_META = {
-  '/chat':       { title: 'AI Agent Chat',  sub: 'PydanticAI · Temporal · Kimi K2' },
-  '/documents':  { title: 'База знаний',    sub: 'Общая память для всех чатов' },
-  '/notebooks':  { title: 'Ноутбуки',       sub: 'Коллекции источников' },
-  '/analytics':  { title: 'Аналитика',      sub: 'ClickHouse · Cost Tracking' },
-}
-
 const meta = computed(() => {
   if (route.path.startsWith('/documents/')) {
-    return { title: 'Документ', sub: 'Фокусный режим базы знаний' }
+    return { title: t('app.documentTitle'), sub: t('app.documentSub') }
   }
   if (route.path.startsWith('/notebooks/')) {
-    return { title: 'Ноутбук', sub: 'Чат по выбранной коллекции' }
+    return { title: t('app.notebookTitle'), sub: t('app.notebookSub') }
   }
-  return PAGE_META[route.path] || { title: 'AI Agent Platform', sub: '' }
+  const pageMeta = {
+    '/chat': { title: t('app.chatTitle'), sub: t('app.chatSub') },
+    '/documents': { title: t('app.documentsTitle'), sub: t('app.documentsSub') },
+    '/notebooks': { title: t('app.notebooksTitle'), sub: t('app.notebooksSub') },
+    '/analytics': { title: t('app.analyticsTitle'), sub: t('app.analyticsSub') },
+  }
+  return pageMeta[route.path] || { title: 'AI Agent Platform', sub: '' }
 })
 
 function sidebarStorage() {

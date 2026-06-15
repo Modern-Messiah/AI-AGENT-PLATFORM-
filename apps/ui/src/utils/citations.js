@@ -8,38 +8,41 @@ export function isStructuredCitation(source) {
   )
 }
 
-export function sourceLocation(source) {
+export function sourceLocation(source, locale = 'ru') {
   if (!isStructuredCitation(source)) return ''
   if (Number.isInteger(source.page) && source.page > 0) {
-    return `Страница ${source.page}`
+    return translate(locale, 'citations.page', { page: source.page })
   }
-  return `Фрагмент ${(source.chunk_index ?? 0) + 1}`
+  return translate(locale, 'citations.fragment', { index: (source.chunk_index ?? 0) + 1 })
 }
 
-export function sourceLabel(source) {
+export function sourceLabel(source, locale = 'ru') {
   if (!isStructuredCitation(source)) return String(source ?? '')
   const location = Number.isInteger(source.page) && source.page > 0
-    ? `стр. ${source.page}`
-    : `фрагмент ${(source.chunk_index ?? 0) + 1}`
+    ? translate(locale, 'citations.pageShort', { page: source.page })
+    : translate(locale, 'citations.fragmentShort', { index: (source.chunk_index ?? 0) + 1 })
   return `[${source.id}] ${source.filename} · ${location}`
 }
 
-export function sourceScoreLabel(source) {
+export function sourceScoreLabel(source, locale = 'ru') {
   if (!isStructuredCitation(source)) return ''
   const score = Number(source.score)
-  if (!Number.isFinite(score)) return 'релевантность —'
+  if (!Number.isFinite(score)) return translate(locale, 'citations.relevanceEmpty')
 
   const percent = score <= 1 ? score * 100 : score
   const clamped = Math.max(0, Math.min(100, Math.round(percent)))
-  return `релевантность ${clamped}%`
+  return translate(locale, 'citations.relevance', { percent: clamped })
 }
 
-function fragmentPlural(count) {
+function fragmentPlural(count, locale = 'ru') {
+  if (locale === 'en') {
+    return translate(locale, count === 1 ? 'citations.oneFragment' : 'citations.manyFragments')
+  }
   const mod10 = count % 10
   const mod100 = count % 100
-  if (mod10 === 1 && mod100 !== 11) return 'фрагмент'
-  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return 'фрагмента'
-  return 'фрагментов'
+  if (mod10 === 1 && mod100 !== 11) return translate(locale, 'citations.oneFragment')
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return translate(locale, 'citations.fewFragments')
+  return translate(locale, 'citations.manyFragments')
 }
 
 export function groupCitationsByDocument(sources = []) {
@@ -89,10 +92,10 @@ export function citationGroupMarker(group) {
   return `[${sorted.join(',')}]`
 }
 
-export function citationGroupLabel(group) {
+export function citationGroupLabel(group, locale = 'ru') {
   if (!group || group.type !== 'document') return ''
-  if (group.fragmentCount === 1) return sourceLocation(group.citations[0]).toLowerCase()
-  return `${group.fragmentCount} ${fragmentPlural(group.fragmentCount)}`
+  if (group.fragmentCount === 1) return sourceLocation(group.citations[0], locale).toLowerCase()
+  return `${group.fragmentCount} ${fragmentPlural(group.fragmentCount, locale)}`
 }
 
 export function citationGroupIsReferenced(answer, group) {
@@ -124,3 +127,4 @@ export function buildCitationDocumentRoute(group) {
   }
   return { path: `/documents/${firstCitation.document_id}` }
 }
+import { translate } from '../i18n/index.js'

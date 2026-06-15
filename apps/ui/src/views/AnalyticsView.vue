@@ -1,32 +1,32 @@
 <template>
   <div class="screen-body analytics-screen">
     <div class="analytics-toolbar">
-      <span class="toolbar-label">Период:</span>
+      <span class="toolbar-label">{{ t('analytics.period') }}</span>
       <button
         v-for="d in [7, 14, 30]"
         :key="d"
         :class="['btn btn-ghost btn-sm', { 'btn-primary': days === d }]"
         @click="days = d"
       >
-        {{ d }}д
+        {{ t('analytics.daysShort', { days: d }) }}
       </button>
       <button class="btn btn-ghost btn-sm" :disabled="loading" @click="load">
         <div v-if="loading" class="spinner"></div>
         <AppIcon v-else name="refresh" :size="13" />
       </button>
       <span class="tenant-label">
-        {{ data ? `tenant: ${data.tenant_id}` : 'нет данных' }}
+        {{ data ? `tenant: ${data.tenant_id}` : t('analytics.noData') }}
       </span>
     </div>
 
     <div v-if="!settings.isConnected" class="empty">
       <div class="empty-icon">🔑</div>
-      <div class="empty-title">Нет API-ключа</div>
-      <div class="empty-sub">Настройте ключ в боковой панели чтобы загрузить аналитику</div>
+      <div class="empty-title">{{ t('analytics.noKeyTitle') }}</div>
+      <div class="empty-sub">{{ t('analytics.noKeySub') }}</div>
     </div>
 
     <div v-if="error" class="analytics-error">
-      Ошибка ClickHouse: {{ error }}
+      {{ t('analytics.clickhouseError', { message: error }) }}
     </div>
 
     <template v-if="settings.isConnected && data && dashboard">
@@ -42,14 +42,14 @@
         <div class="card dashboard-card trend-card">
           <div class="card-header">
             <div>
-              <div class="card-title">Динамика расходов</div>
-              <div class="card-sub">Стоимость и токены по дням</div>
+              <div class="card-title">{{ t('analytics.trend') }}</div>
+              <div class="card-sub">{{ t('analytics.trendSub') }}</div>
             </div>
-            <span class="badge badge-muted">last {{ days }}d</span>
+            <span class="badge badge-muted">{{ t('analytics.lastDays', { days }) }}</span>
           </div>
           <div v-if="!dashboard.dailyTrend.length" class="empty compact-empty">
-            <div class="empty-title">Нет дневных событий</div>
-            <div class="empty-sub">Новые события появятся после запросов к моделям</div>
+            <div class="empty-title">{{ t('analytics.noDaily') }}</div>
+            <div class="empty-sub">{{ t('analytics.noDailySub') }}</div>
           </div>
           <div v-else class="trend-chart">
             <div
@@ -65,16 +65,16 @@
             </div>
           </div>
           <div class="legend-row">
-            <span><i class="legend-dot cost"></i> стоимость</span>
-            <span><i class="legend-dot tokens"></i> токены</span>
+            <span><i class="legend-dot cost"></i> {{ t('analytics.cost') }}</span>
+            <span><i class="legend-dot tokens"></i> {{ t('analytics.tokens') }}</span>
           </div>
         </div>
 
         <div class="card dashboard-card">
           <div class="card-header">
             <div>
-              <div class="card-title">Микс провайдеров</div>
-              <div class="card-sub">Кто реально отвечает на запросы</div>
+              <div class="card-title">{{ t('analytics.providerMix') }}</div>
+              <div class="card-sub">{{ t('analytics.providerMixSub') }}</div>
             </div>
           </div>
           <div class="provider-list">
@@ -87,37 +87,37 @@
                 <span class="provider-fill" :style="{ width: provider.percent + '%' }"></span>
               </div>
               <div class="provider-meta">
-                {{ provider.calls }} вызов(ов) · {{ fmtTokens(provider.tokens) }} · {{ fmtCost(provider.cost) }}
+                {{ t('analytics.calls', { count: provider.calls }) }} · {{ fmtTokens(provider.tokens) }} · {{ fmtCost(provider.cost) }}
               </div>
             </div>
-            <div v-if="!dashboard.providerMix.length" class="muted-line">Пока нет provider events</div>
+            <div v-if="!dashboard.providerMix.length" class="muted-line">{{ t('analytics.noProviderEvents') }}</div>
           </div>
         </div>
 
         <div class="card dashboard-card">
           <div class="card-header">
             <div>
-              <div class="card-title">Эффективность</div>
-              <div class="card-sub">Сколько стоит контекст и насколько быстро отвечает</div>
+              <div class="card-title">{{ t('analytics.efficiency') }}</div>
+              <div class="card-sub">{{ t('analytics.efficiencySub') }}</div>
             </div>
           </div>
           <div class="efficiency-grid">
             <div class="mini-metric">
-              <span>Cost / 1K tokens</span>
+              <span>{{ t('analytics.costPerTokens') }}</span>
               <strong>{{ fmtCost(dashboard.totals.costPer1kTokens, 5) }}</strong>
             </div>
             <div class="mini-metric">
-              <span>Средняя latency</span>
+              <span>{{ t('analytics.averageLatency') }}</span>
               <strong>{{ fmtMs(dashboard.totals.avgLatencyMs) }}</strong>
             </div>
             <div class="mini-metric">
-              <span>Статус скорости</span>
+              <span>{{ t('analytics.speedStatus') }}</span>
               <strong :class="['health', dashboard.latencyHealth.tone]">
                 {{ dashboard.latencyHealth.label }}
               </strong>
             </div>
             <div class="mini-metric">
-              <span>Вызовов / день</span>
+              <span>{{ t('analytics.callsPerDay') }}</span>
               <strong>{{ callsPerDay }}</strong>
             </div>
           </div>
@@ -126,36 +126,43 @@
         <div class="card dashboard-card">
           <div class="card-header">
             <div>
-              <div class="card-title">Топ моделей</div>
-              <div class="card-sub">По стоимости за период</div>
+              <div class="card-title">{{ t('analytics.topModels') }}</div>
+              <div class="card-sub">{{ t('analytics.topModelsSub') }}</div>
             </div>
           </div>
           <div class="model-rank">
             <div v-for="row in topModels" :key="`${row.provider}:${row.model}`" class="model-rank-row">
               <div>
                 <span class="tag">{{ row.model }}</span>
-                <div class="model-rank-meta">{{ row.provider }} · {{ row.call_count }} вызов(ов)</div>
+                <div class="model-rank-meta">{{ row.provider }} · {{ t('analytics.calls', { count: row.call_count }) }}</div>
               </div>
               <strong>{{ fmtCost(row.total_cost_usd) }}</strong>
             </div>
-            <div v-if="!topModels.length" class="muted-line">Модели появятся после первых запросов</div>
+            <div v-if="!topModels.length" class="muted-line">{{ t('analytics.modelsEmpty') }}</div>
           </div>
         </div>
       </div>
 
       <div class="card">
         <div class="card-header">
-          <div class="card-title">Разбивка по моделям</div>
-          <span class="badge badge-muted">last {{ days }}d</span>
+          <div class="card-title">{{ t('analytics.breakdown') }}</div>
+          <span class="badge badge-muted">{{ t('analytics.lastDays', { days }) }}</span>
         </div>
         <div v-if="!data.breakdown.length" class="empty" style="padding: 32px">
           <div class="empty-icon">📊</div>
-          <div class="empty-title">Нет данных</div>
-          <div class="empty-sub">Сделайте запросы к агенту, чтобы увидеть аналитику</div>
+          <div class="empty-title">{{ t('analytics.noBreakdown') }}</div>
+          <div class="empty-sub">{{ t('analytics.noBreakdownSub') }}</div>
         </div>
         <table v-else>
           <thead>
-            <tr><th>Модель</th><th>Провайдер</th><th>Вызовов</th><th>Токены</th><th>Стоимость</th><th>Avg latency</th></tr>
+            <tr>
+              <th>{{ t('analytics.model') }}</th>
+              <th>{{ t('analytics.provider') }}</th>
+              <th>{{ t('analytics.callCount') }}</th>
+              <th>{{ t('analytics.tokens') }}</th>
+              <th>{{ t('analytics.costColumn') }}</th>
+              <th>{{ t('analytics.averageLatency') }}</th>
+            </tr>
           </thead>
           <tbody>
             <tr v-for="(row, i) in data.breakdown" :key="i">
@@ -181,6 +188,7 @@
 import { ref, computed, watch } from 'vue'
 import { useApi } from '@/composables/useApi'
 import { useSettingsStore } from '@/stores/settings'
+import { useI18n } from '@/composables/useI18n'
 import AppIcon from '@/components/AppIcon.vue'
 import {
   buildAnalyticsDashboard,
@@ -191,6 +199,7 @@ import {
 
 const { apiFetch } = useApi()
 const settings = useSettingsStore()
+const { t } = useI18n()
 
 const days = ref(7)
 const data = ref(null)
@@ -215,7 +224,9 @@ const fmtTokens = formatTokens
 const fmtCost = formatCost
 const fmtMs = formatMs
 
-const dashboard = computed(() => data.value ? buildAnalyticsDashboard(data.value) : null)
+const dashboard = computed(() => (
+  data.value ? buildAnalyticsDashboard(data.value, settings.locale) : null
+))
 const topModels = computed(() => (
   [...(data.value?.breakdown || [])]
     .sort((a, b) => Number(b.total_cost_usd || 0) - Number(a.total_cost_usd || 0))
@@ -230,10 +241,10 @@ const stats = computed(() => {
   if (!data.value || !dashboard.value) return []
   const totals = dashboard.value.totals
   return [
-    { label: 'Общая стоимость', value: fmtCost(totals.totalCost), sub: `last ${days.value}d` },
-    { label: 'Токены',          value: fmtTokens(totals.totalTokens), sub: 'prompt + completion' },
-    { label: 'Avg latency',     value: fmtMs(totals.avgLatencyMs), sub: dashboard.value.latencyHealth.label },
-    { label: 'Запросов',        value: String(totals.totalCalls), sub: `${callsPerDay.value} / день` },
+    { label: t('analytics.totalCost'), value: fmtCost(totals.totalCost), sub: t('analytics.lastDays', { days: days.value }) },
+    { label: t('analytics.tokens'), value: fmtTokens(totals.totalTokens), sub: 'prompt + completion' },
+    { label: t('analytics.averageLatency'), value: fmtMs(totals.avgLatencyMs), sub: dashboard.value.latencyHealth.label },
+    { label: t('analytics.requests'), value: String(totals.totalCalls), sub: t('analytics.perDay', { count: callsPerDay.value }) },
   ]
 })
 </script>

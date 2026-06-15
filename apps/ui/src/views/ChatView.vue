@@ -7,11 +7,11 @@
       type="button"
       role="separator"
       aria-orientation="vertical"
-      aria-label="Изменить ширину списка сессий"
+      :aria-label="t('chat.resizeSessions')"
       :aria-valuemin="CHAT_HISTORY_MIN_WIDTH"
       :aria-valuemax="maxHistoryWidth()"
       :aria-valuenow="historyWidth"
-      title="Потяните, чтобы изменить ширину списка сессий"
+      :title="t('chat.resizeSessionsHint')"
       @pointerdown="startHistoryResize"
       @mousedown="startHistoryResize"
       @touchstart.prevent="startHistoryResize"
@@ -30,7 +30,7 @@
             {{ displayScope.backLabel }}
           </RouterLink>
           <button class="btn btn-ghost btn-sm" type="button" @click="clearScope">
-            Обычный чат
+            {{ t('chat.regularChat') }}
           </button>
         </div>
       </div>
@@ -47,6 +47,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useChatStore } from '@/stores/chat'
 import { useSettingsStore } from '@/stores/settings'
+import { useI18n } from '@/composables/useI18n'
 import {
   buildChatScopeQuery,
   normalizeChatScope,
@@ -71,6 +72,7 @@ import AppToast from '@/components/AppToast.vue'
 
 const chat = useChatStore()
 const settings = useSettingsStore()
+const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
 
@@ -83,10 +85,10 @@ const historyWidth = ref(CHAT_HISTORY_DEFAULT_WIDTH)
 const isResizingHistory = ref(false)
 let previousBodyCursor = ''
 let previousBodyUserSelect = ''
-const currentScope = computed(() => normalizeChatScope(route.query))
+const currentScope = computed(() => normalizeChatScope(route.query, settings.locale))
 const activeSessionMeta = computed(() => {
   const active = chat.sessions.find(session => session.id === chat.activeId)
-  return sessionScopeMeta(active?.title)
+  return sessionScopeMeta(active?.title, settings.locale)
 })
 const displayScope = computed(() => {
   const scope = currentScope.value
@@ -267,13 +269,13 @@ watch(
     const notebookId = typeof notebook === 'string' ? notebook : null
     const wantsFreshSession = fresh === '1' && (documentId || notebookId)
     const askKey = `${ask}:${documentId || ''}:${notebookId || ''}`
-    const scope = normalizeChatScope({ document: documentId, notebook: notebookId })
+    const scope = normalizeChatScope({ document: documentId, notebook: notebookId }, settings.locale)
 
     if (wantsFreshSession) {
       await waitForSessionLoad()
       await chat.newChat(model.value, {
-        title: scopeSessionTitle(scope, typeof title === 'string' ? title : ''),
-        welcome: scopeWelcomeMessage(scope),
+        title: scopeSessionTitle(scope, typeof title === 'string' ? title : '', settings.locale),
+        welcome: scopeWelcomeMessage(scope, settings.locale),
       })
       await router.replace({ path: '/chat', query: buildChatScopeQuery(scope) })
       if (typeof ask !== 'string' || !ask.trim()) return
@@ -302,7 +304,7 @@ async function clearScope() {
 
 async function handleSend(query, options = {}) {
   if (!settings.isConnected) {
-    toast.value = { msg: 'Задайте X-API-Key в настройках', type: 'error' }
+    toast.value = { msg: t('documents.apiKeyRequired'), type: 'error' }
     return
   }
   try {
@@ -319,12 +321,12 @@ async function handleSend(query, options = {}) {
 // workflowId is carried by the hitl message itself and emitted from the card
 async function approveHitl(workflowId) {
   await chat.approveHitl(workflowId)
-  toast.value = { msg: 'Ответ подтверждён', type: 'success' }
+  toast.value = { msg: t('chat.answerApproved'), type: 'success' }
 }
 
 async function rejectHitl(workflowId) {
   await chat.rejectHitl(workflowId)
-  toast.value = { msg: 'Ответ отклонён', type: 'error' }
+  toast.value = { msg: t('chat.answerRejected'), type: 'error' }
 }
 </script>
 

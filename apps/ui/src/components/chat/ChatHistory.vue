@@ -1,16 +1,16 @@
 <template>
   <div class="chat-history" :style="{ width: `${width}px` }">
     <div class="chat-history-header">
-      <span>Сессии</span>
+      <span>{{ t('chat.sessions') }}</span>
       <button class="btn btn-ghost btn-sm" style="padding: 3px 7px; gap: 4px" @click="handleNew">
-        <AppIcon name="plus" :size="11" /> New
+        <AppIcon name="plus" :size="11" /> {{ t('chat.new') }}
       </button>
     </div>
     <div class="chat-sessions">
       <div v-if="chat.sessLoading && chat.sessions.length === 0"
-           style="padding: 12px 16px; font-size: 12px; color: var(--muted)">Загрузка…</div>
+           style="padding: 12px 16px; font-size: 12px; color: var(--muted)">{{ t('chat.loading') }}</div>
       <div v-else-if="!settings.isConnected"
-           style="padding: 12px 16px; font-size: 12px; color: var(--muted)">Нет API-ключа</div>
+           style="padding: 12px 16px; font-size: 12px; color: var(--muted)">{{ t('app.noApiKey') }}</div>
 
       <div v-for="s in chat.sessions" :key="s.id"
            class="chat-session-item"
@@ -24,17 +24,17 @@
             </span>
             <span class="session-scope-copy">{{ sessionMeta(s).subtitle }}</span>
           </div>
-          <div class="session-meta">{{ s.updated_at ? new Date(s.updated_at).toLocaleDateString('ru') : '' }}</div>
+          <div class="session-meta">{{ s.updated_at ? formatLocaleDate(s.updated_at, locale) : '' }}</div>
         </div>
         <button class="btn btn-ghost btn-sm del-btn" style="padding: 2px 5px; flex-shrink: 0"
-                @click.stop="askDelete(s)" title="Удалить">
+                @click.stop="askDelete(s)" :title="t('chat.deleteTitle')">
           <AppIcon name="trash" :size="11" />
         </button>
       </div>
 
       <div v-if="settings.isConnected && chat.sessions.length === 0 && !chat.sessLoading"
            style="padding: 12px 16px; font-size: 12px; color: var(--muted)">
-        Нет сессий — нажми New
+        {{ t('chat.noSessions') }}
       </div>
     </div>
   </div>
@@ -51,9 +51,11 @@
 import { ref } from 'vue'
 import { useChatStore } from '@/stores/chat'
 import { useSettingsStore } from '@/stores/settings'
+import { useI18n } from '@/composables/useI18n'
 import AppIcon from '@/components/AppIcon.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
 import { sessionScopeMeta } from '@/utils/chatScope'
+import { formatLocaleDate } from '@/i18n'
 
 const props = defineProps({
   model: String,
@@ -63,16 +65,17 @@ const emit = defineEmits(['toast'])
 
 const chat = useChatStore()
 const settings = useSettingsStore()
+const { locale, t } = useI18n()
 
 const confirmId    = ref(null)
 const confirmTitle = ref('')
 
 function sessionMeta(sess) {
-  return sessionScopeMeta(sess?.title)
+  return sessionScopeMeta(sess?.title, locale.value)
 }
 
 function sessionTitle(sess) {
-  return sessionMeta(sess)?.title || sess?.title || 'New Chat'
+  return sessionMeta(sess)?.title || sess?.title || t('chat.newChat')
 }
 
 function askDelete(sess) {
@@ -91,7 +94,7 @@ async function doDelete() {
   try {
     await chat.deleteSession(id)
   } catch (e) {
-    emit('toast', { msg: `Ошибка: ${e.message}`, type: 'error' })
+    emit('toast', { msg: t('common.error', { message: e.message }), type: 'error' })
   }
 }
 
@@ -100,7 +103,7 @@ async function handleNew() {
   try {
     await chat.newChat(props.model)
   } catch (e) {
-    emit('toast', { msg: `Ошибка: ${e.message}`, type: 'error' })
+    emit('toast', { msg: t('common.error', { message: e.message }), type: 'error' })
   }
 }
 </script>

@@ -7,11 +7,11 @@
         <template v-if="!msg.status">
           <div class="hitl-icon">⏳</div>
           <div>
-            <div class="hitl-title">Ожидает подтверждения</div>
-            <div class="hitl-desc">Агент сформировал ответ. Подтвердите или отклоните перед показом.</div>
+            <div class="hitl-title">{{ t('chat.waitingApproval') }}</div>
+            <div class="hitl-desc">{{ t('chat.approvalDescription') }}</div>
             <div class="hitl-actions">
-              <button class="btn btn-success btn-sm" @click="$emit('approve', msg.workflowId)">✓ Approve</button>
-              <button class="btn btn-danger btn-sm" @click="$emit('reject', msg.workflowId)">✕ Reject</button>
+              <button class="btn btn-success btn-sm" @click="$emit('approve', msg.workflowId)">{{ t('chat.approve') }}</button>
+              <button class="btn btn-danger btn-sm" @click="$emit('reject', msg.workflowId)">{{ t('chat.reject') }}</button>
             </div>
           </div>
         </template>
@@ -25,15 +25,15 @@
             </div>
           </div>
           <div>
-            <div class="hitl-title">Подтверждено — ждём ответа агента…</div>
+            <div class="hitl-title">{{ t('chat.approvedWaiting') }}</div>
           </div>
         </template>
         <!-- took longer than 5 minutes -->
         <template v-else-if="msg.status === 'timeout'">
           <div class="hitl-icon">⚠️</div>
           <div>
-            <div class="hitl-title" style="color:var(--yellow)">Workflow не завершился за 5 минут</div>
-            <div class="hitl-desc">Проверьте Temporal UI или попробуйте ещё раз.</div>
+            <div class="hitl-title" style="color:var(--yellow)">{{ t('chat.workflowTimeout') }}</div>
+            <div class="hitl-desc">{{ t('chat.workflowTimeoutHint') }}</div>
           </div>
         </template>
       </div>
@@ -47,7 +47,7 @@
           </div>
           <div class="msg-meta">
             <span class="msg-time">{{ msg.time }}</span>
-            <span v-if="msg.cached" class="badge badge-purple" style="font-size: 10px; padding: 1px 6px">cache hit</span>
+            <span v-if="msg.cached" class="badge badge-purple" style="font-size: 10px; padding: 1px 6px">{{ t('chat.cacheHit') }}</span>
           </div>
           <div v-if="msg.sources && msg.sources.length" class="sources-list">
             <template v-for="(group, index) in citationGroups(msg)" :key="citationGroupKey(msg, group, index)">
@@ -67,7 +67,7 @@
                 <span class="source-chip-index">{{ citationGroupMarker(group) }}</span>
                 <span class="source-chip-name">{{ group.filename }}</span>
                 <span class="source-chip-separator">·</span>
-                <span class="source-chip-location">{{ citationGroupLabel(group) }}</span>
+                <span class="source-chip-location">{{ citationLabel(group) }}</span>
               </button>
               <span v-else class="source-chip">📄 {{ group.label }}</span>
             </template>
@@ -75,18 +75,18 @@
           <div v-if="expandedCitationGroup(msg)" class="citation-panel">
             <div class="citation-panel-header">
               <div class="citation-heading">
-                <div class="citation-kicker">Источник {{ citationGroupMarker(expandedCitationGroup(msg)) }}</div>
+                <div class="citation-kicker">{{ t('chat.source', { marker: citationGroupMarker(expandedCitationGroup(msg)) }) }}</div>
                 <div class="citation-title">
                   {{ expandedCitationGroup(msg).filename }}
                 </div>
-                <div class="citation-location">{{ citationGroupLabel(expandedCitationGroup(msg)) }}</div>
+                <div class="citation-location">{{ citationLabel(expandedCitationGroup(msg)) }}</div>
               </div>
               <span class="citation-score">
-                {{ sourceScoreLabel(expandedCitationGroup(msg).citations[0]) }}
+                {{ scoreLabel(expandedCitationGroup(msg).citations[0]) }}
               </span>
             </div>
             <div class="citation-excerpt-wrap">
-              <div class="citation-excerpt-label">Найденные фрагменты</div>
+              <div class="citation-excerpt-label">{{ t('chat.foundFragments') }}</div>
               <div class="citation-fragments">
                 <article
                   v-for="citation in expandedCitationGroup(msg).citations"
@@ -96,11 +96,11 @@
                   <div class="citation-fragment-header">
                     <div>
                       <div class="citation-fragment-title">
-                        [{{ citation.id }}] {{ sourceLocation(citation) }}
+                        [{{ citation.id }}] {{ locationLabel(citation) }}
                       </div>
                     </div>
                     <span class="citation-score citation-score-inline">
-                      {{ sourceScoreLabel(citation) }}
+                      {{ scoreLabel(citation) }}
                     </span>
                   </div>
                   <div class="citation-excerpt">{{ citation.excerpt }}</div>
@@ -108,7 +108,7 @@
                     class="btn btn-ghost btn-sm citation-open"
                     :to="buildCitationRoute(citation)"
                   >
-                    Открыть фрагмент
+                    {{ t('chat.openFragment') }}
                   </RouterLink>
                 </article>
               </div>
@@ -118,7 +118,7 @@
                 class="btn btn-ghost btn-sm citation-open"
                 :to="buildCitationDocumentRoute(expandedCitationGroup(msg))"
               >
-                Открыть документ
+                {{ t('chat.openDocument') }}
               </RouterLink>
             </div>
           </div>
@@ -144,6 +144,7 @@
 <script setup>
 import { ref, watch, nextTick } from 'vue'
 import { useChatStore } from '@/stores/chat'
+import { useI18n } from '@/composables/useI18n'
 import AppIcon from '@/components/AppIcon.vue'
 import {
   buildCitationDocumentRoute,
@@ -159,11 +160,24 @@ import {
 defineEmits(['approve', 'reject'])
 
 const chat = useChatStore()
+const { locale, t } = useI18n()
 const containerRef = ref(null)
 const openCitationKey = ref(null)
 
 function citationGroups(msg) {
   return groupCitationsByDocument(msg.sources || [])
+}
+
+function citationLabel(group) {
+  return citationGroupLabel(group, locale.value)
+}
+
+function locationLabel(citation) {
+  return sourceLocation(citation, locale.value)
+}
+
+function scoreLabel(citation) {
+  return sourceScoreLabel(citation, locale.value)
 }
 
 function citationGroupKey(msg, group, index) {

@@ -42,6 +42,8 @@ test('formats citation labels without truncating filenames', () => {
     sourceLabel({ ...citation, page: null }),
     '[2] corporate-contract.pdf · фрагмент 15',
   )
+  assert.equal(sourceLabel(citation, 'en'), '[2] corporate-contract.pdf · page 8')
+  assert.equal(sourceScoreLabel(citation, 'en'), 'relevance 57%')
 })
 
 
@@ -60,6 +62,7 @@ test('groups multiple citation fragments from the same document', () => {
   assert.deepEqual(groups[0].citations.map(item => item.chunk_id), ['chunk-1', 'chunk-2'])
   assert.equal(citationGroupMarker(groups[0]), '[1-2]')
   assert.equal(citationGroupLabel(groups[0]), '2 фрагмента')
+  assert.equal(citationGroupLabel(groups[0], 'en'), '2 fragments')
   assert.equal(citationGroupIsReferenced('Answer uses [2].', groups[0]), true)
   assert.equal(citationGroupIsReferenced('Answer uses [3].', groups[0]), false)
   assert.deepEqual(buildCitationDocumentRoute(groups[0]), { path: '/documents/document-1' })

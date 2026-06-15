@@ -39,8 +39,8 @@ test('notebook source cards stay compact', () => {
 })
 
 test('notebook overview explains generated sections and chat questions', () => {
-  assert.match(viewSource, />Краткий обзор</)
-  assert.match(viewSource, />Ключевые темы</)
-  assert.match(viewSource, />Вопросы для чата</)
-  assert.match(viewSource, /Нажмите на вопрос, чтобы открыть чат/)
+  assert.match(viewSource, /t\('notebookDetail\.summary'\)/)
+  assert.match(viewSource, /t\('notebookDetail\.topics'\)/)
+  assert.match(viewSource, /t\('notebookDetail\.questions'\)/)
+  assert.match(viewSource, /t\('notebookDetail\.questionsHint'\)/)
 })

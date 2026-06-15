@@ -1,3 +1,5 @@
+import { formatLocaleDate, translate } from '../i18n/index.js'
+
 export function formatFileSize(bytes) {
   if (!Number.isFinite(bytes) || bytes <= 0) return '—'
   if (bytes < 1024) return `${bytes} B`
@@ -6,15 +8,15 @@ export function formatFileSize(bytes) {
   return `${(bytes / 1073741824).toFixed(1)} GB`
 }
 
-export function normalizeDocument(doc) {
+export function normalizeDocument(doc, locale = 'ru') {
   return {
     id: doc.id,
-    name: doc.filename || doc.name || 'unnamed',
+    name: doc.filename || doc.name || translate(locale, 'documents.unnamed'),
     status: doc.status || 'pending',
     error: doc.error || null,
     size: formatFileSize(doc.size_bytes || doc.sizeBytes || 0),
-    time: doc.created_at ? new Date(doc.created_at).toLocaleDateString('ru') : '—',
-    createdLabel: doc.created_at ? new Date(doc.created_at).toLocaleDateString('ru') : '—',
+    time: formatLocaleDate(doc.created_at, locale),
+    createdLabel: formatLocaleDate(doc.created_at, locale),
     summary: doc.summary || '',
     suggestedQuestions: Array.isArray(doc.suggested_questions)
       ? doc.suggested_questions
@@ -46,25 +48,27 @@ export function canReindexDocument(doc) {
   )
 }
 
-function documentChatTitle(title) {
-  return `Документ: ${String(title || 'Документ').trim() || 'Документ'}`
+function documentChatTitle(title, locale = 'ru') {
+  const label = translate(locale, 'chat.documentBadge')
+  const fallback = translate(locale, 'documentDetail.fallbackTitle')
+  return `${label}: ${String(title || fallback).trim() || fallback}`
 }
 
-export function buildQuestionRoute(question, documentId = null, title = '') {
+export function buildQuestionRoute(question, documentId = null, title = '', locale = 'ru') {
   const query = { ask: question }
   if (documentId) {
     query.document = documentId
     if (title) {
       query.fresh = '1'
-      query.title = documentChatTitle(title)
+      query.title = documentChatTitle(title, locale)
     }
   }
   return { path: '/chat', query }
 }
 
-export function buildDocumentChatRoute(documentId, title = '') {
+export function buildDocumentChatRoute(documentId, title = '', locale = 'ru') {
   const query = { document: documentId, fresh: '1' }
-  if (title) query.title = documentChatTitle(title)
+  if (title) query.title = documentChatTitle(title, locale)
   return { path: '/chat', query }
 }
 

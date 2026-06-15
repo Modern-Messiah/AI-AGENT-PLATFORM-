@@ -2,16 +2,13 @@
   <div class="screen-body">
     <div class="notebook-hero">
       <div>
-        <div class="notebook-eyebrow">Коллекции источников</div>
-        <h1>Ноутбуки</h1>
-        <p>
-          Соберите несколько документов в отдельное пространство, чтобы чат
-          отвечал только по выбранной подборке источников.
-        </p>
+        <div class="notebook-eyebrow">{{ t('notebooks.eyebrow') }}</div>
+        <h1>{{ t('notebooks.title') }}</h1>
+        <p>{{ t('notebooks.description') }}</p>
       </div>
       <div class="notebook-stat">
         <span>{{ notebooks.length }}</span>
-        <label>коллекций</label>
+        <label>{{ t('notebooks.collections') }}</label>
       </div>
     </div>
 
@@ -19,21 +16,21 @@
       <div class="card">
         <div class="card-header">
           <div>
-            <div class="card-title">Новый ноутбук</div>
-            <div class="card-sub">Выберите документы из общей базы знаний</div>
+            <div class="card-title">{{ t('notebooks.newTitle') }}</div>
+            <div class="card-sub">{{ t('notebooks.newSub') }}</div>
           </div>
         </div>
         <div class="form-panel">
           <div class="form-group">
-            <label class="form-label">Название</label>
-            <input v-model="title" class="form-input" placeholder="Например: Product research" />
+            <label class="form-label">{{ t('notebooks.name') }}</label>
+            <input v-model="title" class="form-input" :placeholder="t('notebooks.namePlaceholder')" />
           </div>
           <div class="form-group">
-            <label class="form-label">Описание</label>
+            <label class="form-label">{{ t('notebooks.descriptionLabel') }}</label>
             <textarea
               v-model="description"
               class="form-input textarea"
-              placeholder="Для чего эта подборка"
+              :placeholder="t('notebooks.descriptionPlaceholder')"
             ></textarea>
           </div>
 
@@ -46,7 +43,7 @@
               </span>
             </label>
             <div v-if="readyDocs.length === 0" class="muted-block">
-              Сначала загрузите и дождитесь индексации документов в базе знаний.
+              {{ t('notebooks.noReadyDocs') }}
             </div>
           </div>
 
@@ -56,7 +53,7 @@
             :disabled="creating || !title.trim()"
             @click="createNotebook"
           >
-            {{ creating ? 'Создаю...' : 'Создать ноутбук' }}
+            {{ creating ? t('notebooks.creating') : t('notebooks.create') }}
           </button>
         </div>
       </div>
@@ -64,22 +61,22 @@
       <div class="card">
         <div class="card-header">
           <div>
-            <div class="card-title">Мои ноутбуки</div>
-            <div class="card-sub">Подборки документов для scoped chat</div>
+            <div class="card-title">{{ t('notebooks.mine') }}</div>
+            <div class="card-sub">{{ t('notebooks.mineSub') }}</div>
           </div>
           <button class="btn btn-ghost btn-sm" type="button" @click="loadData">
-            Обновить
+            {{ t('common.refresh') }}
           </button>
         </div>
 
         <div v-if="loading" class="empty">
           <div class="spinner"></div>
-          <div class="empty-title">Загружаю ноутбуки</div>
+          <div class="empty-title">{{ t('notebooks.loading') }}</div>
         </div>
 
         <div v-else-if="notebooks.length === 0" class="empty">
-          <div class="empty-title">Ноутбуков пока нет</div>
-          <div class="empty-sub">Создайте первую подборку из готовых документов</div>
+          <div class="empty-title">{{ t('notebooks.empty') }}</div>
+          <div class="empty-sub">{{ t('notebooks.emptySub') }}</div>
         </div>
 
         <div v-else class="notebook-list">
@@ -87,7 +84,7 @@
             <button class="notebook-open" type="button" @click="openNotebook(notebook.id)">
               <span>{{ notebook.title }}</span>
               <small>
-                {{ notebook.documentCount }} документ(ов) · создан {{ notebook.createdLabel }}
+                {{ t('notebooks.documentCount', { count: notebook.documentCount, date: notebook.createdLabel }) }}
               </small>
               <em v-if="notebook.summary">{{ notebook.summary }}</em>
               <span v-if="notebook.keyTopics.length" class="topic-preview">
@@ -96,7 +93,7 @@
                 </strong>
               </span>
             </button>
-            <button class="btn btn-ghost btn-sm" title="Удалить" @click="deleteNotebook(notebook.id)">
+            <button class="btn btn-ghost btn-sm" :title="t('common.delete')" @click="deleteNotebook(notebook.id)">
               <AppIcon name="trash" />
             </button>
           </article>
@@ -113,6 +110,7 @@ import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useApi } from '@/composables/useApi'
 import { useSettingsStore } from '@/stores/settings'
+import { useI18n } from '@/composables/useI18n'
 import AppIcon from '@/components/AppIcon.vue'
 import AppToast from '@/components/AppToast.vue'
 import { normalizeDocument } from '@/utils/documents'
@@ -121,6 +119,7 @@ import { buildNotebookRoute, normalizeNotebook } from '@/utils/notebooks'
 const { apiFetch } = useApi()
 const router = useRouter()
 const settings = useSettingsStore()
+const { t } = useI18n()
 
 const docs = ref([])
 const notebooks = ref([])
@@ -133,7 +132,7 @@ const toast = ref(null)
 
 const readyDocs = computed(() => docs.value.filter(doc => doc.status === 'done'))
 
-watch(() => settings.apiKey, loadData, { immediate: true })
+watch([() => settings.apiKey, () => settings.locale], loadData, { immediate: true })
 
 async function loadData() {
   if (!settings.isConnected) {
@@ -147,10 +146,10 @@ async function loadData() {
       apiFetch('/documents'),
       apiFetch('/notebooks'),
     ])
-    docs.value = docRows.map(normalizeDocument)
-    notebooks.value = notebookRows.map(normalizeNotebook)
+    docs.value = docRows.map(doc => normalizeDocument(doc, settings.locale))
+    notebooks.value = notebookRows.map(notebook => normalizeNotebook(notebook, settings.locale))
   } catch (e) {
-    toast.value = { msg: `Ошибка загрузки: ${e.message}`, type: 'error' }
+    toast.value = { msg: t('notebooks.loadError', { message: e.message }), type: 'error' }
   } finally {
     loading.value = false
   }
@@ -158,7 +157,7 @@ async function loadData() {
 
 async function createNotebook() {
   if (!settings.isConnected) {
-    toast.value = { msg: 'Задайте X-API-Key в настройках', type: 'error' }
+    toast.value = { msg: t('documents.apiKeyRequired'), type: 'error' }
     return
   }
   creating.value = true
@@ -172,13 +171,13 @@ async function createNotebook() {
         document_ids: selectedDocumentIds.value,
       }),
     })
-    notebooks.value = [normalizeNotebook(data), ...notebooks.value]
+    notebooks.value = [normalizeNotebook(data, settings.locale), ...notebooks.value]
     title.value = ''
     description.value = ''
     selectedDocumentIds.value = []
-    toast.value = { msg: 'Ноутбук создан', type: 'success' }
+    toast.value = { msg: t('notebooks.created'), type: 'success' }
   } catch (e) {
-    toast.value = { msg: `Ошибка создания: ${e.message}`, type: 'error' }
+    toast.value = { msg: t('notebooks.createError', { message: e.message }), type: 'error' }
   } finally {
     creating.value = false
   }
@@ -189,7 +188,7 @@ async function deleteNotebook(id) {
     await apiFetch(`/notebooks/${id}`, { method: 'DELETE' })
     notebooks.value = notebooks.value.filter(notebook => notebook.id !== id)
   } catch (e) {
-    toast.value = { msg: `Ошибка удаления: ${e.message}`, type: 'error' }
+    toast.value = { msg: t('notebooks.deleteError', { message: e.message }), type: 'error' }
   }
 }
 

@@ -2,25 +2,22 @@
   <div class="screen-body">
     <div class="kb-hero">
       <div>
-        <div class="kb-eyebrow">Общая память для всех чатов</div>
-        <h1>База знаний</h1>
-        <p>
-          Загруженные файлы индексируются один раз, а потом агент использует их
-          в любом новом чате с точными ссылками на источники.
-        </p>
+        <div class="kb-eyebrow">{{ t('documents.eyebrow') }}</div>
+        <h1>{{ t('documents.title') }}</h1>
+        <p>{{ t('documents.description') }}</p>
       </div>
       <div class="kb-stats">
         <div class="kb-stat">
           <span>{{ stats.ready }}</span>
-          <label>готово</label>
+          <label>{{ t('documents.ready') }}</label>
         </div>
         <div class="kb-stat">
           <span>{{ stats.processing }}</span>
-          <label>в работе</label>
+          <label>{{ t('documents.processing') }}</label>
         </div>
         <div class="kb-stat" :class="{ warn: stats.failed }">
           <span>{{ stats.failed }}</span>
-          <label>ошибки</label>
+          <label>{{ t('documents.failed') }}</label>
         </div>
       </div>
     </div>
@@ -35,8 +32,8 @@
       <div class="drop-icon">
         <AppIcon name="upload" :size="32" />
       </div>
-      <div class="drop-title">Добавьте документы в базу знаний</div>
-      <div class="drop-sub">PDF сохраняют страницы для цитат, остальные файлы индексируются фрагментами</div>
+      <div class="drop-title">{{ t('documents.uploadTitle') }}</div>
+      <div class="drop-sub">{{ t('documents.uploadDescription') }}</div>
       <div class="drop-types">
         <span v-for="t in ['PDF','DOCX','TXT','MD','CSV','HTML']" :key="t" class="type-chip">.{{ t.toLowerCase() }}</span>
       </div>
@@ -46,17 +43,17 @@
     <div class="card">
       <div class="card-header">
         <div>
-          <div class="card-title">Файлы памяти</div>
-          <div class="card-sub">{{ stats.ready }} из {{ stats.total }} готово для ответов во всех чатах</div>
+          <div class="card-title">{{ t('documents.memoryFiles') }}</div>
+          <div class="card-sub">{{ t('documents.readyCount', { ready: stats.ready, total: stats.total }) }}</div>
         </div>
         <div style="display: flex; gap: 8px; align-items: center">
           <div v-if="docs.length" class="progress" style="width: 100px">
             <div class="progress-fill" :style="{ width: stats.progressPct + '%' }"></div>
           </div>
-          <button class="btn btn-ghost btn-sm" title="Обновить" @click="loadDocs">
+          <button class="btn btn-ghost btn-sm" :title="t('common.refresh')" @click="loadDocs">
             <AppIcon name="refresh" :size="11" />
           </button>
-          <button class="btn btn-ghost btn-sm" title="Очистить список" @click="clearAll">
+          <button class="btn btn-ghost btn-sm" :title="t('documents.clearList')" @click="clearAll">
             <AppIcon name="trash" :size="11" />
           </button>
         </div>
@@ -64,13 +61,13 @@
 
       <div v-if="docs.length === 0" class="empty" style="padding: 40px">
         <div class="empty-icon">📂</div>
-        <div class="empty-title">База знаний пока пустая</div>
-        <div class="empty-sub">Загрузите документы, и агент сможет опираться на них в любом чате</div>
+        <div class="empty-title">{{ t('documents.emptyTitle') }}</div>
+        <div class="empty-sub">{{ t('documents.emptyDescription') }}</div>
       </div>
       <table v-else>
         <thead>
           <tr>
-            <th>Файл</th><th>Статус</th><th>Размер</th><th>Загружен</th><th></th>
+            <th>{{ t('documents.file') }}</th><th>{{ t('documents.status') }}</th><th>{{ t('documents.size') }}</th><th>{{ t('documents.uploaded') }}</th><th></th>
           </tr>
         </thead>
         <tbody>
@@ -104,24 +101,24 @@
               <div style="display: flex; gap: 6px; justify-content: flex-end">
                 <button
                   class="btn btn-ghost btn-sm"
-                  title="Открыть документ"
+                  :title="t('documents.openDocument')"
                   :disabled="doc._pending"
                   @click="openDocument(doc)"
                 >
                   <AppIcon name="docs" />
                 </button>
-                <button class="btn btn-ghost btn-sm" title="Копировать ID" @click="copyId(doc.id)">
+                <button class="btn btn-ghost btn-sm" :title="t('documents.copyId')" @click="copyId(doc.id)">
                   <AppIcon name="copy" />
                 </button>
                 <button
                   class="btn btn-ghost btn-sm"
-                  title="Переиндексировать"
+                  :title="t('documents.reindex')"
                   :disabled="!canReindexDocument(doc)"
                   @click="reindexDoc(doc)"
                 >
                   <AppIcon name="refresh" />
                 </button>
-                <button class="btn btn-ghost btn-sm" title="Удалить" @click="removeDoc(doc.id)">
+                <button class="btn btn-ghost btn-sm" :title="t('common.delete')" @click="removeDoc(doc.id)">
                   <AppIcon name="trash" />
                 </button>
               </div>
@@ -144,6 +141,7 @@ import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useApi } from '@/composables/useApi'
 import { useSettingsStore } from '@/stores/settings'
+import { useI18n } from '@/composables/useI18n'
 import AppIcon from '@/components/AppIcon.vue'
 import AppToast from '@/components/AppToast.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
@@ -157,6 +155,7 @@ import {
 
 const { apiFetch } = useApi()
 const settings = useSettingsStore()
+const { t } = useI18n()
 const router = useRouter()
 
 const docs = ref([])
@@ -171,11 +170,11 @@ async function loadDocs() {
     // merge: keep in-progress uploads that aren't in the API list yet
     const apiIds = new Set(data.map(d => d.id))
     const pending = docs.value.filter(d => d._pending && !apiIds.has(d.id))
-    docs.value = [...pending, ...data.map(normalizeDocument)]
+    docs.value = [...pending, ...data.map(doc => normalizeDocument(doc, settings.locale))]
   } catch { docs.value = [] }
 }
 
-watch(() => settings.apiKey, loadDocs, { immediate: true })
+watch([() => settings.apiKey, () => settings.locale], loadDocs, { immediate: true })
 
 const stats = computed(() => knowledgeBaseStats(docs.value))
 
@@ -196,20 +195,20 @@ async function removeDoc(id) {
     await apiFetch(`/documents/${id}`, { method: 'DELETE' })
     docs.value = docs.value.filter(d => d.id !== id)
   } catch (e) {
-    toast.value = { msg: `Ошибка удаления: ${e.message}`, type: 'error' }
+    toast.value = { msg: t('documents.deleteError', { message: e.message }), type: 'error' }
   }
 }
 
 async function reindexDoc(doc) {
   if (!canReindexDocument(doc)) return
   updateDoc(doc.id, { status: 'pending', error: null, _pending: true })
-  toast.value = { msg: `Переиндексация: ${doc.name}`, type: 'info' }
+  toast.value = { msg: t('documents.reindexing', { name: doc.name }), type: 'info' }
   try {
     await apiFetch(`/documents/${doc.id}/reindex`, { method: 'POST' })
     pollStatus(doc.id)
   } catch (e) {
     updateDoc(doc.id, { status: 'failed', error: e.message, _pending: false })
-    toast.value = { msg: `Ошибка переиндексации: ${e.message}`, type: 'error' }
+    toast.value = { msg: t('documents.reindexError', { message: e.message }), type: 'error' }
   }
 }
 
@@ -222,9 +221,12 @@ async function clearAll() {
     catch { failed.push(doc.id) }
   }))
   docs.value = docs.value.filter(d => d._pending || failed.includes(d.id))
-  if (failed.length) toast.value = { msg: `Не удалось удалить ${failed.length} документ(а)`, type: 'error' }
+  if (failed.length) toast.value = { msg: t('documents.deleteManyError', { count: failed.length }), type: 'error' }
 }
-function copyId(id) { navigator.clipboard.writeText(id).catch(() => {}); toast.value = { msg: `ID скопирован: ${id}`, type: 'info' } }
+function copyId(id) {
+  navigator.clipboard.writeText(id).catch(() => {})
+  toast.value = { msg: t('documents.idCopied', { id }), type: 'info' }
+}
 
 function updateDoc(id, patch) {
   docs.value = docs.value.map(d => d.id === id ? { ...d, ...patch } : d)
@@ -237,7 +239,7 @@ async function pollStatus(docId) {
     try {
       const data = await apiFetch(`/documents/${docId}`)
       if (data.status === 'done') {
-        updateDoc(docId, { ...normalizeDocument(data), _pending: false })
+        updateDoc(docId, { ...normalizeDocument(data, settings.locale), _pending: false })
         return
       }
       if (data.status === 'failed') { updateDoc(docId, { status: 'failed', error: data.error || 'Failed', _pending: false }); return }
@@ -248,11 +250,11 @@ async function pollStatus(docId) {
 }
 
 async function uploadFile(file) {
-  if (!settings.isConnected) { toast.value = { msg: 'Задайте X-API-Key в настройках', type: 'error' }; return }
+  if (!settings.isConnected) { toast.value = { msg: t('documents.apiKeyRequired'), type: 'error' }; return }
   const tempId = 'upload-' + Date.now()
   const size = formatFileSize(file.size)
-  docs.value = [{ id: tempId, name: file.name, status: 'processing', time: 'сейчас', error: null, size, _pending: true }, ...docs.value]
-  toast.value = { msg: `Загрузка: ${file.name}`, type: 'info' }
+  docs.value = [{ id: tempId, name: file.name, status: 'processing', time: t('documents.now'), error: null, size, _pending: true }, ...docs.value]
+  toast.value = { msg: t('documents.uploading', { name: file.name }), type: 'info' }
   try {
     const form = new FormData(); form.append('file', file)
     const data = await apiFetch('/documents', { method: 'POST', body: form })
@@ -260,7 +262,7 @@ async function uploadFile(file) {
     pollStatus(data.id)
   } catch (e) {
     updateDoc(tempId, { status: 'failed', error: e.message })
-    toast.value = { msg: `Ошибка: ${e.message}`, type: 'error' }
+    toast.value = { msg: t('common.error', { message: e.message }), type: 'error' }
   }
 }
 

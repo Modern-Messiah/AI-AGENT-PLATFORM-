@@ -3,14 +3,11 @@
     <div class="detail-hero">
       <div>
         <button class="back-link" type="button" @click="router.push('/documents')">
-          Назад к базе знаний
+          {{ t('documentDetail.back') }}
         </button>
-        <div class="detail-eyebrow">Документ в общей памяти</div>
-        <h1>{{ normalized?.name || 'Документ' }}</h1>
-        <p>
-          Здесь видно, что агент знает об этом файле: краткое описание,
-          вопросы для старта и фрагменты, по которым строятся ответы.
-        </p>
+        <div class="detail-eyebrow">{{ t('documentDetail.eyebrow') }}</div>
+        <h1>{{ normalized?.name || t('documentDetail.fallbackTitle') }}</h1>
+        <p>{{ t('documentDetail.description') }}</p>
       </div>
       <div v-if="normalized" class="detail-status">
         <StatusBadge :status="normalized.status" />
@@ -22,13 +19,13 @@
     <div v-if="loading" class="card">
       <div class="empty">
         <div class="spinner"></div>
-        <div class="empty-title">Загружаю документ</div>
+        <div class="empty-title">{{ t('documentDetail.loading') }}</div>
       </div>
     </div>
 
     <div v-else-if="error" class="card">
       <div class="empty">
-        <div class="empty-title">Не удалось открыть документ</div>
+        <div class="empty-title">{{ t('documentDetail.openError') }}</div>
         <div class="empty-sub">{{ error }}</div>
       </div>
     </div>
@@ -38,14 +35,14 @@
         <div class="card">
           <div class="card-header">
             <div>
-              <div class="card-title">Что внутри</div>
-              <div class="card-sub">Сводка после индексации</div>
+              <div class="card-title">{{ t('documentDetail.inside') }}</div>
+              <div class="card-sub">{{ t('documentDetail.summarySub') }}</div>
             </div>
           </div>
           <div class="detail-card-body">
             <p v-if="normalized.summary" class="summary-text">{{ normalized.summary }}</p>
             <div v-else class="muted-block">
-              Сводка появится после успешной индексации документа.
+              {{ t('documentDetail.summaryEmpty') }}
             </div>
           </div>
         </div>
@@ -53,8 +50,8 @@
         <div class="card">
           <div class="card-header">
             <div>
-              <div class="card-title">Спросить по документу</div>
-              <div class="card-sub">Ответ будет ограничен этим источником</div>
+              <div class="card-title">{{ t('documentDetail.askTitle') }}</div>
+              <div class="card-sub">{{ t('documentDetail.askSub') }}</div>
             </div>
           </div>
           <div class="detail-card-body">
@@ -70,7 +67,7 @@
               </button>
             </div>
             <button class="btn btn-primary ask-main" type="button" @click="openDocumentChat">
-              Открыть чат по этому документу
+              {{ t('documentDetail.openChat') }}
             </button>
           </div>
         </div>
@@ -79,20 +76,17 @@
       <div class="card chunks-card">
         <div class="card-header">
           <div>
-            <div class="card-title">Фрагменты индекса</div>
-            <div class="card-sub">{{ chunks.length }} фрагмент(ов), которые доступны RAG-поиску</div>
+            <div class="card-title">{{ t('documentDetail.chunksTitle') }}</div>
+            <div class="card-sub">{{ t('documentDetail.chunksCount', { count: chunks.length }) }}</div>
           </div>
           <button class="btn btn-ghost btn-sm" type="button" @click="loadDocument">
-            Обновить
+            {{ t('common.refresh') }}
           </button>
         </div>
 
         <div v-if="chunks.length === 0" class="empty">
-          <div class="empty-title">Фрагментов пока нет</div>
-          <div class="empty-sub">
-            Если документ ещё индексируется, подождите немного. Если статус готов,
-            попробуйте переиндексировать файл.
-          </div>
+          <div class="empty-title">{{ t('documentDetail.noChunks') }}</div>
+          <div class="empty-sub">{{ t('documentDetail.noChunksHint') }}</div>
         </div>
 
         <div v-else class="chunks-list">
@@ -104,8 +98,8 @@
           >
             <div class="chunk-meta">
               <span>#{{ chunk.chunk_index + 1 }}</span>
-              <span v-if="chunk.page">стр. {{ chunk.page }}</span>
-              <span v-if="isTargetChunk(chunk)">выбранный источник</span>
+              <span v-if="chunk.page">{{ t('documentDetail.page', { page: chunk.page }) }}</span>
+              <span v-if="isTargetChunk(chunk)">{{ t('documentDetail.selectedSource') }}</span>
             </div>
             <p>{{ chunk.excerpt }}</p>
           </article>
@@ -120,6 +114,7 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useApi } from '@/composables/useApi'
 import { useSettingsStore } from '@/stores/settings'
+import { useI18n } from '@/composables/useI18n'
 import StatusBadge from '@/components/StatusBadge.vue'
 import { buildDocumentChatRoute, buildQuestionRoute, normalizeDocument } from '@/utils/documents'
 
@@ -127,6 +122,7 @@ const route = useRoute()
 const router = useRouter()
 const { apiFetch } = useApi()
 const settings = useSettingsStore()
+const { t } = useI18n()
 
 const document = ref(null)
 const chunks = ref([])
@@ -134,7 +130,9 @@ const loading = ref(false)
 const error = ref('')
 
 const documentId = computed(() => String(route.params.id || ''))
-const normalized = computed(() => document.value ? normalizeDocument(document.value) : null)
+const normalized = computed(() => (
+  document.value ? normalizeDocument(document.value, settings.locale) : null
+))
 const targetChunkId = computed(() => (
   typeof route.query.chunk === 'string' ? route.query.chunk : ''
 ))
@@ -146,7 +144,9 @@ async function loadDocument() {
   if (!settings.isConnected || !documentId.value) {
     document.value = null
     chunks.value = []
-    error.value = settings.isConnected ? 'Документ не выбран' : 'Задайте X-API-Key в настройках'
+    error.value = settings.isConnected
+      ? t('documentDetail.notSelected')
+      : t('documents.apiKeyRequired')
     return
   }
 
@@ -185,11 +185,20 @@ function scrollToTargetChunk() {
 }
 
 function askQuestion(question) {
-  router.push(buildQuestionRoute(question, documentId.value, normalized.value?.name || ''))
+  router.push(buildQuestionRoute(
+    question,
+    documentId.value,
+    normalized.value?.name || '',
+    settings.locale,
+  ))
 }
 
 function openDocumentChat() {
-  router.push(buildDocumentChatRoute(documentId.value, normalized.value?.name || ''))
+  router.push(buildDocumentChatRoute(
+    documentId.value,
+    normalized.value?.name || '',
+    settings.locale,
+  ))
 }
 </script>
 

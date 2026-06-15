@@ -20,14 +20,16 @@ function roundTo(value, digits) {
   return Math.round(value * multiplier) / multiplier
 }
 
-function dayLabel(day) {
+function dayLabel(day, locale = 'ru') {
   if (typeof day === 'string') {
     const match = day.match(/^(\d{4})-(\d{2})-(\d{2})/)
-    if (match) return `${match[3]}.${match[2]}`
+    if (match) {
+      return locale === 'en' ? `${match[2]}/${match[3]}` : `${match[3]}.${match[2]}`
+    }
   }
   const date = new Date(day)
   if (Number.isNaN(date.getTime())) return String(day || '—')
-  return date.toLocaleDateString('ru', { day: '2-digit', month: '2-digit' })
+  return formatLocaleDate(date, locale, { day: '2-digit', month: '2-digit' })
 }
 
 function barHeight(value, max) {
@@ -35,7 +37,7 @@ function barHeight(value, max) {
   return Math.max(4, Math.round((Number(value || 0) / max) * 100))
 }
 
-export function buildAnalyticsDashboard(data) {
+export function buildAnalyticsDashboard(data, locale = 'ru') {
   const breakdown = data?.breakdown || []
   const daily = data?.daily || []
   const totalTokens = breakdown.reduce((sum, row) => sum + Number(row.total_tokens || 0), 0)
@@ -69,14 +71,14 @@ export function buildAnalyticsDashboard(data) {
   const maxDailyTokens = Math.max(...daily.map(row => Number(row.total_tokens || 0)), 0)
   const dailyTrend = daily.map(row => ({
     ...row,
-    dayLabel: dayLabel(row.day),
+    dayLabel: dayLabel(row.day, locale),
     costHeight: barHeight(row.total_cost_usd, maxDailyCost),
     tokensHeight: barHeight(row.total_tokens, maxDailyTokens),
   }))
 
-  let latencyHealth = { label: 'быстро', tone: 'good' }
-  if (avgLatencyMs >= 10_000) latencyHealth = { label: 'медленно', tone: 'bad' }
-  else if (avgLatencyMs >= 3_000) latencyHealth = { label: 'нормально', tone: 'warn' }
+  let latencyHealth = { label: translate(locale, 'analytics.fast'), tone: 'good' }
+  if (avgLatencyMs >= 10_000) latencyHealth = { label: translate(locale, 'analytics.slow'), tone: 'bad' }
+  else if (avgLatencyMs >= 3_000) latencyHealth = { label: translate(locale, 'analytics.normal'), tone: 'warn' }
 
   return {
     totals: {
@@ -91,3 +93,4 @@ export function buildAnalyticsDashboard(data) {
     latencyHealth,
   }
 }
+import { formatLocaleDate, translate } from '../i18n/index.js'

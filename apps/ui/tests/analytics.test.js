@@ -59,4 +59,11 @@ test('builds dashboard summary, provider mix and trend from usage data', () => {
     dashboard.dailyTrend.map(item => [item.dayLabel, item.costHeight, item.tokensHeight]),
     [['07.06', 48, 73], ['08.06', 100, 100]],
   )
+
+  const englishDashboard = buildAnalyticsDashboard(usage, 'en')
+  assert.equal(englishDashboard.latencyHealth.label, 'slow')
+  assert.deepEqual(
+    englishDashboard.dailyTrend.map(item => item.dayLabel),
+    ['06/07', '06/08'],
+  )
 })

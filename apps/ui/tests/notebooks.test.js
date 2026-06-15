@@ -51,6 +51,10 @@ test('builds notebook routes', () => {
       query: { notebook: 'notebook-1', fresh: '1', title: 'Ноутбук: Product research' },
     },
   )
+  assert.equal(
+    buildNotebookChatRoute('notebook-1', 'Product research', 'en').query.title,
+    'Notebook: Product research',
+  )
   assert.deepEqual(
     buildNotebookQuestionRoute('Что общее в источниках?', 'notebook-1', 'Product research'),
     {
@@ -94,6 +98,11 @@ test('normalizes notebook source cards', () => {
   assert.equal(sources[0].createdLabel, '07.06.2026')
   assert.equal(sources[1].isReady, false)
   assert.equal(sources[1].readinessLabel, 'Индексируется')
+
+  const englishSources = normalizeNotebookSources([
+    { id: 'doc-1', filename: 'manual.pdf', status: 'done' },
+  ], 'en')
+  assert.equal(englishSources[0].readinessLabel, 'Ready for questions')
 })
 
 test('uses only collection-level questions in the notebook overview', () => {

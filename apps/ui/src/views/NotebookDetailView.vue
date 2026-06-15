@@ -3,31 +3,28 @@
     <div class="notebook-detail-hero">
       <div>
         <button class="back-link" type="button" @click="router.push('/notebooks')">
-          Назад к ноутбукам
+          {{ t('notebookDetail.back') }}
         </button>
-        <div class="detail-eyebrow">Коллекция источников</div>
-        <h1>{{ normalized?.title || 'Ноутбук' }}</h1>
-        <p>
-          Вопросы из этого экрана идут только по документам внутри коллекции,
-          без смешивания со всей базой знаний.
-        </p>
+        <div class="detail-eyebrow">{{ t('notebookDetail.eyebrow') }}</div>
+        <h1>{{ normalized?.title || t('notebookDetail.fallbackTitle') }}</h1>
+        <p>{{ t('notebookDetail.description') }}</p>
       </div>
       <div v-if="normalized" class="detail-status">
-        <span>{{ normalized.documentCount }} документ(ов)</span>
-        <span>создан {{ normalized.createdLabel }}</span>
+        <span>{{ t('notebookDetail.documentCount', { count: normalized.documentCount }) }}</span>
+        <span>{{ t('notebookDetail.created', { date: normalized.createdLabel }) }}</span>
       </div>
     </div>
 
     <div v-if="loading" class="card">
       <div class="empty">
         <div class="spinner"></div>
-        <div class="empty-title">Загружаю ноутбук</div>
+        <div class="empty-title">{{ t('notebookDetail.loading') }}</div>
       </div>
     </div>
 
     <div v-else-if="error" class="card">
       <div class="empty">
-        <div class="empty-title">Не удалось открыть ноутбук</div>
+        <div class="empty-title">{{ t('notebookDetail.openError') }}</div>
         <div class="empty-sub">{{ error }}</div>
       </div>
     </div>
@@ -37,9 +34,11 @@
         <div class="card">
           <div class="card-header">
             <div>
-              <div class="card-title">Обзор коллекции</div>
+              <div class="card-title">{{ t('notebookDetail.overview') }}</div>
               <div class="card-sub">
-                {{ normalized.insightsUpdatedLabel === '—' ? 'Ещё не собран' : `обновлён ${normalized.insightsUpdatedLabel}` }}
+                {{ normalized.insightsUpdatedLabel === '—'
+                  ? t('notebookDetail.notGenerated')
+                  : t('notebookDetail.updated', { date: normalized.insightsUpdatedLabel }) }}
               </div>
             </div>
             <button
@@ -48,19 +47,19 @@
               :disabled="refreshingInsights || includedSources.length === 0"
               @click="refreshInsights"
             >
-              {{ refreshingInsights ? 'Обновляю...' : 'Обновить обзор' }}
+              {{ refreshingInsights ? t('notebookDetail.refreshing') : t('notebookDetail.refreshOverview') }}
             </button>
           </div>
           <div class="detail-card-body">
             <template v-if="normalized.summary">
-              <div class="overview-label">Краткий обзор</div>
+              <div class="overview-label">{{ t('notebookDetail.summary') }}</div>
               <p class="summary-text">{{ normalized.summary }}</p>
             </template>
             <div v-else class="muted-block">
-              Нажмите «Обновить обзор», чтобы собрать краткое описание, темы и вопросы по этой коллекции.
+              {{ t('notebookDetail.overviewEmpty') }}
             </div>
             <div v-if="normalized.keyTopics.length" class="overview-section">
-              <div class="overview-label">Ключевые темы</div>
+              <div class="overview-label">{{ t('notebookDetail.topics') }}</div>
               <div class="topic-row">
                 <span v-for="topic in normalized.keyTopics" :key="topic" class="topic-chip">
                   {{ topic }}
@@ -68,8 +67,8 @@
               </div>
             </div>
             <div v-if="suggestedQuestions.length" class="overview-section">
-              <div class="overview-label">Вопросы для чата</div>
-              <div class="overview-hint">Нажмите на вопрос, чтобы открыть чат по этой коллекции.</div>
+              <div class="overview-label">{{ t('notebookDetail.questions') }}</div>
+              <div class="overview-hint">{{ t('notebookDetail.questionsHint') }}</div>
               <div class="detail-questions">
                 <button
                   v-for="question in suggestedQuestions"
@@ -86,7 +85,7 @@
               {{ normalized.description }}
             </div>
             <button class="btn btn-primary ask-main" type="button" @click="askDefaultQuestion">
-              Открыть чат по коллекции
+              {{ t('notebookDetail.openChat') }}
             </button>
           </div>
         </div>
@@ -94,8 +93,8 @@
         <div class="card">
           <div class="card-header">
             <div>
-              <div class="card-title">Состав ноутбука</div>
-              <div class="card-sub">Добавьте документы, которых ещё нет в коллекции</div>
+              <div class="card-title">{{ t('notebookDetail.contents') }}</div>
+              <div class="card-sub">{{ t('notebookDetail.contentsSub') }}</div>
             </div>
             <button
               class="btn btn-ghost btn-sm"
@@ -103,7 +102,7 @@
               :disabled="saving || pendingAddDocumentIds.length === 0"
               @click="saveDocuments"
             >
-              {{ saving ? 'Сохраняю...' : addButtonLabel }}
+              {{ saving ? t('common.saving') : addButtonLabel }}
             </button>
           </div>
           <div
@@ -114,11 +113,11 @@
             @click="fileInput?.click()"
           >
             <div>
-              <strong>{{ uploading ? 'Загружаю файл...' : 'Загрузить файл в этот ноутбук' }}</strong>
-              <span>Файл сразу попадёт в коллекцию и начнёт индексироваться</span>
+              <strong>{{ uploading ? t('notebookDetail.uploading') : t('notebookDetail.upload') }}</strong>
+              <span>{{ t('notebookDetail.uploadHint') }}</span>
             </div>
             <button class="btn btn-ghost btn-sm" type="button" :disabled="uploading">
-              Выбрать
+              {{ t('common.choose') }}
             </button>
             <input
               ref="fileInput"
@@ -129,8 +128,8 @@
             />
           </div>
           <div class="picker-heading">
-            <span>Доступно для добавления</span>
-            <small>{{ availableDocs.length }} документ(ов)</small>
+            <span>{{ t('notebookDetail.available') }}</span>
+            <small>{{ t('notebookDetail.availableCount', { count: availableDocs.length }) }}</small>
           </div>
           <div class="doc-picker">
             <label v-for="doc in availableDocs" :key="doc.id" class="doc-option">
@@ -141,7 +140,7 @@
               </span>
             </label>
             <div v-if="availableDocs.length === 0" class="muted-block">
-              Все готовые документы уже в ноутбуке. Новые файлы можно загрузить прямо сюда.
+              {{ t('notebookDetail.allAdded') }}
             </div>
           </div>
         </div>
@@ -150,18 +149,18 @@
       <div class="card sources-card">
         <div class="card-header">
           <div>
-            <div class="card-title">Источники ноутбука</div>
+            <div class="card-title">{{ t('notebookDetail.sources') }}</div>
             <div class="card-sub">
-              {{ includedSources.length }} источник(ов), {{ readySourceCount }} готово для вопросов
+              {{ t('notebookDetail.sourceCount', { count: includedSources.length, ready: readySourceCount }) }}
             </div>
           </div>
           <button class="btn btn-ghost btn-sm" type="button" @click="loadNotebook">
-            Обновить
+            {{ t('common.refresh') }}
           </button>
         </div>
         <div v-if="includedSources.length === 0" class="empty">
-          <div class="empty-title">Коллекция пустая</div>
-          <div class="empty-sub">Добавьте хотя бы один готовый документ и сохраните состав</div>
+          <div class="empty-title">{{ t('notebookDetail.empty') }}</div>
+          <div class="empty-sub">{{ t('notebookDetail.emptySub') }}</div>
         </div>
         <div v-else class="source-list">
           <article v-for="source in includedSources" :key="source.id" class="source-card">
@@ -183,7 +182,7 @@
             </div>
             <div class="source-actions">
               <RouterLink class="btn btn-ghost btn-sm" :to="buildDocumentRoute(source.id)">
-                Открыть
+                {{ t('common.open') }}
               </RouterLink>
               <button
                 class="btn btn-ghost btn-sm"
@@ -191,7 +190,7 @@
                 :disabled="!source.isReady"
                 @click="askSource(source)"
               >
-                Спросить
+                {{ t('notebookDetail.ask') }}
               </button>
               <button
                 class="btn btn-ghost btn-sm"
@@ -199,7 +198,7 @@
                 :disabled="saving"
                 @click="excludeSource(source.id)"
               >
-                Исключить
+                {{ t('notebookDetail.exclude') }}
               </button>
             </div>
           </article>
@@ -216,6 +215,7 @@ import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useApi } from '@/composables/useApi'
 import { useSettingsStore } from '@/stores/settings'
+import { useI18n } from '@/composables/useI18n'
 import AppToast from '@/components/AppToast.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import { buildDocumentRoute, formatFileSize, normalizeDocument } from '@/utils/documents'
@@ -234,6 +234,7 @@ const route = useRoute()
 const router = useRouter()
 const { apiFetch } = useApi()
 const settings = useSettingsStore()
+const { t } = useI18n()
 
 const notebook = ref(null)
 const allDocs = ref([])
@@ -248,28 +249,34 @@ const toast = ref(null)
 const fileInput = ref(null)
 
 const notebookId = computed(() => String(route.params.id || ''))
-const normalized = computed(() => notebook.value ? normalizeNotebook(notebook.value) : null)
+const normalized = computed(() => (
+  notebook.value ? normalizeNotebook(notebook.value, settings.locale) : null
+))
 const currentDocumentIds = computed(() => normalized.value?.documentIds || [])
 const availableDocs = computed(() => (
   filterAvailableNotebookDocuments(allDocs.value, currentDocumentIds.value)
 ))
-const includedSources = computed(() => normalizeNotebookSources(normalized.value?.documents || []))
+const includedSources = computed(() => (
+  normalizeNotebookSources(normalized.value?.documents || [], settings.locale)
+))
 const readySourceCount = computed(() => includedSources.value.filter(source => source.isReady).length)
 const addButtonLabel = computed(() => (
   pendingAddDocumentIds.value.length
-    ? `Добавить (${pendingAddDocumentIds.value.length})`
-    : 'Добавить'
+    ? t('notebookDetail.addCount', { count: pendingAddDocumentIds.value.length })
+    : t('common.add')
 ))
 const suggestedQuestions = computed(() => notebookOverviewQuestions(normalized.value))
 
-watch([() => settings.apiKey, notebookId], loadNotebook, { immediate: true })
+watch([() => settings.apiKey, () => settings.locale, notebookId], loadNotebook, { immediate: true })
 
 async function loadNotebook() {
   if (!settings.isConnected || !notebookId.value) {
     notebook.value = null
     allDocs.value = []
     pendingAddDocumentIds.value = []
-    error.value = settings.isConnected ? 'Ноутбук не выбран' : 'Задайте X-API-Key в настройках'
+    error.value = settings.isConnected
+      ? t('notebookDetail.notSelected')
+      : t('documents.apiKeyRequired')
     return
   }
   loading.value = true
@@ -280,7 +287,7 @@ async function loadNotebook() {
       apiFetch('/documents'),
     ])
     notebook.value = notebookData
-    allDocs.value = documentRows.map(normalizeDocument)
+    allDocs.value = documentRows.map(doc => normalizeDocument(doc, settings.locale))
     pendingAddDocumentIds.value = []
   } catch (e) {
     notebook.value = null
@@ -306,10 +313,10 @@ async function saveDocuments(options = {}) {
     })
     notebook.value = data
     pendingAddDocumentIds.value = []
-    toast.value = { msg: options.successMessage || 'Состав ноутбука сохранён', type: 'success' }
+    toast.value = { msg: options.successMessage || t('notebookDetail.saved'), type: 'success' }
     return true
   } catch (e) {
-    toast.value = { msg: `Ошибка сохранения: ${e.message}`, type: 'error' }
+    toast.value = { msg: t('notebookDetail.saveError', { message: e.message }), type: 'error' }
     return false
   } finally {
     saving.value = false
@@ -318,7 +325,7 @@ async function saveDocuments(options = {}) {
 
 async function uploadFiles(files) {
   if (!settings.isConnected) {
-    toast.value = { msg: 'Задайте X-API-Key в настройках', type: 'error' }
+    toast.value = { msg: t('documents.apiKeyRequired'), type: 'error' }
     return
   }
   const uploadList = Array.from(files || []).filter(file => file.size > 0)
@@ -338,9 +345,9 @@ async function uploadFiles(files) {
     }
     await loadNotebook()
     uploadedDocumentIds.forEach(pollUploadedDocument)
-    toast.value = { msg: `Загружено: ${uploadList.length}`, type: 'success' }
+    toast.value = { msg: t('notebookDetail.uploaded', { count: uploadList.length }), type: 'success' }
   } catch (e) {
-    toast.value = { msg: `Ошибка загрузки: ${e.message}`, type: 'error' }
+    toast.value = { msg: t('notebookDetail.uploadError', { message: e.message }), type: 'error' }
   } finally {
     uploading.value = false
   }
@@ -376,29 +383,38 @@ async function refreshInsights() {
   try {
     const data = await apiFetch(`/notebooks/${notebookId.value}/insights`, { method: 'POST' })
     notebook.value = data
-    toast.value = { msg: 'Обзор коллекции обновлён', type: 'success' }
+    toast.value = { msg: t('notebookDetail.overviewUpdated'), type: 'success' }
   } catch (e) {
-    toast.value = { msg: `Ошибка обзора: ${e.message}`, type: 'error' }
+    toast.value = { msg: t('notebookDetail.overviewError', { message: e.message }), type: 'error' }
   } finally {
     refreshingInsights.value = false
   }
 }
 
 function askQuestion(question) {
-  router.push(buildNotebookQuestionRoute(question, notebookId.value, normalized.value?.title || ''))
+  router.push(buildNotebookQuestionRoute(
+    question,
+    notebookId.value,
+    normalized.value?.title || '',
+    settings.locale,
+  ))
 }
 
 function askSource(source) {
-  askQuestion(`Что важно в ${source.name}?`)
+  askQuestion(t('notebookDetail.askSource', { name: source.name }))
 }
 
 async function excludeSource(documentId) {
   const documentIds = currentDocumentIds.value.filter(id => id !== documentId)
-  await saveDocuments({ documentIds, successMessage: 'Источник исключён из ноутбука' })
+  await saveDocuments({ documentIds, successMessage: t('notebookDetail.excluded') })
 }
 
 function askDefaultQuestion() {
-  router.push(buildNotebookChatRoute(notebookId.value, normalized.value?.title || ''))
+  router.push(buildNotebookChatRoute(
+    notebookId.value,
+    normalized.value?.title || '',
+    settings.locale,
+  ))
 }
 </script>
 

@@ -2,7 +2,7 @@ function cleanId(value) {
   return typeof value === 'string' && value.trim() ? value.trim() : null
 }
 
-export function normalizeChatScope(query = {}) {
+export function normalizeChatScope(query = {}, locale = 'ru') {
   const documentId = cleanId(query.document)
   const notebookId = cleanId(query.notebook)
 
@@ -11,9 +11,9 @@ export function normalizeChatScope(query = {}) {
       type: 'notebook',
       documentId: null,
       notebookId,
-      title: 'Чат по ноутбуку',
-      description: 'Следующие вопросы ищут ответы и цитаты только внутри этой коллекции.',
-      backLabel: 'Открыть ноутбук',
+      title: translate(locale, 'chat.scopeNotebookTitle'),
+      description: translate(locale, 'chat.scopeNotebookDescription'),
+      backLabel: translate(locale, 'chat.scopeNotebookBack'),
       backPath: `/notebooks/${notebookId}`,
     }
   }
@@ -23,9 +23,9 @@ export function normalizeChatScope(query = {}) {
       type: 'document',
       documentId,
       notebookId: null,
-      title: 'Чат по документу',
-      description: 'Следующие вопросы ищут ответы и цитаты только внутри этого документа.',
-      backLabel: 'Открыть документ',
+      title: translate(locale, 'chat.scopeDocumentTitle'),
+      description: translate(locale, 'chat.scopeDocumentDescription'),
+      backLabel: translate(locale, 'chat.scopeDocumentBack'),
       backPath: `/documents/${documentId}`,
     }
   }
@@ -53,37 +53,40 @@ export function scopeSendOptions(scope) {
   return {}
 }
 
-export function scopeSessionTitle(scope, fallbackTitle = '') {
+export function scopeSessionTitle(scope, fallbackTitle = '', locale = 'ru') {
   const title = String(fallbackTitle || '').trim()
   if (title) return title
-  if (scope?.type === 'notebook') return 'Ноутбук: новая сессия'
-  if (scope?.type === 'document') return 'Документ: новая сессия'
-  return 'New Chat'
+  if (scope?.type === 'notebook') return translate(locale, 'chat.notebookSession')
+  if (scope?.type === 'document') return translate(locale, 'chat.documentSession')
+  return translate(locale, 'chat.newChat')
 }
 
-export function sessionScopeMeta(title = '') {
-  const match = String(title || '').trim().match(/^(Ноутбук|Документ):\s*(.+)$/)
+export function sessionScopeMeta(title = '', locale = 'ru') {
+  const match = String(title || '').trim().match(/^(Ноутбук|Документ|Notebook|Document):\s*(.+)$/)
   if (!match) return null
 
-  const badge = match[1]
-  const type = badge === 'Ноутбук' ? 'notebook' : 'document'
+  const type = match[1] === 'Ноутбук' || match[1] === 'Notebook' ? 'notebook' : 'document'
+  const badge = translate(locale, type === 'notebook' ? 'chat.notebookBadge' : 'chat.documentBadge')
   const sourceTitle = match[2].trim()
   return {
     type,
     badge,
     title: sourceTitle,
-    subtitle: type === 'notebook'
-      ? `Чат по ноутбуку «${sourceTitle}»`
-      : `Чат по документу «${sourceTitle}»`,
+    subtitle: translate(
+      locale,
+      type === 'notebook' ? 'chat.notebookSubtitle' : 'chat.documentSubtitle',
+      { title: sourceTitle },
+    ),
   }
 }
 
-export function scopeWelcomeMessage(scope) {
+export function scopeWelcomeMessage(scope, locale = 'ru') {
   if (scope?.type === 'notebook') {
-    return 'Это отдельный чат по ноутбуку. Следующие ответы будут искать информацию только по документам внутри этого ноутбука.'
+    return translate(locale, 'chat.notebookWelcome')
   }
   if (scope?.type === 'document') {
-    return 'Это отдельный чат по документу. Следующие ответы будут искать информацию только внутри этого файла.'
+    return translate(locale, 'chat.documentWelcome')
   }
   return ''
 }
+import { translate } from '../i18n/index.js'
