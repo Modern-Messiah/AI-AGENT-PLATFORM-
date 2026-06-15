@@ -271,7 +271,7 @@ watch([() => chat.messages.length, () => chat.isActiveSessionLoading(), () => ch
   background:
     linear-gradient(135deg, color-mix(in oklch, var(--accent) 7%, transparent), transparent 42%),
     var(--s2);
-  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.22);
+  box-shadow: 0 14px 36px var(--shadow-soft);
 }
 .citation-panel-header {
   display: flex;

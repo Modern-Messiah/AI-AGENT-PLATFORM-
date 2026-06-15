@@ -2,11 +2,13 @@ import { defineStore } from 'pinia'
 import { ref, computed, watch } from 'vue'
 import { resolveApiConfig } from '@/utils/apiConfig'
 import { normalizeLocale, translate } from '@/i18n'
+import { applyTheme, DEFAULT_THEME, normalizeTheme, persistTheme } from '@/utils/theme'
 
 export const useSettingsStore = defineStore('settings', () => {
   const apiKey = ref('')
   const baseUrl = ref('/api')
   const locale = ref('ru')
+  const theme = ref(DEFAULT_THEME)
   const keySource = ref('missing')
   const keyStatus = ref('unknown') // 'unknown' | 'valid' | 'invalid'
 
@@ -17,6 +19,7 @@ export const useSettingsStore = defineStore('settings', () => {
       apiKey.value = resolved.apiKey
       baseUrl.value = resolved.baseUrl
       locale.value = normalizeLocale(cfg.locale)
+      theme.value = normalizeTheme(cfg.theme)
       keySource.value = resolved.keySource
     } catch {}
   }
@@ -27,7 +30,11 @@ export const useSettingsStore = defineStore('settings', () => {
     if (resolved.isKeyManagedByEnv) {
       apiKey.value = resolved.apiKey
       keySource.value = 'env'
-      localStorage.setItem('aap_config', JSON.stringify({ base: baseUrl.value, locale: locale.value }))
+      localStorage.setItem('aap_config', JSON.stringify({
+        base: baseUrl.value,
+        locale: locale.value,
+        theme: theme.value,
+      }))
       return
     }
 
@@ -37,6 +44,7 @@ export const useSettingsStore = defineStore('settings', () => {
       apiKey: apiKey.value,
       base: baseUrl.value,
       locale: locale.value,
+      theme: theme.value,
     }))
   }
 
@@ -45,6 +53,13 @@ export const useSettingsStore = defineStore('settings', () => {
     try {
       const cfg = JSON.parse(localStorage.getItem('aap_config') || '{}')
       localStorage.setItem('aap_config', JSON.stringify({ ...cfg, locale: locale.value }))
+    } catch {}
+  }
+
+  function setTheme(value) {
+    theme.value = normalizeTheme(value)
+    try {
+      persistTheme(localStorage, theme.value)
     } catch {}
   }
 
@@ -57,6 +72,9 @@ export const useSettingsStore = defineStore('settings', () => {
     if (globalThis.document?.documentElement) {
       globalThis.document.documentElement.lang = value
     }
+  }, { immediate: true })
+  watch(theme, value => {
+    applyTheme(value)
   }, { immediate: true })
 
   const keyMasked    = computed(() => (
@@ -72,10 +90,12 @@ export const useSettingsStore = defineStore('settings', () => {
     apiKey,
     baseUrl,
     locale,
+    theme,
     keySource,
     keyStatus,
     save,
     setLocale,
+    setTheme,
     markValid,
     markInvalid,
     keyMasked,

@@ -1,6 +1,6 @@
 <template>
   <div class="modal-overlay" @click.self="!validating && $emit('close')">
-    <div class="modal">
+    <div class="modal settings-modal">
       <div class="modal-title">{{ t('settings.title') }}</div>
       <div class="modal-sub">
         {{ keyManagedByEnv
@@ -42,6 +42,32 @@
         <div class="language-hint">{{ t('settings.languageHint') }}</div>
       </div>
 
+      <div class="form-group">
+        <label class="form-label">{{ t('settings.theme') }}</label>
+        <div class="theme-grid" role="group" :aria-label="t('settings.theme')">
+          <button
+            v-for="option in themeOptions"
+            :key="option.id"
+            type="button"
+            :class="['theme-option', { active: settings.theme === option.id }]"
+            :aria-label="t(option.labelKey)"
+            :aria-pressed="settings.theme === option.id"
+            @click="settings.setTheme(option.id)"
+          >
+            <span class="theme-swatches" aria-hidden="true">
+              <span
+                v-for="swatch in option.swatches"
+                :key="swatch"
+                class="theme-swatch"
+                :style="{ background: swatch }"
+              />
+            </span>
+            <span class="theme-name">{{ t(option.labelKey) }}</span>
+          </button>
+        </div>
+        <div class="language-hint">{{ t('settings.themeHint') }}</div>
+      </div>
+
       <div v-if="error" style="margin-bottom: 14px; padding: 9px 12px; background: color-mix(in oklch, var(--red) 10%, transparent); border: 1px solid color-mix(in oklch, var(--red) 30%, transparent); border-radius: 8px; font-size: 12px; color: var(--red)">
         {{ error }}
       </div>
@@ -61,6 +87,7 @@
 import { computed, ref } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
 import { useI18n } from '@/composables/useI18n'
+import { THEMES } from '@/utils/theme'
 
 const emit = defineEmits(['close'])
 const settings = useSettingsStore()
@@ -69,6 +96,7 @@ const languageOptions = computed(() => [
   { value: 'ru', label: t('settings.russian') },
   { value: 'en', label: t('settings.english') },
 ])
+const themeOptions = THEMES
 
 const localKey  = ref(settings.apiKey)
 const localBase = ref(settings.baseUrl)
@@ -107,6 +135,11 @@ async function save() {
 </script>
 
 <style scoped>
+.settings-modal {
+  width: 520px;
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+}
 .env-note {
   margin-bottom: 16px;
   padding: 10px 12px;
@@ -150,5 +183,63 @@ async function save() {
   margin-top: 6px;
   color: var(--muted);
   font-size: 11px;
+}
+.theme-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.theme-option {
+  min-width: 0;
+  min-height: 64px;
+  padding: 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--s2);
+  color: var(--muted2);
+  cursor: pointer;
+  font-family: var(--font);
+  text-align: left;
+  transition: border-color 0.12s, background 0.12s, color 0.12s, transform 0.12s;
+}
+.theme-option:hover {
+  border-color: var(--border2);
+  background: var(--s3);
+  color: var(--text);
+  transform: translateY(-1px);
+}
+.theme-option:focus-visible {
+  outline: 2px solid color-mix(in oklch, var(--accent) 55%, transparent);
+  outline-offset: 2px;
+}
+.theme-option.active {
+  border-color: var(--accent);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.theme-swatches {
+  display: flex;
+  height: 18px;
+  margin-bottom: 8px;
+  overflow: hidden;
+  border: 1px solid color-mix(in oklch, var(--border2) 70%, transparent);
+  border-radius: 5px;
+}
+.theme-swatch {
+  flex: 1;
+}
+.theme-name {
+  display: block;
+  overflow: hidden;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (max-width: 520px) {
+  .theme-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 </style>
