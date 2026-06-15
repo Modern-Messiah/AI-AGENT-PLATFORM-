@@ -13,6 +13,10 @@ const documentsViewSource = readFileSync(
   resolve(__dirname, '../src/views/DocumentsView.vue'),
   'utf8',
 )
+const protectedAssetSource = readFileSync(
+  resolve(__dirname, '../src/components/ProtectedAssetImage.vue'),
+  'utf8',
+)
 const desktopDetailRule = viewSource.match(/\.document-detail\s*\{([^}]*)\}/)?.[1] || ''
 
 test('document chunks list has a dedicated scrollable layout region', () => {
@@ -38,4 +42,29 @@ test('knowledge base file table does not render document insights inline', () =>
   assert.doesNotMatch(documentsViewSource, /doc-insights-row/)
   assert.doesNotMatch(documentsViewSource, /class="doc-summary"/)
   assert.doesNotMatch(documentsViewSource, /class="doc-questions"/)
+})
+
+test('knowledge base accepts image sources and shows page progress', () => {
+  assert.match(documentsViewSource, /accept="[^"]*image\/png[^"]*image\/jpeg[^"]*image\/webp/)
+  assert.match(documentsViewSource, /doc\.processedPages/)
+  assert.match(documentsViewSource, /doc\.totalPages/)
+})
+
+test('document detail loads visual assets through the protected preview component', () => {
+  assert.match(viewSource, /apiFetch\(`\/documents\/\$\{documentId\.value\}\/assets`\)/)
+  assert.match(viewSource, /<ProtectedAssetImage/)
+  assert.match(viewSource, /class="asset-gallery"/)
+})
+
+test('protected asset preview aborts stale authenticated image requests', () => {
+  assert.match(protectedAssetSource, /new AbortController\(\)/)
+  assert.match(protectedAssetSource, /signal:\s*controller\.signal/)
+  assert.match(protectedAssetSource, /requestController\s*===\s*controller/)
+  assert.match(protectedAssetSource, /requestController\?\.abort\(\)/)
+})
+
+test('protected asset previews load lazily for documents with many pages', () => {
+  assert.match(protectedAssetSource, /new globalThis\.IntersectionObserver/)
+  assert.match(protectedAssetSource, /rootMargin:\s*'200px'/)
+  assert.match(protectedAssetSource, /if \(!visible\.value\)/)
 })

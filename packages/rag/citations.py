@@ -15,6 +15,9 @@ class CitationSource(BaseModel):
     chunk_id: str
     filename: str
     page: int | None = Field(default=None, ge=1)
+    asset_id: str | None = None
+    asset_kind: str | None = None
+    preview_available: bool = False
     chunk_index: int = Field(ge=0)
     excerpt: str
     score: float
@@ -53,6 +56,14 @@ def build_citations(chunks: list[RetrievedChunk]) -> list[CitationSource]:
     for citation_id, chunk in enumerate(chunks, start=1):
         raw_page = chunk.metadata.get("page")
         page = raw_page if isinstance(raw_page, int) and raw_page > 0 else None
+        raw_asset_id = chunk.metadata.get("asset_id")
+        asset_id = raw_asset_id if isinstance(raw_asset_id, str) and raw_asset_id else None
+        raw_asset_kind = chunk.metadata.get("asset_kind")
+        asset_kind = (
+            raw_asset_kind
+            if isinstance(raw_asset_kind, str) and raw_asset_kind
+            else None
+        )
         citations.append(
             CitationSource(
                 id=citation_id,
@@ -60,6 +71,11 @@ def build_citations(chunks: list[RetrievedChunk]) -> list[CitationSource]:
                 chunk_id=chunk.chunk_id,
                 filename=chunk.filename,
                 page=page,
+                asset_id=asset_id,
+                asset_kind=asset_kind,
+                preview_available=bool(
+                    asset_id and chunk.metadata.get("preview_available") is True
+                ),
                 chunk_index=chunk.chunk_idx,
                 excerpt=chunk.content.strip(),
                 score=chunk.score,
@@ -74,28 +90,33 @@ def build_grounded_messages(
     *,
     max_context_chars: int,
 ) -> list[dict[str, str]]:
-    context_parts: list[str] = []
-    used_chars = 0
-
+    separator = "\n\n---\n\n"
+    headers: list[str] = []
     for citation in citations:
         location = (
             f"page {citation.page}"
             if citation.page is not None
             else f"chunk {citation.chunk_index}"
         )
-        header = f"[{citation.id}] {citation.filename} ({location}, score={citation.score:.3f})\n"
-        remaining = max_context_chars - used_chars - len(header)
-        if remaining <= 0:
-            break
+        headers.append(
+            f"[{citation.id}] {citation.filename} "
+            f"({location}, score={citation.score:.3f})\n"
+        )
 
+    fixed_chars = sum(map(len, headers)) + max(0, len(headers) - 1) * len(separator)
+    available_content = max(0, max_context_chars - fixed_chars)
+    per_citation = available_content // len(citations) if citations else 0
+
+    context_parts: list[str] = []
+    for citation, header in zip(citations, headers, strict=True):
         content = citation.excerpt
-        if len(content) > remaining:
-            content = content[:remaining].rsplit(" ", 1)[0].strip()
-        block = f"{header}{content}"
-        context_parts.append(block)
-        used_chars += len(block)
+        if len(content) > per_citation:
+            content = content[:per_citation].rsplit(" ", 1)[0].strip()
+            if not content and per_citation:
+                content = citation.excerpt[:per_citation]
+        context_parts.append(f"{header}{content}")
 
-    context = "\n\n---\n\n".join(context_parts)
+    context = separator.join(context_parts)
     return [
         {
             "role": "system",

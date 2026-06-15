@@ -4,7 +4,7 @@
 
 **Goal:** Make Russian questions about diagrams retrieve complete diagram logic and preserve every selected citation in the LLM context.
 
-**Architecture:** pgvector remains the candidate generator. A small pure-Python reranker adds Unicode lexical relevance, visual descriptions are sectioned before chunking, and context assembly allocates space fairly across citations. The embedding model changes to a 384-dimensional multilingual model without a database migration.
+**Architecture:** pgvector remains the candidate generator. A small pure-Python reranker adds Unicode lexical relevance, visual descriptions are sectioned before chunking, and context assembly allocates space fairly across citations. A 384-dimensional multilingual embedding model is available as an opt-in without a database migration.
 
 **Tech Stack:** Python 3.12, FastAPI, SQLAlchemy, pgvector, FastEmbed, LangChain text splitters, pytest.
 
@@ -55,10 +55,10 @@
 - Test: `tests/unit/test_ingestion_metadata.py`
 - Test: `tests/unit/test_retriever_reranking.py`
 
-- [ ] Change the default to `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`.
+- [ ] Document `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` as an opt-in model that requires complete reindexing.
 - [ ] Store `embedding_model` in chunk metadata.
-- [ ] Filter retrieval to chunks created by the active embedding model.
-- [ ] Verify stale vectors cannot be mixed with current vectors.
+- [ ] Keep the existing model as the backward-compatible default.
+- [ ] Verify the worktree can reindex all local documents with the opt-in model.
 
 ### Task 5: Diagram-Focused Vision
 
@@ -81,4 +81,3 @@
 - [ ] Reindex the incident-bot PDF.
 - [ ] Run the three acceptance questions and inspect cited pages.
 - [ ] Review container logs for errors.
-

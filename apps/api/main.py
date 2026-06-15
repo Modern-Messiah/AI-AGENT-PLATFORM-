@@ -71,6 +71,8 @@ from packages.storage import (
     ChatSession,
     Chunk,
     Document,
+    DocumentAsset,
+    DocumentAssetStatus,
     DocumentStatus,
     Notebook,
     NotebookDocument,
@@ -80,7 +82,7 @@ from packages.storage import (
 from packages.storage.db import tenant_session
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import delete, func, select, update
-from starlette.responses import StreamingResponse
+from starlette.responses import Response, StreamingResponse
 from temporalio.client import Client
 from temporalio.service import RPCError
 
@@ -256,8 +258,27 @@ class DocumentResponse(BaseModel):
     size_bytes: int = 0
     summary: str | None = None
     suggested_questions: list[str] = Field(default_factory=list)
+    processing_stage: str = "queued"
+    processed_pages: int = 0
+    total_pages: int = 0
+    warnings: list[str] = Field(default_factory=list)
     error: str | None = None
     created_at: str | None = None
+
+
+class DocumentAssetResponse(BaseModel):
+    id: str
+    document_id: str
+    page_number: int | None = None
+    asset_kind: str
+    ocr_text: str = ""
+    ocr_confidence: float | None = None
+    vision_description: str = ""
+    width: int = 0
+    height: int = 0
+    status: DocumentAssetStatus
+    error: str | None = None
+    preview_available: bool = False
 
 
 class DocumentChunkPreview(BaseModel):
@@ -350,8 +371,29 @@ def _document_response(doc: Document) -> DocumentResponse:
         size_bytes=doc.size_bytes,
         summary=doc.summary,
         suggested_questions=doc.suggested_questions or [],
+        processing_stage=doc.processing_stage,
+        processed_pages=doc.processed_pages,
+        total_pages=doc.total_pages,
+        warnings=doc.warnings or [],
         error=doc.error,
         created_at=doc.created_at.isoformat() if doc.created_at else None,
+    )
+
+
+def _document_asset_response(asset: DocumentAsset) -> DocumentAssetResponse:
+    return DocumentAssetResponse(
+        id=str(asset.id),
+        document_id=str(asset.document_id),
+        page_number=asset.page_number,
+        asset_kind=asset.asset_kind,
+        ocr_text=asset.ocr_text,
+        ocr_confidence=asset.ocr_confidence,
+        vision_description=asset.vision_description,
+        width=asset.width,
+        height=asset.height,
+        status=asset.status,
+        error=asset.error,
+        preview_available=bool(asset.preview_object_key),
     )
 
 
@@ -1124,6 +1166,73 @@ async def get_document(document_id: uuid.UUID, tenant_id: TenantID) -> DocumentR
     return _document_response(doc)
 
 
+@app.get("/documents/{document_id}/assets", response_model=list[DocumentAssetResponse])
+async def list_document_assets(
+    document_id: uuid.UUID,
+    tenant_id: TenantID,
+) -> list[DocumentAssetResponse]:
+    async with tenant_session(tenant_id) as s:
+        doc = (
+            await s.execute(
+                select(Document).where(
+                    Document.id == document_id,
+                    Document.tenant_id == tenant_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if doc is None:
+            raise HTTPException(status_code=404, detail="document not found")
+        assets = (
+            await s.execute(
+                select(DocumentAsset)
+                .where(
+                    DocumentAsset.document_id == document_id,
+                    DocumentAsset.tenant_id == tenant_id,
+                )
+                .order_by(DocumentAsset.page_number, DocumentAsset.created_at)
+            )
+        ).scalars().all()
+    return [_document_asset_response(asset) for asset in assets]
+
+
+@app.get("/documents/{document_id}/assets/{asset_id}/content")
+async def get_document_asset_content(
+    document_id: uuid.UUID,
+    asset_id: uuid.UUID,
+    tenant_id: TenantID,
+) -> Response:
+    async with tenant_session(tenant_id) as s:
+        asset = (
+            await s.execute(
+                select(DocumentAsset).where(
+                    DocumentAsset.id == asset_id,
+                    DocumentAsset.document_id == document_id,
+                    DocumentAsset.tenant_id == tenant_id,
+                )
+            )
+        ).scalar_one_or_none()
+    if asset is None or not asset.preview_object_key:
+        raise HTTPException(status_code=404, detail="document asset not found")
+
+    try:
+        content = await asyncio.to_thread(object_store.get, asset.preview_object_key)
+    except Exception as exc:
+        log.warning(
+            "asset preview read failed | tenant=%s document=%s asset=%s error=%s",
+            tenant_id,
+            document_id,
+            asset_id,
+            exc,
+        )
+        raise HTTPException(status_code=404, detail="document asset content not found") from exc
+
+    return Response(
+        content=content,
+        media_type="image/webp",
+        headers={"Cache-Control": "private, max-age=3600"},
+    )
+
+
 @app.get("/documents/{document_id}/chunks", response_model=list[DocumentChunkPreview])
 async def list_document_chunks(
     document_id: uuid.UUID,
@@ -1172,6 +1281,10 @@ async def reindex_document(document_id: uuid.UUID, tenant_id: TenantID) -> Docum
             raise HTTPException(status_code=409, detail="document is already being indexed")
 
         doc.status = DocumentStatus.pending
+        doc.processing_stage = "queued"
+        doc.processed_pages = 0
+        doc.total_pages = 0
+        doc.warnings = []
         doc.error = None
         await s.flush()
         response = _document_response(doc)
@@ -1207,6 +1320,7 @@ async def reindex_document(document_id: uuid.UUID, tenant_id: TenantID) -> Docum
 @app.delete("/documents/{document_id}", status_code=204)
 async def delete_document(document_id: uuid.UUID, tenant_id: TenantID) -> None:
     object_key = ""
+    preview_object_keys: list[str] = []
     async with tenant_session(tenant_id) as s:
         doc = (
             await s.execute(
@@ -1216,18 +1330,29 @@ async def delete_document(document_id: uuid.UUID, tenant_id: TenantID) -> None:
         if doc is None:
             raise HTTPException(status_code=404, detail="document not found")
         object_key = doc.object_key
+        preview_object_keys = list(
+            (
+                await s.execute(
+                    select(DocumentAsset.preview_object_key).where(
+                        DocumentAsset.document_id == document_id,
+                        DocumentAsset.tenant_id == tenant_id,
+                    )
+                )
+            ).scalars().all()
+        )
         await s.delete(doc)  # CASCADE deletes chunks via FK ondelete="CASCADE"
 
-    try:
-        object_store.delete(object_key)
-    except Exception as exc:
-        log.warning(
-            "object deletion failed | tenant=%s document=%s key=%s error=%s",
-            tenant_id,
-            document_id,
-            object_key,
-            exc,
-        )
+    for key in [object_key, *preview_object_keys]:
+        try:
+            object_store.delete(key)
+        except Exception as exc:
+            log.warning(
+                "object deletion failed | tenant=%s document=%s key=%s error=%s",
+                tenant_id,
+                document_id,
+                key,
+                exc,
+            )
     await _invalidate_semantic_cache(tenant_id, f"document-delete:{document_id}")
 
 

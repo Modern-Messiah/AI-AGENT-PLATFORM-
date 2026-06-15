@@ -13,6 +13,17 @@
         <StatusBadge :status="normalized.status" />
         <span>{{ normalized.size }}</span>
         <span>{{ normalized.createdLabel }}</span>
+        <div v-if="normalized.totalPages > 0" class="detail-progress">
+          <span>
+            {{ t('documents.pageProgress', {
+              processed: normalized.processedPages,
+              total: normalized.totalPages,
+            }) }}
+          </span>
+          <div class="progress">
+            <div class="progress-fill" :style="{ width: normalized.progressPct + '%' }"></div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -73,6 +84,43 @@
         </div>
       </div>
 
+      <div v-if="assets.length" class="card assets-card">
+        <div class="card-header">
+          <div>
+            <div class="card-title">{{ t('documentDetail.assetsTitle') }}</div>
+            <div class="card-sub">{{ t('documentDetail.assetsCount', { count: assets.length }) }}</div>
+          </div>
+        </div>
+        <div class="asset-gallery">
+          <article v-for="asset in assets" :key="asset.id" class="asset-item">
+            <ProtectedAssetImage
+              :document-id="documentId"
+              :asset-id="asset.id"
+              :page-number="asset.page_number"
+              :alt="assetLabel(asset)"
+            />
+            <div class="asset-copy">
+              <div class="asset-title">{{ assetLabel(asset) }}</div>
+              <p v-if="asset.vision_description">{{ asset.vision_description }}</p>
+              <p v-else-if="asset.ocr_text">{{ asset.ocr_text }}</p>
+              <p v-else class="asset-muted">{{ t('documentDetail.assetTextEmpty') }}</p>
+              <span v-if="asset.ocr_confidence !== null" class="asset-confidence">
+                {{ t('documentDetail.ocrConfidence', { percent: Math.round(asset.ocr_confidence * 100) }) }}
+              </span>
+            </div>
+          </article>
+        </div>
+      </div>
+
+      <div v-if="normalized.warnings.length" class="card warnings-card">
+        <div class="card-header">
+          <div class="card-title">{{ t('documentDetail.warningsTitle') }}</div>
+        </div>
+        <ul>
+          <li v-for="warning in normalized.warnings" :key="warning">{{ warning }}</li>
+        </ul>
+      </div>
+
       <div class="card chunks-card">
         <div class="card-header">
           <div>
@@ -115,6 +163,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useApi } from '@/composables/useApi'
 import { useSettingsStore } from '@/stores/settings'
 import { useI18n } from '@/composables/useI18n'
+import ProtectedAssetImage from '@/components/ProtectedAssetImage.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import { buildDocumentChatRoute, buildQuestionRoute, normalizeDocument } from '@/utils/documents'
 
@@ -126,6 +175,7 @@ const { t } = useI18n()
 
 const document = ref(null)
 const chunks = ref([])
+const assets = ref([])
 const loading = ref(false)
 const error = ref('')
 
@@ -144,6 +194,7 @@ async function loadDocument() {
   if (!settings.isConnected || !documentId.value) {
     document.value = null
     chunks.value = []
+    assets.value = []
     error.value = settings.isConnected
       ? t('documentDetail.notSelected')
       : t('documents.apiKeyRequired')
@@ -153,21 +204,31 @@ async function loadDocument() {
   loading.value = true
   error.value = ''
   try {
-    const [doc, chunkRows] = await Promise.all([
+    const [doc, chunkRows, assetRows] = await Promise.all([
       apiFetch(`/documents/${documentId.value}`),
       apiFetch(`/documents/${documentId.value}/chunks`).catch(() => []),
+      apiFetch(`/documents/${documentId.value}/assets`).catch(() => []),
     ])
     document.value = doc
     chunks.value = chunkRows
+    assets.value = assetRows
     await nextTick()
     scrollToTargetChunk()
   } catch (e) {
     document.value = null
     chunks.value = []
+    assets.value = []
     error.value = e.message
   } finally {
     loading.value = false
   }
+}
+
+function assetLabel(asset) {
+  if (asset.page_number) {
+    return t('documentDetail.assetPage', { page: asset.page_number })
+  }
+  return t('documentDetail.assetImage')
 }
 
 function chunkDomId(chunk) {
@@ -267,6 +328,15 @@ function openDocumentChat() {
   font-family: var(--mono);
   font-size: 11px;
 }
+.detail-progress {
+  display: grid;
+  gap: 5px;
+  width: 150px;
+  text-align: right;
+}
+.detail-progress .progress {
+  width: 100%;
+}
 .detail-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
@@ -313,6 +383,62 @@ function openDocumentChat() {
 .ask-main {
   width: 100%;
   justify-content: center;
+}
+.assets-card {
+  min-width: 0;
+}
+.asset-gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 12px;
+  padding: 14px;
+}
+.asset-item {
+  display: grid;
+  grid-template-rows: minmax(150px, auto) 1fr;
+  gap: 11px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in oklch, var(--s2) 76%, transparent);
+}
+.asset-copy {
+  min-width: 0;
+}
+.asset-title {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+}
+.asset-copy p {
+  display: -webkit-box;
+  margin: 7px 0 0;
+  overflow: hidden;
+  color: var(--muted2);
+  font-size: 11px;
+  line-height: 1.55;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+}
+.asset-muted {
+  color: var(--muted);
+}
+.asset-confidence {
+  display: block;
+  margin-top: 8px;
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 9px;
+}
+.warnings-card ul {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 14px 28px 16px 34px;
+  color: var(--yellow);
+  font-size: 11px;
+  line-height: 1.5;
 }
 .chunks-card {
   display: flex;

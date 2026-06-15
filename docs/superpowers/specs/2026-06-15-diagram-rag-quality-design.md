@@ -29,13 +29,15 @@ diagram chunk that ranks just below the initial vector cutoff.
 
 ### Embeddings
 
-Change the default embedding model to
+Support opting into
 `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`. It is supported by
-FastEmbed and keeps the existing 384-dimensional database column.
+FastEmbed and keeps the existing 384-dimensional database column. The
+backward-compatible English model remains the default so an upgrade does not
+silently invalidate existing indexes.
 
-Existing documents must be reindexed after the model changes. The application
-will expose the configured embedding model in chunk metadata, allowing retrieval
-to ignore incompatible stale vectors instead of silently mixing models.
+Existing documents must be reindexed after the configured model changes. The
+application records the configured embedding model in chunk metadata so operators
+can audit the index version. A deployment must not mix models during reindexing.
 
 ### Visual Chunking
 
@@ -67,4 +69,3 @@ The incident-bot PDF is reindexed and must answer:
 
 Each answer must cite the relevant page, and the second answer must include page
 4 rather than claim the information is absent.
-

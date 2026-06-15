@@ -6,6 +6,7 @@ from packages.llm.client import (
     _provider_extra_body,
     _resolve_model,
     complete_chat_json,
+    complete_vision_text,
 )
 
 
@@ -66,4 +67,42 @@ async def test_complete_chat_json_uses_deepseek_json_mode(monkeypatch) -> None:
     assert captured["model"] == "deepseek-v4-flash"
     assert captured["response_format"] == {"type": "json_object"}
     assert captured["max_tokens"] == 1200
+    assert captured["extra_body"] == {"thinking": {"type": "disabled"}}
+
+
+async def test_complete_vision_text_sends_image_to_kimi(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeCompletions:
+        async def create(self, **kwargs):
+            captured.update(kwargs)
+            return SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(content="A diagram with three services.")
+                    )
+                ]
+            )
+
+    class FakeAsyncOpenAI:
+        def __init__(self, **kwargs):
+            captured["client"] = kwargs
+            self.chat = SimpleNamespace(completions=FakeCompletions())
+
+    monkeypatch.setattr(client, "AsyncOpenAI", FakeAsyncOpenAI)
+
+    result = await complete_vision_text(
+        b"image-bytes",
+        "image/webp",
+        prompt="Describe the image.",
+    )
+
+    assert result == "A diagram with three services."
+    assert captured["model"] == "kimi-k2.6"
+    message = captured["messages"][0]
+    assert message["content"][0] == {"type": "text", "text": "Describe the image."}
+    assert message["content"][1]["type"] == "image_url"
+    assert message["content"][1]["image_url"]["url"].startswith(
+        "data:image/webp;base64,"
+    )
     assert captured["extra_body"] == {"thinking": {"type": "disabled"}}

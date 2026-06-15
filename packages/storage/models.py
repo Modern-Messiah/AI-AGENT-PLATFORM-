@@ -7,7 +7,18 @@ import uuid
 from datetime import datetime
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import BigInteger, DateTime, Enum, ForeignKey, Index, Integer, String, Text, func
+from sqlalchemy import (
+    BigInteger,
+    DateTime,
+    Enum,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    func,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -19,6 +30,13 @@ class Base(DeclarativeBase):
 
 
 class DocumentStatus(str, enum.Enum):
+    pending = "pending"
+    processing = "processing"
+    done = "done"
+    failed = "failed"
+
+
+class DocumentAssetStatus(str, enum.Enum):
     pending = "pending"
     processing = "processing"
     done = "done"
@@ -38,6 +56,12 @@ class Document(Base):
     suggested_questions: Mapped[list[str]] = mapped_column(
         JSONB, default=list, nullable=False
     )
+    processing_stage: Mapped[str] = mapped_column(
+        String(32), default="queued", nullable=False
+    )
+    processed_pages: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    total_pages: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    warnings: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
     status: Mapped[DocumentStatus] = mapped_column(
         Enum(DocumentStatus, name="document_status"),
         default=DocumentStatus.pending,
@@ -57,8 +81,59 @@ class Document(Base):
     chunks: Mapped[list["Chunk"]] = relationship(
         back_populates="document", cascade="all, delete-orphan"
     )
+    assets: Mapped[list["DocumentAsset"]] = relationship(
+        back_populates="document", cascade="all, delete-orphan"
+    )
     notebook_links: Mapped[list["NotebookDocument"]] = relationship(
         back_populates="document", cascade="all, delete-orphan"
+    )
+
+
+class DocumentAsset(Base):
+    __tablename__ = "document_assets"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    tenant_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    document_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("documents.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    page_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    asset_kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    preview_object_key: Mapped[str] = mapped_column(String(512), nullable=False)
+    ocr_text: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    ocr_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    vision_description: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    width: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    height: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    status: Mapped[DocumentAssetStatus] = mapped_column(
+        Enum(DocumentAssetStatus, name="document_asset_status"),
+        default=DocumentAssetStatus.pending,
+        nullable=False,
+    )
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    document: Mapped[Document] = relationship(back_populates="assets")
+
+    __table_args__ = (
+        Index(
+            "ix_document_assets_tenant_document",
+            "tenant_id",
+            "document_id",
+        ),
+        Index(
+            "uq_document_assets_document_page_kind",
+            "document_id",
+            "page_number",
+            "asset_kind",
+            unique=True,
+        ),
     )
 
 

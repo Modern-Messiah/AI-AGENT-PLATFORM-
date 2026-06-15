@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -25,6 +26,128 @@ class RetrievedChunk:
     chunk_idx: int = 0
 
 
+_WORD_RE = re.compile(r"[^\W_]+", re.UNICODE)
+_STOP_WORDS = {
+    "and",
+    "for",
+    "from",
+    "how",
+    "the",
+    "what",
+    "when",
+    "where",
+    "with",
+    "для",
+    "как",
+    "какие",
+    "какой",
+    "что",
+    "это",
+}
+_RUSSIAN_SUFFIXES = (
+    "иями",
+    "ями",
+    "ами",
+    "ого",
+    "ему",
+    "ому",
+    "ыми",
+    "ими",
+    "ий",
+    "ый",
+    "ая",
+    "яя",
+    "ое",
+    "ее",
+    "ие",
+    "ые",
+    "ов",
+    "ев",
+    "ам",
+    "ям",
+    "ах",
+    "ях",
+    "ом",
+    "ем",
+    "ой",
+    "ей",
+    "у",
+    "ю",
+    "а",
+    "я",
+    "ы",
+    "и",
+    "е",
+    "о",
+)
+
+
+def _normalize_term(term: str) -> str:
+    normalized = term.casefold().replace("ё", "е")
+    if normalized.isdigit() or len(normalized) <= 4:
+        return normalized
+    for suffix in _RUSSIAN_SUFFIXES:
+        if normalized.endswith(suffix) and len(normalized) - len(suffix) >= 4:
+            return normalized[: -len(suffix)]
+    return normalized
+
+
+def _lexical_terms(text: str) -> list[str]:
+    return [
+        normalized
+        for raw in _WORD_RE.findall(text)
+        if (normalized := _normalize_term(raw)) not in _STOP_WORDS
+        and (len(normalized) >= 3 or normalized.isdigit())
+    ]
+
+
+def _lexical_relevance(query: str, content: str) -> float:
+    query_terms = _lexical_terms(query)
+    if not query_terms:
+        return 0.0
+    content_terms = _lexical_terms(content)
+    if not content_terms:
+        return 0.0
+
+    query_set = set(query_terms)
+    content_set = set(content_terms)
+    term_coverage = len(query_set & content_set) / len(query_set)
+
+    query_pairs = set(zip(query_terms, query_terms[1:], strict=False))
+    content_pairs = set(zip(content_terms, content_terms[1:], strict=False))
+    pair_coverage = (
+        len(query_pairs & content_pairs) / len(query_pairs)
+        if query_pairs
+        else 0.0
+    )
+    return min(1.0, term_coverage * 0.8 + pair_coverage * 0.2)
+
+
+def rerank_chunks(query: str, chunks: list[RetrievedChunk]) -> list[RetrievedChunk]:
+    """Blend semantic distance with deterministic Unicode lexical relevance."""
+    return sorted(
+        chunks,
+        key=lambda chunk: (
+            chunk.score + 0.35 * _lexical_relevance(query, chunk.content),
+            chunk.score,
+            -chunk.chunk_idx,
+        ),
+        reverse=True,
+    )
+
+
+def candidate_limit_for_scope(
+    *,
+    default_limit: int,
+    scoped_limit: int,
+    document_id: str | uuid.UUID | None,
+    document_ids: Sequence[str | uuid.UUID] | None,
+) -> int:
+    if document_id is not None or document_ids:
+        return max(default_limit, scoped_limit)
+    return default_limit
+
+
 async def retrieve_chunks(
     query: str,
     tenant_id: str,
@@ -33,7 +156,12 @@ async def retrieve_chunks(
     document_id: str | uuid.UUID | None = None,
     document_ids: Sequence[str | uuid.UUID] | None = None,
 ) -> list[RetrievedChunk]:
-    k = k or settings.retrieval_top_k
+    k = candidate_limit_for_scope(
+        default_limit=k or settings.retrieval_top_k,
+        scoped_limit=settings.scoped_rag_candidate_k,
+        document_id=document_id,
+        document_ids=document_ids,
+    )
     max_distance = settings.retrieval_max_distance if max_distance is None else max_distance
     [query_vec] = await embed_texts([query])
     document_uuids = [uuid.UUID(str(doc_id)) for doc_id in (document_ids or [])]
@@ -56,7 +184,7 @@ async def retrieve_chunks(
             stmt = stmt.where(distance <= max_distance)
         rows = (await session.execute(stmt)).all()
 
-    return [
+    chunks = [
         RetrievedChunk(
             chunk_id=str(chunk.id),
             document_id=str(chunk.document_id),
@@ -68,3 +196,4 @@ async def retrieve_chunks(
         )
         for chunk, filename, distance in rows
     ]
+    return rerank_chunks(query, chunks)

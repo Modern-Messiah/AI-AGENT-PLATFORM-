@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     # strong = сложные шаги агента; weak = дешёвые вспомогательные.
     strong_model: str = "moonshot/kimi-k2.6"
     weak_model: str = "deepseek/deepseek-v4-flash"
+    vision_model: str = "moonshot/kimi-k2.6"
 
     langfuse_public_key: str = ""
     langfuse_secret_key: str = ""
@@ -41,11 +42,14 @@ class Settings(BaseSettings):
 
     embedding_model: str = "BAAI/bge-small-en-v1.5"
     embedding_dim: int = 384
+    ocr_language: str = "ru"
+    visual_render_max_dimension: int = 1800
     chunk_size: int = 2000
     chunk_overlap: int = 200
     retrieval_top_k: int = 5
     retrieval_max_distance: float = 0.75
     fast_rag_candidate_k: int = 12
+    scoped_rag_candidate_k: int = 32
     fast_rag_top_k: int = 6
     fast_rag_per_document_k: int = 2
     fast_rag_context_max_chars: int = 8_000

@@ -4,6 +4,7 @@ import assert from 'node:assert/strict'
 import {
   buildCitationDocumentRoute,
   buildCitationRoute,
+  assetPreviewPath,
   citationIsReferenced,
   citationGroupIsReferenced,
   citationGroupLabel,
@@ -13,6 +14,7 @@ import {
   sourceLabel,
   sourceLocation,
   sourceScoreLabel,
+  hasAssetPreview,
 } from '../src/utils/citations.js'
 
 
@@ -25,6 +27,9 @@ const citation = {
   chunk_index: 14,
   score: 0.567,
   excerpt: 'Exact supporting excerpt.',
+  asset_id: 'asset-8',
+  asset_kind: 'page',
+  preview_available: true,
 }
 
 
@@ -81,4 +86,15 @@ test('builds route to the cited document chunk', () => {
     path: '/documents/document-1',
     query: { chunk: 'chunk-9' },
   })
+})
+
+
+test('builds an authenticated asset preview path only for previewable citations', () => {
+  assert.equal(hasAssetPreview(citation), true)
+  assert.equal(
+    assetPreviewPath(citation),
+    '/documents/document-1/assets/asset-8/content',
+  )
+  assert.equal(hasAssetPreview({ ...citation, preview_available: false }), false)
+  assert.equal(assetPreviewPath({ ...citation, asset_id: null }), null)
 })
