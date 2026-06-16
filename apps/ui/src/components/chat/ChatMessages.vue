@@ -103,15 +103,6 @@
                       {{ scoreLabel(citation) }}
                     </span>
                   </div>
-                  <ProtectedAssetImage
-                    v-if="hasAssetPreview(citation) && isFirstAssetCitation(expandedCitationGroup(msg), citation)"
-                    class="citation-preview"
-                    :document-id="citation.document_id"
-                    :asset-id="citation.asset_id"
-                    :page-number="citation.page"
-                    :alt="`${citation.filename} · ${locationLabel(citation)}`"
-                    compact
-                  />
                   <div class="citation-excerpt">{{ citation.excerpt }}</div>
                   <RouterLink
                     class="btn btn-ghost btn-sm citation-open"
@@ -155,7 +146,6 @@ import { ref, watch, nextTick } from 'vue'
 import { useChatStore } from '@/stores/chat'
 import { useI18n } from '@/composables/useI18n'
 import AppIcon from '@/components/AppIcon.vue'
-import ProtectedAssetImage from '@/components/ProtectedAssetImage.vue'
 import {
   buildCitationDocumentRoute,
   buildCitationRoute,
@@ -163,7 +153,6 @@ import {
   citationGroupLabel,
   citationGroupMarker,
   groupCitationsByDocument,
-  hasAssetPreview,
   sourceLocation,
   sourceScoreLabel,
 } from '@/utils/citations'
@@ -206,11 +195,6 @@ function expandedCitationGroup(msg) {
     group.type === 'document'
     && citationGroupKey(msg, group, index) === openCitationKey.value
   )) || null
-}
-
-function isFirstAssetCitation(group, citation) {
-  if (!group || !citation?.asset_id) return false
-  return group.citations.find(item => item.asset_id === citation.asset_id) === citation
 }
 
 async function scrollToBottom() {
@@ -385,9 +369,6 @@ watch([() => chat.messages.length, () => chat.isActiveSessionLoading(), () => ch
   font-size: 13px;
   line-height: 1.65;
   white-space: pre-wrap;
-}
-.citation-preview {
-  margin-bottom: 10px;
 }
 .citation-fragment .citation-open {
   margin-top: 10px;

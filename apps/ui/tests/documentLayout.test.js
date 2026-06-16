@@ -17,6 +17,14 @@ const protectedAssetSource = readFileSync(
   resolve(__dirname, '../src/components/ProtectedAssetImage.vue'),
   'utf8',
 )
+const chatMessagesSource = readFileSync(
+  resolve(__dirname, '../src/components/chat/ChatMessages.vue'),
+  'utf8',
+)
+const i18nSource = readFileSync(
+  resolve(__dirname, '../src/i18n/index.js'),
+  'utf8',
+)
 const desktopDetailRule = viewSource.match(/\.document-detail\s*\{([^}]*)\}/)?.[1] || ''
 
 test('document chunks list has a dedicated scrollable layout region', () => {
@@ -50,10 +58,18 @@ test('knowledge base accepts image sources and shows page progress', () => {
   assert.match(documentsViewSource, /doc\.totalPages/)
 })
 
-test('document detail loads visual assets through the protected preview component', () => {
-  assert.match(viewSource, /apiFetch\(`\/documents\/\$\{documentId\.value\}\/assets`\)/)
-  assert.match(viewSource, /<ProtectedAssetImage/)
-  assert.match(viewSource, /class="asset-gallery"/)
+test('document detail does not show a visual asset gallery', () => {
+  assert.doesNotMatch(viewSource, /apiFetch\(`\/documents\/\$\{documentId\.value\}\/assets`\)/)
+  assert.doesNotMatch(viewSource, /<ProtectedAssetImage/)
+  assert.doesNotMatch(viewSource, /class="asset-gallery"/)
+  assert.doesNotMatch(i18nSource, /Распознанные страницы и изображения/)
+  assert.doesNotMatch(i18nSource, /Recognized pages and images/)
+})
+
+test('chat citation details do not show image previews', () => {
+  assert.doesNotMatch(chatMessagesSource, /<ProtectedAssetImage/)
+  assert.doesNotMatch(chatMessagesSource, /class="citation-preview"/)
+  assert.doesNotMatch(chatMessagesSource, /\.citation-preview/)
 })
 
 test('protected asset preview aborts stale authenticated image requests', () => {
