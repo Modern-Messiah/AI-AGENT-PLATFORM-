@@ -19,3 +19,5 @@ node_modules/
 
 STATUS.md
 NOTES.local.md
+.codegraph/
+docs/
