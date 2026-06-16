@@ -37,7 +37,10 @@ def _quote_ident(value: str) -> str:
 
 def upgrade() -> None:
     role = _role_name()
-    password = os.getenv("APP_DB_PASSWORD", "aap_app")
+    password = os.getenv("APP_DB_PASSWORD")
+    if not password:
+        raise RuntimeError("APP_DB_PASSWORD must be set before creating the runtime database role")
+
     role_lit = _quote_literal(role)
     role_ident = _quote_ident(role)
     password_lit = _quote_literal(password)
