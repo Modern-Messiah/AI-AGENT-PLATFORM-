@@ -44,6 +44,24 @@ _STOP_WORDS = {
     "что",
     "это",
 }
+_DOCUMENT_METADATA_TERMS = {
+    "author",
+    "автор",
+    "date",
+    "дата",
+    "version",
+    "верси",
+}
+_TITLE_PAGE_QUERY_TERMS = {
+    "cover",
+    "document",
+    "page",
+    "title",
+    "документ",
+    "лист",
+    "страниц",
+    "титульн",
+}
 _RUSSIAN_SUFFIXES = (
     "иями",
     "ями",
@@ -123,12 +141,31 @@ def _lexical_relevance(query: str, content: str) -> float:
     return min(1.0, term_coverage * 0.8 + pair_coverage * 0.2)
 
 
+def _title_page_metadata_relevance(query: str, chunk: RetrievedChunk) -> float:
+    page = chunk.metadata.get("page")
+    if page != 1 and chunk.chunk_idx != 0:
+        return 0.0
+
+    query_terms = set(_lexical_terms(query))
+    metadata_hits = len(query_terms & _DOCUMENT_METADATA_TERMS)
+    title_hits = len(query_terms & _TITLE_PAGE_QUERY_TERMS)
+    if metadata_hits >= 2 and title_hits:
+        return 0.45
+    if metadata_hits >= 2:
+        return 0.30
+    if metadata_hits and title_hits:
+        return 0.25
+    return 0.0
+
+
 def rerank_chunks(query: str, chunks: list[RetrievedChunk]) -> list[RetrievedChunk]:
     """Blend semantic distance with deterministic Unicode lexical relevance."""
     return sorted(
         chunks,
         key=lambda chunk: (
-            chunk.score + 0.35 * _lexical_relevance(query, chunk.content),
+            chunk.score
+            + 0.35 * _lexical_relevance(query, chunk.content)
+            + _title_page_metadata_relevance(query, chunk),
             chunk.score,
             -chunk.chunk_idx,
         ),
@@ -148,6 +185,19 @@ def candidate_limit_for_scope(
     return default_limit
 
 
+def effective_max_distance_for_scope(
+    *,
+    configured_max_distance: float,
+    document_id: str | uuid.UUID | None,
+    document_ids: Sequence[str | uuid.UUID] | None,
+) -> float:
+    if document_id is not None:
+        return 0
+    if document_ids is not None and len(document_ids) == 1:
+        return 0
+    return configured_max_distance
+
+
 async def retrieve_chunks(
     query: str,
     tenant_id: str,
@@ -163,6 +213,11 @@ async def retrieve_chunks(
         document_ids=document_ids,
     )
     max_distance = settings.retrieval_max_distance if max_distance is None else max_distance
+    max_distance = effective_max_distance_for_scope(
+        configured_max_distance=max_distance,
+        document_id=document_id,
+        document_ids=document_ids,
+    )
     [query_vec] = await embed_texts([query])
     document_uuids = [uuid.UUID(str(doc_id)) for doc_id in (document_ids or [])]
     if document_id is not None:
