@@ -29,6 +29,27 @@ with workflow.unsafe.imports_passed_through():
     )
 
 _VISUAL_CONCURRENCY = 2
+_MAX_ERROR_CHARS = 2000
+_GENERIC_ACTIVITY_ERRORS = {
+    "Activity task failed",
+    "Workflow execution failed",
+}
+
+
+def _activity_root_cause_message(error: BaseException) -> str:
+    current: BaseException | None = error
+    best = ""
+    seen: set[int] = set()
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        message = str(current).strip() or type(current).__name__
+        if message and message not in _GENERIC_ACTIVITY_ERRORS:
+            best = message
+        current = current.__cause__ or current.__context__
+
+    if not best:
+        best = str(error).strip() or type(error).__name__
+    return best[:_MAX_ERROR_CHARS]
 
 
 @workflow.defn
@@ -119,7 +140,7 @@ class IngestionWorkflow:
         except ActivityError as e:
             await workflow.execute_activity(
                 mark_failed,
-                args=[payload, str(e)],
+                args=[payload, _activity_root_cause_message(e)],
                 start_to_close_timeout=timedelta(seconds=30),
                 retry_policy=RetryPolicy(maximum_attempts=1),
             )
