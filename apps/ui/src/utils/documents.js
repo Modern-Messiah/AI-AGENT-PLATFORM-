@@ -9,6 +9,8 @@ export function formatFileSize(bytes) {
 }
 
 export function normalizeDocument(doc, locale = 'ru') {
+  const processedPages = Number.isInteger(doc.processed_pages) ? doc.processed_pages : 0
+  const totalPages = Number.isInteger(doc.total_pages) ? doc.total_pages : 0
   return {
     id: doc.id,
     name: doc.filename || doc.name || translate(locale, 'documents.unnamed'),
@@ -18,6 +20,13 @@ export function normalizeDocument(doc, locale = 'ru') {
     time: formatLocaleDate(doc.created_at, locale),
     createdLabel: formatLocaleDate(doc.created_at, locale),
     summary: doc.summary || '',
+    processingStage: doc.processing_stage || 'queued',
+    processedPages,
+    totalPages,
+    progressPct: totalPages > 0
+      ? Math.min(100, Math.round((processedPages / totalPages) * 100))
+      : 0,
+    warnings: Array.isArray(doc.warnings) ? doc.warnings : [],
     suggestedQuestions: Array.isArray(doc.suggested_questions)
       ? doc.suggested_questions
       : (doc.suggestedQuestions || []),

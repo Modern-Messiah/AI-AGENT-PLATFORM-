@@ -29,6 +29,9 @@ def test_agent_output_accepts_structured_and_legacy_sources() -> None:
         chunk_id="chunk-1",
         filename="guide.pdf",
         page=3,
+        asset_id="asset-3",
+        asset_kind="page",
+        preview_available=True,
         chunk_index=4,
         excerpt="Grounded evidence.",
         score=0.9,
@@ -51,6 +54,9 @@ def test_chat_api_schemas_accept_serialized_citations() -> None:
         "chunk_id": "chunk-1",
         "filename": "guide.pdf",
         "page": 3,
+        "asset_id": "asset-3",
+        "asset_kind": "page",
+        "preview_available": True,
         "chunk_index": 4,
         "excerpt": "Grounded evidence.",
         "score": 0.9,
@@ -94,7 +100,15 @@ def test_document_response_accepts_insights() -> None:
         status=DocumentStatus.done,
         summary="Short document summary.",
         suggested_questions=["Что внутри guide.pdf?"],
+        processing_stage="done",
+        processed_pages=12,
+        total_pages=12,
+        warnings=["Page 7 used OCR fallback."],
     )
 
     assert response.summary == "Short document summary."
     assert response.suggested_questions == ["Что внутри guide.pdf?"]
+    assert response.processing_stage == "done"
+    assert response.processed_pages == 12
+    assert response.total_pages == 12
+    assert response.warnings == ["Page 7 used OCR fallback."]

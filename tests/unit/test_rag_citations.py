@@ -21,10 +21,19 @@ def _chunk(
     *,
     chunk_idx: int = 0,
     page: int | None = None,
+    asset_id: str | None = None,
+    asset_kind: str | None = None,
+    preview_available: bool = False,
 ) -> RetrievedChunk:
     metadata = {"filename": filename}
     if page is not None:
         metadata["page"] = page
+    if asset_id is not None:
+        metadata["asset_id"] = asset_id
+    if asset_kind is not None:
+        metadata["asset_kind"] = asset_kind
+    if preview_available:
+        metadata["preview_available"] = True
     return RetrievedChunk(
         chunk_id=chunk_id,
         document_id=document_id,
@@ -95,6 +104,9 @@ def test_build_citations_retains_exact_chunk_location_and_excerpt() -> None:
             0.84,
             chunk_idx=14,
             page=8,
+            asset_id="asset-8",
+            asset_kind="page",
+            preview_available=True,
         )
     ]
 
@@ -107,6 +119,9 @@ def test_build_citations_retains_exact_chunk_location_and_excerpt() -> None:
             "chunk_id": "chunk-8",
             "filename": "contract.pdf",
             "page": 8,
+            "asset_id": "asset-8",
+            "asset_kind": "page",
+            "preview_available": True,
             "chunk_index": 14,
             "excerpt": "Evidence from contract.pdf, chunk 14.",
             "score": 0.84,
@@ -137,3 +152,29 @@ def test_grounded_prompt_numbers_sources_and_requires_inline_markers() -> None:
     assert "append its citation marker like [1]" in messages[0]["content"]
     assert "[1] contract.pdf (page 8, score=0.840)" in messages[1]["content"]
     assert "Evidence from contract.pdf, chunk 14." in messages[1]["content"]
+
+
+def test_grounded_prompt_keeps_every_selected_source_with_long_excerpts() -> None:
+    chunks = []
+    for index in range(1, 7):
+        chunk = _chunk(
+            f"chunk-{index}",
+            "document-1",
+            "incident-bot.pdf",
+            0.90 - index / 100,
+            chunk_idx=index,
+            page=index,
+        )
+        chunk.content = f"Unique evidence {index}. " + ("Detailed diagram flow. " * 160)
+        chunks.append(chunk)
+
+    messages = build_grounded_messages(
+        "Explain the complete process.",
+        build_citations(chunks),
+        max_context_chars=8_000,
+    )
+    prompt = messages[1]["content"]
+
+    for index in range(1, 7):
+        assert f"[{index}] incident-bot.pdf (page {index}," in prompt
+        assert f"Unique evidence {index}." in prompt

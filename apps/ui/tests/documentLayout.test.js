@@ -13,6 +13,18 @@ const documentsViewSource = readFileSync(
   resolve(__dirname, '../src/views/DocumentsView.vue'),
   'utf8',
 )
+const protectedAssetSource = readFileSync(
+  resolve(__dirname, '../src/components/ProtectedAssetImage.vue'),
+  'utf8',
+)
+const chatMessagesSource = readFileSync(
+  resolve(__dirname, '../src/components/chat/ChatMessages.vue'),
+  'utf8',
+)
+const i18nSource = readFileSync(
+  resolve(__dirname, '../src/i18n/index.js'),
+  'utf8',
+)
 const desktopDetailRule = viewSource.match(/\.document-detail\s*\{([^}]*)\}/)?.[1] || ''
 
 test('document chunks list has a dedicated scrollable layout region', () => {
@@ -38,4 +50,37 @@ test('knowledge base file table does not render document insights inline', () =>
   assert.doesNotMatch(documentsViewSource, /doc-insights-row/)
   assert.doesNotMatch(documentsViewSource, /class="doc-summary"/)
   assert.doesNotMatch(documentsViewSource, /class="doc-questions"/)
+})
+
+test('knowledge base accepts image sources and shows page progress', () => {
+  assert.match(documentsViewSource, /accept="[^"]*image\/png[^"]*image\/jpeg[^"]*image\/webp/)
+  assert.match(documentsViewSource, /doc\.processedPages/)
+  assert.match(documentsViewSource, /doc\.totalPages/)
+})
+
+test('document detail does not show a visual asset gallery', () => {
+  assert.doesNotMatch(viewSource, /apiFetch\(`\/documents\/\$\{documentId\.value\}\/assets`\)/)
+  assert.doesNotMatch(viewSource, /<ProtectedAssetImage/)
+  assert.doesNotMatch(viewSource, /class="asset-gallery"/)
+  assert.doesNotMatch(i18nSource, /Распознанные страницы и изображения/)
+  assert.doesNotMatch(i18nSource, /Recognized pages and images/)
+})
+
+test('chat citation details do not show image previews', () => {
+  assert.doesNotMatch(chatMessagesSource, /<ProtectedAssetImage/)
+  assert.doesNotMatch(chatMessagesSource, /class="citation-preview"/)
+  assert.doesNotMatch(chatMessagesSource, /\.citation-preview/)
+})
+
+test('protected asset preview aborts stale authenticated image requests', () => {
+  assert.match(protectedAssetSource, /new AbortController\(\)/)
+  assert.match(protectedAssetSource, /signal:\s*controller\.signal/)
+  assert.match(protectedAssetSource, /requestController\s*===\s*controller/)
+  assert.match(protectedAssetSource, /requestController\?\.abort\(\)/)
+})
+
+test('protected asset previews load lazily for documents with many pages', () => {
+  assert.match(protectedAssetSource, /new globalThis\.IntersectionObserver/)
+  assert.match(protectedAssetSource, /rootMargin:\s*'200px'/)
+  assert.match(protectedAssetSource, /if \(!visible\.value\)/)
 })

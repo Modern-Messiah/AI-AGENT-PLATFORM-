@@ -8,6 +8,22 @@ export function isStructuredCitation(source) {
   )
 }
 
+export function hasAssetPreview(source) {
+  return Boolean(
+    isStructuredCitation(source)
+    && source.preview_available === true
+    && typeof source.document_id === 'string'
+    && source.document_id
+    && typeof source.asset_id === 'string'
+    && source.asset_id
+  )
+}
+
+export function assetPreviewPath(source) {
+  if (!hasAssetPreview(source)) return null
+  return `/documents/${encodeURIComponent(source.document_id)}/assets/${encodeURIComponent(source.asset_id)}/content`
+}
+
 export function sourceLocation(source, locale = 'ru') {
   if (!isStructuredCitation(source)) return ''
   if (Number.isInteger(source.page) && source.page > 0) {

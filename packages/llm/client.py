@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 
@@ -281,3 +282,56 @@ async def complete_chat_json(
     if not content:
         raise RuntimeError("LLM provider returned an empty JSON response")
     return content
+
+
+async def complete_vision_text(
+    image_bytes: bytes,
+    mime_type: str,
+    *,
+    prompt: str,
+    model_name: str | None = None,
+) -> str:
+    """Describe one image using the configured OpenAI-compatible vision model."""
+    provider_key, model_id, base_url, api_key = _resolve_model(
+        model_name or settings.vision_model
+    )
+    client = AsyncOpenAI(base_url=base_url, api_key=api_key or "not-set")
+    encoded = base64.b64encode(image_bytes).decode("ascii")
+
+    extra: dict = {}
+    extra_body = _provider_extra_body(provider_key, model_id)
+    if extra_body is not None:
+        extra["extra_body"] = extra_body
+
+    try:
+        response = await client.chat.completions.create(
+            model=model_id,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:{mime_type};base64,{encoded}",
+                            },
+                        },
+                    ],
+                }
+            ],
+            max_tokens=1200,
+            timeout=settings.llm_timeout_seconds
+            if settings.llm_timeout_seconds > 0
+            else None,
+            **extra,
+        )
+    except APIStatusError as exc:
+        raise RuntimeError(
+            _provider_error_message(provider_key, exc.status_code, exc.body)
+        ) from exc
+
+    content = response.choices[0].message.content if response.choices else None
+    if not content:
+        raise RuntimeError("Vision provider returned an empty response")
+    return content.strip()

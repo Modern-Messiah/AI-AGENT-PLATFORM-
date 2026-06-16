@@ -35,9 +35,16 @@
       <div class="drop-title">{{ t('documents.uploadTitle') }}</div>
       <div class="drop-sub">{{ t('documents.uploadDescription') }}</div>
       <div class="drop-types">
-        <span v-for="t in ['PDF','DOCX','TXT','MD','CSV','HTML']" :key="t" class="type-chip">.{{ t.toLowerCase() }}</span>
+        <span v-for="type in ['PDF','DOCX','TXT','MD','CSV','HTML','PNG','JPG','WEBP']" :key="type" class="type-chip">.{{ type.toLowerCase() }}</span>
       </div>
-      <input ref="fileInput" type="file" multiple style="display: none" @change="handleFileInput" />
+      <input
+        ref="fileInput"
+        type="file"
+        multiple
+        accept="application/pdf,.docx,.txt,.md,.csv,.html,image/png,image/jpeg,image/webp"
+        style="display: none"
+        @change="handleFileInput"
+      />
     </div>
 
     <div class="card">
@@ -90,9 +97,19 @@
               </div>
             </td>
             <td>
-              <div style="display: flex; align-items: center; gap: 8px">
-                <StatusBadge :status="doc.status" />
-                <div v-if="doc.status === 'processing' || doc.status === 'pending'" class="spinner"></div>
+              <div class="document-status">
+                <div class="document-status-line">
+                  <StatusBadge :status="doc.status" />
+                  <div v-if="doc.status === 'processing' || doc.status === 'pending'" class="spinner"></div>
+                </div>
+                <div v-if="doc.totalPages > 0 && doc.status !== 'done'" class="page-progress">
+                  <div class="page-progress-label">
+                    {{ t('documents.pageProgress', { processed: doc.processedPages, total: doc.totalPages }) }}
+                  </div>
+                  <div class="progress">
+                    <div class="progress-fill" :style="{ width: doc.progressPct + '%' }"></div>
+                  </div>
+                </div>
               </div>
             </td>
             <td class="td-mono">{{ doc.size }}</td>
@@ -180,7 +197,18 @@ const stats = computed(() => knowledgeBaseStats(docs.value))
 
 function mimeIcon(name) {
   const ext = (name || '').split('.').pop().toLowerCase()
-  return ({ pdf: '📄', md: '📝', txt: '📃', csv: '📊', html: '🌐', docx: '📘' })[ext] || '📁'
+  return ({
+    pdf: '📄',
+    md: '📝',
+    txt: '📃',
+    csv: '📊',
+    html: '🌐',
+    docx: '📘',
+    png: '🖼️',
+    jpg: '🖼️',
+    jpeg: '🖼️',
+    webp: '🖼️',
+  })[ext] || '📁'
 }
 
 function openDocument(doc) {
@@ -238,11 +266,16 @@ async function pollStatus(docId) {
     await new Promise(r => setTimeout(r, 5000))
     try {
       const data = await apiFetch(`/documents/${docId}`)
+      const normalized = normalizeDocument(data, settings.locale)
+      updateDoc(docId, { ...normalized, _pending: true })
       if (data.status === 'done') {
-        updateDoc(docId, { ...normalizeDocument(data, settings.locale), _pending: false })
+        updateDoc(docId, { ...normalized, _pending: false })
         return
       }
-      if (data.status === 'failed') { updateDoc(docId, { status: 'failed', error: data.error || 'Failed', _pending: false }); return }
+      if (data.status === 'failed') {
+        updateDoc(docId, { ...normalized, error: data.error || 'Failed', _pending: false })
+        return
+      }
     } catch {}
   }
   // After 10 min show 'processing' (not 'failed') — Temporal may still be running
@@ -253,7 +286,18 @@ async function uploadFile(file) {
   if (!settings.isConnected) { toast.value = { msg: t('documents.apiKeyRequired'), type: 'error' }; return }
   const tempId = 'upload-' + Date.now()
   const size = formatFileSize(file.size)
-  docs.value = [{ id: tempId, name: file.name, status: 'processing', time: t('documents.now'), error: null, size, _pending: true }, ...docs.value]
+  docs.value = [{
+    id: tempId,
+    name: file.name,
+    status: 'processing',
+    time: t('documents.now'),
+    error: null,
+    size,
+    processedPages: 0,
+    totalPages: 0,
+    progressPct: 0,
+    _pending: true,
+  }, ...docs.value]
   toast.value = { msg: t('documents.uploading', { name: file.name }), type: 'info' }
   try {
     const form = new FormData(); form.append('file', file)
@@ -349,6 +393,30 @@ function handleFileInput(e) {
 .file-title-button:disabled {
   color: var(--muted2);
   cursor: not-allowed;
+}
+.document-status {
+  display: grid;
+  gap: 7px;
+  min-width: 145px;
+}
+.document-status-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.page-progress {
+  display: grid;
+  gap: 4px;
+}
+.page-progress-label {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 9px;
+  white-space: nowrap;
+}
+.page-progress .progress {
+  width: 100%;
+  min-width: 120px;
 }
 
 @media (max-width: 900px) {

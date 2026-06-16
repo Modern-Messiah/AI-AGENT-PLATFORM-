@@ -9,23 +9,26 @@ from __future__ import annotations
 import asyncio
 import logging
 
+from packages.core import settings
+from packages.observability import setup_tracing
+from packages.rag.embedder import embed_texts
 from temporalio.client import Client
 from temporalio.worker import Worker
 
 from apps.worker.activities import (
     chunk_and_embed,
+    finalize_visual_document,
     mark_done,
     mark_failed,
     mark_processing,
     parse_document,
+    prepare_visual_document,
+    process_visual_batch,
     request_human_approval,
     run_agent_step,
     store_chunks,
 )
 from apps.worker.workflows import AgentRunWorkflow, IngestionWorkflow, MultiStepResearchWorkflow
-from packages.core import settings
-from packages.observability import setup_tracing
-from packages.rag.embedder import embed_texts
 
 logging.basicConfig(level=settings.log_level)
 log = logging.getLogger(__name__)
@@ -56,8 +59,11 @@ async def main() -> None:
             request_human_approval,
             mark_processing,
             parse_document,
+            prepare_visual_document,
+            process_visual_batch,
             chunk_and_embed,
             store_chunks,
+            finalize_visual_document,
             mark_done,
             mark_failed,
         ],

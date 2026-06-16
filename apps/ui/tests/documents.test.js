@@ -20,6 +20,10 @@ test('normalizes API documents for the knowledge-base table', () => {
     created_at: '2026-06-07T09:00:00Z',
     summary: 'Short summary.',
     suggested_questions: ['Что внутри manual.pdf?'],
+    processing_stage: 'ocr',
+    processed_pages: 3,
+    total_pages: 8,
+    warnings: ['Page 2 used OCR fallback.'],
   })
 
   assert.equal(doc.id, 'doc-1')
@@ -30,6 +34,11 @@ test('normalizes API documents for the knowledge-base table', () => {
   assert.equal(doc.createdLabel, '07.06.2026')
   assert.equal(doc.summary, 'Short summary.')
   assert.deepEqual(doc.suggestedQuestions, ['Что внутри manual.pdf?'])
+  assert.equal(doc.processingStage, 'ocr')
+  assert.equal(doc.processedPages, 3)
+  assert.equal(doc.totalPages, 8)
+  assert.equal(doc.progressPct, 38)
+  assert.deepEqual(doc.warnings, ['Page 2 used OCR fallback.'])
 })
 
 

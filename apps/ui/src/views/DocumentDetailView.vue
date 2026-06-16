@@ -13,6 +13,17 @@
         <StatusBadge :status="normalized.status" />
         <span>{{ normalized.size }}</span>
         <span>{{ normalized.createdLabel }}</span>
+        <div v-if="normalized.totalPages > 0" class="detail-progress">
+          <span>
+            {{ t('documents.pageProgress', {
+              processed: normalized.processedPages,
+              total: normalized.totalPages,
+            }) }}
+          </span>
+          <div class="progress">
+            <div class="progress-fill" :style="{ width: normalized.progressPct + '%' }"></div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -71,6 +82,15 @@
             </button>
           </div>
         </div>
+      </div>
+
+      <div v-if="normalized.warnings.length" class="card warnings-card">
+        <div class="card-header">
+          <div class="card-title">{{ t('documentDetail.warningsTitle') }}</div>
+        </div>
+        <ul>
+          <li v-for="warning in normalized.warnings" :key="warning">{{ warning }}</li>
+        </ul>
       </div>
 
       <div class="card chunks-card">
@@ -267,6 +287,15 @@ function openDocumentChat() {
   font-family: var(--mono);
   font-size: 11px;
 }
+.detail-progress {
+  display: grid;
+  gap: 5px;
+  width: 150px;
+  text-align: right;
+}
+.detail-progress .progress {
+  width: 100%;
+}
 .detail-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
@@ -313,6 +342,15 @@ function openDocumentChat() {
 .ask-main {
   width: 100%;
   justify-content: center;
+}
+.warnings-card ul {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 14px 28px 16px 34px;
+  color: var(--yellow);
+  font-size: 11px;
+  line-height: 1.5;
 }
 .chunks-card {
   display: flex;

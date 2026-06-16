@@ -41,6 +41,11 @@ dependencies = [
     "fastembed>=0.4",
     "markitdown>=0.0.1,<0.1",
     "pymupdf>=1.24",
+    "pillow>=11,<13",
+    "paddleocr>=3.3,<4",
+    "onnxruntime>=1.20,<2",
+    # 3.3.x has no Linux ARM64 wheel; 3.2.2 supports both x86_64 and aarch64.
+    "paddlepaddle>=3.2,<3.3",
     "langchain-text-splitters>=0.3",
 
     # Logging
