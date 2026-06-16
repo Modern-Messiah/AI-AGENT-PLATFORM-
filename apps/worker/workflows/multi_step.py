@@ -9,7 +9,9 @@ durability while each sub-task is independently retried and tracked.
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Sequence
 from datetime import timedelta
+from typing import TypeVar
 
 from temporalio import workflow
 from temporalio.common import RetryPolicy
@@ -27,6 +29,8 @@ _RETRY = RetryPolicy(
     maximum_attempts=3,
     non_retryable_error_types=["ValueError"],
 )
+
+_T = TypeVar("_T")
 
 
 def _synthesis_prompt(main_query: str, sub_results: list[AgentRunOutput]) -> str:
@@ -57,6 +61,12 @@ def _merge_sources(
     return merged
 
 
+async def _collect_child_results(child_handles: Sequence[Awaitable[_T]]) -> list[_T]:
+    import asyncio
+
+    return list(await asyncio.gather(*child_handles))
+
+
 @workflow.defn
 class MultiStepResearchWorkflow:
     @workflow.run
@@ -76,12 +86,8 @@ class MultiStepResearchWorkflow:
             )
             child_handles.append(handle)
 
-        # Fan-in: wait for all children.
-        import asyncio
-
-        sub_results: list[AgentRunOutput] = list(
-            await asyncio.gather(*[h.result() for h in child_handles])
-        )
+        # Fan-in: child handles are asyncio Task-like objects; await them.
+        sub_results = await _collect_child_results(child_handles)
 
         # Collect all source ids from sub-results for the final answer.
         all_sources = _merge_sources(*(result.sources for result in sub_results))
