@@ -194,6 +194,8 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/app
+      APP_DB_USER: ${APP_DB_USER:-aap_app}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:-aap_app}
     command: alembic upgrade head
     restart: "no"
 
@@ -212,7 +214,7 @@ services:
       clickhouse:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/app
+      DATABASE_URL: postgresql+asyncpg://${APP_DB_USER:-aap_app}:${APP_DB_PASSWORD:-aap_app}@postgres:5432/app
       REDIS_URL: redis://redis:6379/0
       CLICKHOUSE_URL: http://${CLICKHOUSE_USER:-default}:${CLICKHOUSE_PASSWORD:-clickhouse}@clickhouse:8123/analytics
       TEMPORAL_ADDRESS: temporal:7233
@@ -265,7 +267,7 @@ services:
       clickhouse:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/app
+      DATABASE_URL: postgresql+asyncpg://${APP_DB_USER:-aap_app}:${APP_DB_PASSWORD:-aap_app}@postgres:5432/app
       REDIS_URL: redis://redis:6379/0
       CLICKHOUSE_URL: http://${CLICKHOUSE_USER:-default}:${CLICKHOUSE_PASSWORD:-clickhouse}@clickhouse:8123/analytics
       TEMPORAL_ADDRESS: temporal:7233

@@ -64,6 +64,7 @@ def _collapse_parens(sql: str) -> str:
     while prev != sql:
         prev = sql
         sql = re.sub(r"\([^()]*\)", "()", sql)
+        sql = re.sub(r"\((?:\s*\(\)\s*)+\)", "()", sql)
     return sql
 
 

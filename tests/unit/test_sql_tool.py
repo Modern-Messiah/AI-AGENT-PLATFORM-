@@ -152,6 +152,8 @@ def test_from_join_ignores_subquery_table_after_collapse() -> None:
     "SELECT * FROM documents d, chunks c WHERE d.id = c.document_id",
     # Subquery alias then comma — after paren collapse
     "SELECT * FROM (SELECT 1) sub, api_keys WHERE 1=1",
+    # Nested subquery alias then comma — the collapsed form must still expose the comma.
+    "SELECT * FROM ((SELECT 1 FROM documents WHERE tenant_id = '{tenant_id}')) sub, chat_messages m",
 ])
 def test_comma_join_detected(sql: str) -> None:
     stripped = _strip_literals(sql)

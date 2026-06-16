@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     temporal_namespace: str = "default"
     temporal_task_queue: str = "agent-tasks"
 
-    database_url: str = Field(default="postgresql+asyncpg://postgres:postgres@localhost:5432/app")
+    database_url: str = Field(default="postgresql+asyncpg://aap_app:aap_app@localhost:5432/app")
     redis_url: str = "redis://localhost:6379/0"
     clickhouse_url: str = "http://default:clickhouse@localhost:8123/analytics"
 
