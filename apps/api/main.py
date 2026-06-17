@@ -50,7 +50,6 @@ from packages.analytics.events import UsageEvent, record_usage
 from packages.cache.redis import get_redis
 from packages.cache.semantic import semantic_cache
 from packages.core import settings
-from packages.core.tenant_utils import check_workflow_tenant
 from packages.llm import stream_chat_text
 from packages.observability import setup_tracing
 from packages.rag import (
@@ -77,10 +76,15 @@ from packages.storage.db import tenant_session
 from sqlalchemy import delete, func, select, update
 from starlette.responses import Response, StreamingResponse
 from temporalio.client import Client
-from temporalio.service import RPCError
 
 from apps.api.deps import TenantID, read_with_limit
-from apps.api.routers import analytics_router, auth_router, health_router, sessions_router
+from apps.api.routers import (
+    analytics_router,
+    auth_router,
+    health_router,
+    sessions_router,
+    workflows_router,
+)
 from apps.api.schemas import (
     AddMessageRequest,
     AgentRunApiResponse,
@@ -365,6 +369,7 @@ app.include_router(health_router)
 app.include_router(auth_router)
 app.include_router(analytics_router)
 app.include_router(sessions_router)
+app.include_router(workflows_router)
 
 
 # ── Agent ─────────────────────────────────────────────────────────────────────
@@ -651,54 +656,6 @@ async def run_research(payload: MultiStepResearchInput, tenant_id: TenantID) -> 
         )
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=str(e)) from e
-
-
-# ── HITL signals ──────────────────────────────────────────────────────────────
-
-@app.get("/workflows/{workflow_id}/result", response_model=AgentRunApiResponse)
-async def get_workflow_result(workflow_id: str, tenant_id: TenantID) -> AgentRunApiResponse:
-    """Poll for HITL workflow result. Returns pending_approval=True while still waiting."""
-    check_workflow_tenant(workflow_id, tenant_id)
-    client: Client = app.state.temporal
-    handle = client.get_workflow_handle(workflow_id)
-    try:
-        result: AgentRunOutput = await asyncio.wait_for(handle.result(), timeout=2.0)
-        return AgentRunApiResponse(
-            answer=result.answer,
-            confidence=result.confidence,
-            sources=result.sources,
-            workflow_id=workflow_id,
-        )
-    except asyncio.TimeoutError:
-        return AgentRunApiResponse(workflow_id=workflow_id, pending_approval=True)
-    except Exception as e:  # noqa: BLE001
-        raise HTTPException(status_code=500, detail=str(e)) from e
-
-
-@app.post("/workflows/{workflow_id}/approve", response_model=WorkflowSignalResponse)
-async def approve_workflow(workflow_id: str, tenant_id: TenantID) -> WorkflowSignalResponse:
-    check_workflow_tenant(workflow_id, tenant_id)
-    client: Client = app.state.temporal
-    try:
-        await client.get_workflow_handle(workflow_id).signal(AgentRunWorkflow.approve)
-    except RPCError as e:
-        code = 404 if "not found" in str(e).lower() else 503
-        detail = "workflow not found" if code == 404 else "workflow service unavailable"
-        raise HTTPException(status_code=code, detail=detail) from e
-    return WorkflowSignalResponse(workflow_id=workflow_id, action="approved")
-
-
-@app.post("/workflows/{workflow_id}/reject", response_model=WorkflowSignalResponse)
-async def reject_workflow(workflow_id: str, tenant_id: TenantID) -> WorkflowSignalResponse:
-    check_workflow_tenant(workflow_id, tenant_id)
-    client: Client = app.state.temporal
-    try:
-        await client.get_workflow_handle(workflow_id).signal(AgentRunWorkflow.reject)
-    except RPCError as e:
-        code = 404 if "not found" in str(e).lower() else 503
-        detail = "workflow not found" if code == 404 else "workflow service unavailable"
-        raise HTTPException(status_code=code, detail=detail) from e
-    return WorkflowSignalResponse(workflow_id=workflow_id, action="rejected")
 
 
 # ── Analytics ─────────────────────────────────────────────────────────────────
