@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 
 from apps.worker.activities import ingestion
+from apps.worker.activities import ingestion_types
 from apps.worker.activities import ingestion_status
 from apps.worker.activities import visual_analysis
 from apps.worker.activities.ingestion import (
@@ -18,8 +19,6 @@ from apps.worker.activities.ingestion import (
     mark_done,
     mark_failed,
 )
-from packages.rag.parser import ParsedSegment
-from packages.rag.summaries import DocumentInsights
 from packages.rag.visual import OCRResult, VisualPage
 from temporalio.converter import default
 
@@ -28,20 +27,41 @@ def test_parsed_doc_round_trips_through_temporal_payload_converter() -> None:
     converter = default().payload_converter
     parsed = ParsedDoc(
         segments=[
-            ParsedSegment(
-                text="Page four evidence.",
-                metadata={"page": 4},
-            )
+            {
+                "text": "Page four evidence.",
+                "metadata": {"page": 4},
+            }
         ],
-        insights=DocumentInsights(summary="Page four evidence summary."),
+        summary="Page four evidence summary.",
     )
 
     payloads = converter.to_payloads([parsed])
     [decoded] = converter.from_payloads(payloads, type_hints=[ParsedDoc])
 
-    assert decoded.segments[0].text == "Page four evidence."
-    assert decoded.segments[0].metadata == {"page": 4}
-    assert decoded.insights.summary == "Page four evidence summary."
+    assert decoded.segments[0]["text"] == "Page four evidence."
+    assert decoded.segments[0]["metadata"] == {"page": 4}
+    assert decoded.summary == "Page four evidence summary."
+
+
+def test_parsed_doc_payload_does_not_depend_on_parser_type_import(monkeypatch) -> None:
+    converter = default().payload_converter
+    parsed = ParsedDoc(
+        segments=[
+            {
+                "text": "Sandbox-safe evidence.",
+                "metadata": {"page": 2},
+            }
+        ],
+        summary="Sandbox-safe summary.",
+    )
+
+    payloads = converter.to_payloads([parsed])
+    monkeypatch.delattr(ingestion_types, "ParsedSegment", raising=False)
+    [decoded] = converter.from_payloads(payloads, type_hints=[ParsedDoc])
+
+    assert decoded.segments[0]["text"] == "Sandbox-safe evidence."
+    assert decoded.segments[0]["metadata"] == {"page": 2}
+    assert decoded.summary == "Sandbox-safe summary."
 
 
 def test_visual_batch_reference_round_trips_through_temporal() -> None:
@@ -159,15 +179,13 @@ async def test_chunk_and_embed_preserves_segment_metadata(monkeypatch) -> None:
     monkeypatch.setattr(ingestion, "embed_texts", fake_embed_texts)
     parsed = ParsedDoc(
         segments=[
-            ParsedSegment(
-                text=("Page four evidence. " * 180).strip(),
-                metadata={"page": 4},
-            )
+            {
+                "text": ("Page four evidence. " * 180).strip(),
+                "metadata": {"page": 4},
+            }
         ],
-        insights=DocumentInsights(
-            summary="Page four evidence summary.",
-            suggested_questions=["Что есть на странице 4?"],
-        ),
+        summary="Page four evidence summary.",
+        suggested_questions=["Что есть на странице 4?"],
     )
 
     batch = await chunk_and_embed(parsed)

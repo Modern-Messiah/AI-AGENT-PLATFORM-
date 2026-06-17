@@ -16,7 +16,33 @@ async def parse_original_document(input: IngestionInput) -> ParsedDoc:
     data = object_store.get(input.object_key)
     segments = await parse_to_segments(data, input.filename)
     insights = build_document_insights(segments, filename=input.filename)
-    return ParsedDoc(segments=segments, insights=insights)
+    return ParsedDoc(
+        segments=[
+            {
+                "text": segment.text,
+                "metadata": segment.metadata,
+            }
+            for segment in segments
+        ],
+        summary=insights.summary,
+        suggested_questions=insights.suggested_questions,
+    )
+
+
+def _to_parsed_segments(parsed: ParsedDoc) -> list[ParsedSegment]:
+    segments: list[ParsedSegment] = []
+    for item in parsed.segments:
+        if isinstance(item, ParsedSegment):
+            segments.append(item)
+            continue
+        text = str(item.get("text", "")).strip()
+        metadata = item.get("metadata", {})
+        if text:
+            segments.append(ParsedSegment(
+                text=text,
+                metadata=metadata if isinstance(metadata, dict) else {},
+            ))
+    return segments
 
 
 async def build_chunk_batch(
@@ -25,7 +51,7 @@ async def build_chunk_batch(
     embedding_model: str,
     embedder: Callable[[list[str]], Awaitable[list[list[float]]]],
 ) -> ChunkBatch:
-    segments = parsed.segments
+    segments = _to_parsed_segments(parsed)
     if not segments and parsed.text.strip():
         segments = [ParsedSegment(text=parsed.text)]
     chunks = chunk_segments(segments)
@@ -43,8 +69,8 @@ async def build_chunk_batch(
             }
             for chunk in chunks
         ],
-        summary=parsed.insights.summary,
-        suggested_questions=parsed.insights.suggested_questions,
+        summary=parsed.summary,
+        suggested_questions=parsed.suggested_questions,
     )
 
 

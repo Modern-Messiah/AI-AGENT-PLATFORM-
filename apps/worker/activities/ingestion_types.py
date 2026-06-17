@@ -2,9 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from packages.rag.parser import ParsedSegment
-from packages.rag.summaries import DocumentInsights
-
 
 @dataclass
 class IngestionInput:
@@ -16,10 +13,12 @@ class IngestionInput:
 
 @dataclass
 class ParsedDoc:
-    # `text` remains for Temporal compatibility with already-produced activity results.
-    segments: list[ParsedSegment] = field(default_factory=list)
+    # Keep this DTO JSON-like: workflow payload decoding must not depend on parser
+    # runtime classes inside Temporal's sandbox.
+    segments: list = field(default_factory=list)
     text: str = ""
-    insights: DocumentInsights = field(default_factory=DocumentInsights)
+    summary: str = ""
+    suggested_questions: list = field(default_factory=list)
 
 
 @dataclass

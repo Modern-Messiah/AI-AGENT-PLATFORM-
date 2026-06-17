@@ -253,7 +253,17 @@ async def finalize_visual_document(
     await mark_visual_document_embedding(input, warnings)
 
     insights = build_document_insights(segments, filename=input.filename)
-    batch = await chunk_and_embed(ParsedDoc(segments=segments, insights=insights))
+    batch = await chunk_and_embed(ParsedDoc(
+        segments=[
+            {
+                "text": segment.text,
+                "metadata": segment.metadata,
+            }
+            for segment in segments
+        ],
+        summary=insights.summary,
+        suggested_questions=insights.suggested_questions,
+    ))
     written = await store_chunks(input, batch)
 
     for reference in batches:
