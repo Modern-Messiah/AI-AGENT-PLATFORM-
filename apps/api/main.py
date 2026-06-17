@@ -36,9 +36,9 @@ import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from functools import lru_cache
-from typing import Annotated, AsyncIterator
+from typing import AsyncIterator
 
-from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, Request, UploadFile
+from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from packages.agents import (
     AgentRunInput,
@@ -46,9 +46,7 @@ from packages.agents import (
     MultiStepResearchInput,
     build_research_agent,
 )
-from packages.analytics.clickhouse import ch_client
 from packages.analytics.events import UsageEvent, record_usage
-from packages.auth import generate_key, require_tenant
 from packages.cache.redis import get_redis
 from packages.cache.semantic import semantic_cache
 from packages.core import settings
@@ -67,30 +65,61 @@ from packages.rag import (
 )
 from packages.rag.embedder import embed_texts
 from packages.storage import (
-    ApiKey,
-    ChatMessage,
-    ChatSession,
     Chunk,
     Document,
     DocumentAsset,
-    DocumentAssetStatus,
     DocumentStatus,
     Notebook,
     NotebookDocument,
-    async_session,
     object_store,
 )
 from packages.storage.db import tenant_session
-from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import delete, func, select, update
 from starlette.responses import Response, StreamingResponse
 from temporalio.client import Client
 from temporalio.service import RPCError
 
+from apps.api.deps import TenantID, read_with_limit
+from apps.api.routers import analytics_router, auth_router, health_router, sessions_router
+from apps.api.schemas import (
+    AddMessageRequest,
+    AgentRunApiResponse,
+    AgentStreamRequest,
+    ChatMessageSchema,
+    ChatSessionSchema,
+    CreateKeyRequest,
+    CreateKeyResponse,
+    CreateNotebookRequest,
+    CreateSessionRequest,
+    DocumentAssetResponse,
+    DocumentChunkPreview,
+    DocumentResponse,
+    NotebookResponse,
+    UpdateSessionRequest,
+    UpdateNotebookDocumentsRequest,
+    WorkflowSignalResponse,
+)
+from apps.api.serializers import (
+    chunk_excerpt,
+    document_asset_response,
+    document_response,
+    metadata_page,
+    notebook_response,
+    serialize_sources,
+)
 from apps.worker.activities.ingestion import IngestionInput
 from apps.worker.workflows.agent_run import AgentRunWorkflow
 from apps.worker.workflows.ingestion import IngestionWorkflow
 from apps.worker.workflows.multi_step import MultiStepResearchWorkflow
+
+# Backward-compatible names imported by existing tests and scripts.
+_chunk_excerpt = chunk_excerpt
+_document_asset_response = document_asset_response
+_document_response = document_response
+_metadata_page = metadata_page
+_notebook_response = notebook_response
+_read_with_limit = read_with_limit
+_serialize_sources = serialize_sources
 
 logging.basicConfig(level=settings.log_level)
 log = logging.getLogger(__name__)
@@ -216,213 +245,6 @@ async def _enforce_agent_limits(tenant_id: str, query: str, route: str) -> str:
         log.warning("rate limit check failed open | tenant=%s route=%s error=%s", tenant_id, route, exc)
     return query
 
-TenantID = Annotated[str, Depends(require_tenant)]
-
-_READ_CHUNK = 64 * 1024  # 64 KB
-
-
-async def _read_with_limit(file: UploadFile, max_bytes: int) -> bytes:
-    """Read an upload in chunks; raise HTTP 413 as soon as limit is exceeded."""
-    chunks: list[bytes] = []
-    received = 0
-    while True:
-        chunk = await file.read(_READ_CHUNK)
-        if not chunk:
-            break
-        received += len(chunk)
-        if received > max_bytes:
-            raise HTTPException(
-                status_code=413,
-                detail=f"file exceeds {max_bytes // (1024 * 1024)} MB limit",
-            )
-        chunks.append(chunk)
-    return b"".join(chunks)
-
-
-# ── Pydantic schemas ──────────────────────────────────────────────────────────
-
-class ChatMessageSchema(BaseModel):
-    id: str
-    role: str
-    content: str
-    sources: list[str | CitationSource] = []
-    cached: bool = False
-    created_at: str
-
-
-class ChatSessionSchema(BaseModel):
-    id: str
-    title: str
-    model: str | None
-    created_at: str
-    updated_at: str
-    message_count: int = 0
-
-
-class CreateSessionRequest(BaseModel):
-    title: str = "New Chat"
-    model: str | None = None
-
-
-class UpdateSessionRequest(BaseModel):
-    title: str | None = None
-    model: str | None = None
-
-
-class AddMessageRequest(BaseModel):
-    role: str
-    content: str
-    sources: list[str | CitationSource] = []
-    cached: bool = False
-
-
-class DocumentResponse(BaseModel):
-    id: str
-    tenant_id: str
-    filename: str
-    status: DocumentStatus
-    size_bytes: int = 0
-    summary: str | None = None
-    suggested_questions: list[str] = Field(default_factory=list)
-    processing_stage: str = "queued"
-    processed_pages: int = 0
-    total_pages: int = 0
-    warnings: list[str] = Field(default_factory=list)
-    error: str | None = None
-    created_at: str | None = None
-
-
-class DocumentAssetResponse(BaseModel):
-    id: str
-    document_id: str
-    page_number: int | None = None
-    asset_kind: str
-    ocr_text: str = ""
-    ocr_confidence: float | None = None
-    vision_description: str = ""
-    width: int = 0
-    height: int = 0
-    status: DocumentAssetStatus
-    error: str | None = None
-    preview_available: bool = False
-
-
-class DocumentChunkPreview(BaseModel):
-    chunk_id: str
-    chunk_index: int
-    page: int | None = None
-    excerpt: str
-
-
-class CreateNotebookRequest(BaseModel):
-    title: str = Field(min_length=1, max_length=256)
-    description: str | None = Field(default=None, max_length=2000)
-    document_ids: list[uuid.UUID] = Field(default_factory=list)
-
-
-class UpdateNotebookDocumentsRequest(BaseModel):
-    document_ids: list[uuid.UUID] = Field(default_factory=list)
-
-
-class NotebookResponse(BaseModel):
-    id: str
-    tenant_id: str
-    title: str
-    description: str | None = None
-    document_ids: list[str] = Field(default_factory=list)
-    document_count: int = 0
-    documents: list[DocumentResponse] = Field(default_factory=list)
-    summary: str | None = None
-    suggested_questions: list[str] = Field(default_factory=list)
-    key_topics: list[str] = Field(default_factory=list)
-    insights_updated_at: str | None = None
-    created_at: str | None = None
-    updated_at: str | None = None
-
-
-class AgentRunApiResponse(BaseModel):
-    answer: str = ""
-    confidence: float = 0.0
-    sources: list[str | CitationSource] = []
-    cached: bool = False
-    workflow_id: str | None = None
-    pending_approval: bool = False
-
-
-class WorkflowSignalResponse(BaseModel):
-    workflow_id: str
-    action: str
-
-
-class CreateKeyRequest(BaseModel):
-    tenant_id: str
-    name: str | None = None
-
-
-class CreateKeyResponse(BaseModel):
-    id: str
-    tenant_id: str
-    name: str | None
-    raw_key: str  # shown once — store it now
-
-
-def _chat_session_response(sess: ChatSession, message_count: int = 0) -> ChatSessionSchema:
-    return ChatSessionSchema(
-        id=str(sess.id),
-        title=sess.title,
-        model=sess.model,
-        created_at=sess.created_at.isoformat(),
-        updated_at=sess.updated_at.isoformat(),
-        message_count=message_count,
-    )
-
-
-def _chat_message_response(msg: ChatMessage) -> ChatMessageSchema:
-    return ChatMessageSchema(
-        id=str(msg.id),
-        role=msg.role,
-        content=msg.content,
-        sources=msg.sources or [],
-        cached=msg.cached,
-        created_at=msg.created_at.isoformat(),
-    )
-
-
-def _document_response(doc: Document) -> DocumentResponse:
-    return DocumentResponse(
-        id=str(doc.id),
-        tenant_id=doc.tenant_id,
-        filename=doc.filename,
-        status=doc.status,
-        size_bytes=doc.size_bytes,
-        summary=doc.summary,
-        suggested_questions=doc.suggested_questions or [],
-        processing_stage=doc.processing_stage,
-        processed_pages=doc.processed_pages,
-        total_pages=doc.total_pages,
-        warnings=doc.warnings or [],
-        error=doc.error,
-        created_at=doc.created_at.isoformat() if doc.created_at else None,
-    )
-
-
-def _document_asset_response(asset: DocumentAsset) -> DocumentAssetResponse:
-    return DocumentAssetResponse(
-        id=str(asset.id),
-        document_id=str(asset.document_id),
-        page_number=asset.page_number,
-        asset_kind=asset.asset_kind,
-        ocr_text=asset.ocr_text,
-        ocr_confidence=asset.ocr_confidence,
-        vision_description=asset.vision_description,
-        width=asset.width,
-        height=asset.height,
-        status=asset.status,
-        error=asset.error,
-        preview_available=bool(asset.preview_object_key),
-    )
-
-
 def _dedupe_uuid_list(ids: list[uuid.UUID]) -> list[uuid.UUID]:
     seen: set[uuid.UUID] = set()
     deduped: list[uuid.UUID] = []
@@ -432,32 +254,6 @@ def _dedupe_uuid_list(ids: list[uuid.UUID]) -> list[uuid.UUID]:
         seen.add(item)
         deduped.append(item)
     return deduped
-
-
-def _notebook_response(
-    notebook: Notebook,
-    documents: list[Document] | None = None,
-) -> NotebookResponse:
-    docs = documents or []
-    return NotebookResponse(
-        id=str(notebook.id),
-        tenant_id=notebook.tenant_id,
-        title=notebook.title,
-        description=notebook.description,
-        document_ids=[str(doc.id) for doc in docs],
-        document_count=len(docs),
-        documents=[_document_response(doc) for doc in docs],
-        summary=notebook.summary,
-        suggested_questions=notebook.suggested_questions or [],
-        key_topics=notebook.key_topics or [],
-        insights_updated_at=(
-            notebook.insights_updated_at.isoformat()
-            if notebook.insights_updated_at
-            else None
-        ),
-        created_at=notebook.created_at.isoformat() if notebook.created_at else None,
-        updated_at=notebook.updated_at.isoformat() if notebook.updated_at else None,
-    )
 
 
 def _clean_notebook_title(title: str) -> str:
@@ -539,24 +335,6 @@ async def _load_notebook_insight_sources(
     ]
 
 
-def _metadata_page(metadata: dict[str, object]) -> int | None:
-    page = metadata.get("page")
-    if isinstance(page, bool) or page is None:
-        return None
-    try:
-        parsed = int(page)
-    except (TypeError, ValueError):
-        return None
-    return parsed if parsed > 0 else None
-
-
-def _chunk_excerpt(content: str, max_chars: int = 520) -> str:
-    excerpt = re.sub(r"\s+", " ", content).strip()
-    if len(excerpt) <= max_chars:
-        return excerpt
-    return f"{excerpt[:max_chars].rstrip()}…"
-
-
 # ── App lifecycle ─────────────────────────────────────────────────────────────
 
 @asynccontextmanager
@@ -583,42 +361,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
-# ── Public ────────────────────────────────────────────────────────────────────
-
-@app.get("/health")
-async def health() -> dict[str, str]:
-    return {"status": "ok"}
-
-
-# ── Auth management ───────────────────────────────────────────────────────────
-
-@app.post("/auth/keys", response_model=CreateKeyResponse, status_code=201)
-async def create_api_key(
-    body: CreateKeyRequest,
-    x_admin_secret: str = Header(..., alias="X-Admin-Secret"),
-) -> CreateKeyResponse:
-    """Create an API key for a tenant. Protected by X-Admin-Secret header."""
-    if x_admin_secret != settings.admin_secret:
-        raise HTTPException(status_code=403, detail="invalid admin secret")
-
-    raw_key, key_hash = generate_key()
-    key_id = uuid.uuid4()
-
-    async with async_session() as s, s.begin():
-        s.add(ApiKey(
-            id=key_id,
-            tenant_id=body.tenant_id,
-            key_hash=key_hash,
-            name=body.name,
-        ))
-
-    return CreateKeyResponse(
-        id=str(key_id),
-        tenant_id=body.tenant_id,
-        name=body.name,
-        raw_key=raw_key,
-    )
+app.include_router(health_router)
+app.include_router(auth_router)
+app.include_router(analytics_router)
+app.include_router(sessions_router)
 
 
 # ── Agent ─────────────────────────────────────────────────────────────────────
@@ -674,19 +420,6 @@ async def run_agent(payload: AgentRunInput, tenant_id: TenantID) -> AgentRunApiR
         )
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=str(e)) from e
-
-
-class AgentStreamRequest(BaseModel):
-    user_query: str
-    model: str | None = None
-    document_id: uuid.UUID | None = None
-    notebook_id: uuid.UUID | None = None
-
-    @model_validator(mode="after")
-    def validate_single_scope(self) -> AgentStreamRequest:
-        if self.document_id is not None and self.notebook_id is not None:
-            raise ValueError("document_id and notebook_id cannot be used together")
-        return self
 
 
 @app.post("/agent/stream")
@@ -969,57 +702,6 @@ async def reject_workflow(workflow_id: str, tenant_id: TenantID) -> WorkflowSign
 
 
 # ── Analytics ─────────────────────────────────────────────────────────────────
-
-@app.get("/analytics/usage")
-async def get_usage(
-    tenant_id: TenantID,
-    days: int = Query(default=30, ge=1, le=365),
-) -> dict:
-    """Aggregate LLM cost and token usage for the authenticated tenant over N days."""
-    sql = """
-        SELECT
-            model,
-            provider,
-            sum(prompt_tokens)      AS total_prompt_tokens,
-            sum(completion_tokens)  AS total_completion_tokens,
-            sum(total_tokens)       AS total_tokens,
-            round(sum(cost_usd), 6) AS total_cost_usd,
-            round(avg(latency_ms))  AS avg_latency_ms,
-            count()                 AS call_count
-        FROM analytics.llm_usage_events
-        WHERE tenant_id = {tenant_id:String}
-          AND event_time >= now() - toIntervalDay({days:UInt32})
-        GROUP BY model, provider
-        ORDER BY total_cost_usd DESC
-    """
-    daily_sql = """
-        SELECT
-            toDate(event_time)       AS day,
-            sum(total_tokens)        AS total_tokens,
-            round(sum(cost_usd), 6)  AS total_cost_usd,
-            round(avg(latency_ms))   AS avg_latency_ms,
-            count()                  AS call_count
-        FROM analytics.llm_usage_events
-        WHERE tenant_id = {tenant_id:String}
-          AND event_time >= now() - toIntervalDay({days:UInt32})
-        GROUP BY day
-        ORDER BY day ASC
-    """
-    try:
-        rows = await ch_client.query(sql, {"tenant_id": tenant_id, "days": days})
-        daily_rows = await ch_client.query(daily_sql, {"tenant_id": tenant_id, "days": days})
-    except Exception as e:  # noqa: BLE001
-        raise HTTPException(status_code=500, detail=f"ClickHouse error: {e}") from e
-
-    total_cost = sum(r.get("total_cost_usd") or 0 for r in rows)
-    return {
-        "tenant_id": tenant_id,
-        "days": days,
-        "total_cost_usd": round(total_cost, 6),
-        "breakdown": rows,
-        "daily": daily_rows,
-    }
-
 
 # ── Documents ─────────────────────────────────────────────────────────────────
 
@@ -1659,102 +1341,3 @@ async def delete_notebook(notebook_id: uuid.UUID, tenant_id: TenantID) -> None:
         if notebook is None:
             raise HTTPException(status_code=404, detail="notebook not found")
         await s.delete(notebook)
-
-
-# ── Chat sessions ─────────────────────────────────────────────────────────────
-
-@app.get("/sessions", response_model=list[ChatSessionSchema])
-async def list_sessions(tenant_id: TenantID) -> list[ChatSessionSchema]:
-    msg_count_sq = (
-        select(func.count())
-        .select_from(ChatMessage)
-        .where(ChatMessage.session_id == ChatSession.id)
-        .correlate(ChatSession)
-        .scalar_subquery()
-    )
-    async with tenant_session(tenant_id) as s:
-        rows = (await s.execute(
-            select(ChatSession, msg_count_sq.label("cnt"))
-            .where(ChatSession.tenant_id == tenant_id)
-            .order_by(ChatSession.updated_at.desc())
-        )).all()
-    return [
-        ChatSessionSchema(
-            id=str(sess.id),
-            title=sess.title,
-            model=sess.model,
-            created_at=sess.created_at.isoformat(),
-            updated_at=sess.updated_at.isoformat(),
-            message_count=cnt,
-        )
-        for sess, cnt in rows
-    ]
-
-
-@app.post("/sessions", response_model=ChatSessionSchema, status_code=201)
-async def create_session(body: CreateSessionRequest, tenant_id: TenantID) -> ChatSessionSchema:
-    async with tenant_session(tenant_id) as s:
-        sess = ChatSession(tenant_id=tenant_id, title=body.title, model=body.model)
-        s.add(sess)
-        await s.flush()
-        await s.refresh(sess)
-        return _chat_session_response(sess)
-
-
-@app.patch("/sessions/{session_id}", response_model=ChatSessionSchema)
-async def update_session(session_id: uuid.UUID, body: UpdateSessionRequest, tenant_id: TenantID) -> ChatSessionSchema:
-    async with tenant_session(tenant_id) as s:
-        sess = (await s.execute(
-            select(ChatSession).where(ChatSession.id == session_id, ChatSession.tenant_id == tenant_id)
-        )).scalar_one_or_none()
-        if sess is None:
-            raise HTTPException(status_code=404, detail="session not found")
-        if body.title is not None:
-            sess.title = body.title
-        if body.model is not None:
-            sess.model = body.model
-        await s.flush()
-        await s.refresh(sess)
-        return _chat_session_response(sess)
-
-
-@app.delete("/sessions/{session_id}", status_code=204)
-async def delete_session(session_id: uuid.UUID, tenant_id: TenantID) -> None:
-    async with tenant_session(tenant_id) as s:
-        sess = (await s.execute(
-            select(ChatSession).where(ChatSession.id == session_id, ChatSession.tenant_id == tenant_id)
-        )).scalar_one_or_none()
-        if sess is None:
-            raise HTTPException(status_code=404, detail="session not found")
-        await s.delete(sess)
-
-
-@app.get("/sessions/{session_id}/messages", response_model=list[ChatMessageSchema])
-async def get_messages(session_id: uuid.UUID, tenant_id: TenantID) -> list[ChatMessageSchema]:
-    async with tenant_session(tenant_id) as s:
-        msgs = (await s.execute(
-            select(ChatMessage)
-            .where(ChatMessage.session_id == session_id, ChatMessage.tenant_id == tenant_id)
-            .order_by(ChatMessage.created_at)
-        )).scalars().all()
-    return [_chat_message_response(m) for m in msgs]
-
-
-@app.post("/sessions/{session_id}/messages", response_model=ChatMessageSchema, status_code=201)
-async def add_message(session_id: uuid.UUID, body: AddMessageRequest, tenant_id: TenantID) -> ChatMessageSchema:
-    async with tenant_session(tenant_id) as s:
-        sess = (await s.execute(
-            select(ChatSession).where(ChatSession.id == session_id, ChatSession.tenant_id == tenant_id)
-        )).scalar_one_or_none()
-        if sess is None:
-            raise HTTPException(status_code=404, detail="session not found")
-        sess.updated_at = datetime.now(timezone.utc)
-        msg = ChatMessage(
-            session_id=session_id, tenant_id=tenant_id,
-            role=body.role, content=body.content,
-            sources=_serialize_sources(body.sources), cached=body.cached,
-        )
-        s.add(msg)
-        await s.flush()
-        await s.refresh(msg)
-        return _chat_message_response(msg)
