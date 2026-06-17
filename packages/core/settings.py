@@ -1,9 +1,10 @@
 import json
 import logging
 from functools import lru_cache
+from typing import Annotated
 
 from pydantic import Field, field_validator, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 _log = logging.getLogger(__name__)
 
@@ -73,13 +74,14 @@ class Settings(BaseSettings):
     # or comma-separated  (HTTP_FETCH_ALLOWED_DOMAINS=docs.python.org,api.github.com).
     # When non-empty ONLY these domains are reachable — fully prevents SSRF including DNS rebinding.
     # When empty the tool falls back to an IP-based blocklist (still vulnerable to DNS rebinding).
-    http_fetch_allowed_domains: list[str] = []
+    http_fetch_allowed_domains: Annotated[list[str], NoDecode] = []
 
     # CORS allowed origins for the API.
     # Accepts JSON array  (ALLOWED_ORIGINS='["https://app.example.com"]')
     # or comma-separated  (ALLOWED_ORIGINS=https://app.example.com,https://admin.example.com).
-    # When empty, all origins are allowed (safe for local dev; set in production).
-    allowed_origins: list[str] = []
+    # When empty, all origins are allowed only in local dev; set explicit origins
+    # in non-local environments. Wildcard origins are rejected outside local.
+    allowed_origins: Annotated[list[str], NoDecode] = []
 
     @field_validator("http_fetch_allowed_domains", "allowed_origins", mode="before")
     @classmethod
@@ -102,10 +104,21 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _check_production_secrets(self) -> "Settings":
-        if self.app_env != "local" and self.admin_secret == _DEFAULT_ADMIN_SECRET:
+        is_local = self.app_env.strip().lower() == "local"
+        if not is_local and self.admin_secret == _DEFAULT_ADMIN_SECRET:
             raise ValueError(
                 "ADMIN_SECRET must be changed from the default before running in non-local environments"
             )
+        if not is_local:
+            origins = [origin.strip() for origin in self.allowed_origins if origin.strip()]
+            if not origins:
+                raise ValueError(
+                    "ALLOWED_ORIGINS must be set before running in non-local environments"
+                )
+            if "*" in origins:
+                raise ValueError(
+                    "ALLOWED_ORIGINS must not contain '*' in non-local environments"
+                )
         return self
 
 
