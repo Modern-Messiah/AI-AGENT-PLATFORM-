@@ -391,6 +391,9 @@ Useful Make targets:
 | `make test` | Run backend pytest through `uv` |
 | `make backup` | Dump Postgres to MinIO using `scripts/backup.py` |
 
+For full disaster recovery, use the backup and restore runbook:
+[docs/runbooks/backup-restore.md](docs/runbooks/backup-restore.md).
+
 ## Data Model Summary
 
 The main application data lives in Postgres. Key tables include:
@@ -476,8 +479,8 @@ build, and Compose validation on pushes, pull requests, and manual dispatches.
 ## Current Priorities
 
 1. Add an end-to-end smoke test for upload -> ingestion -> ask -> citation -> delete.
-2. Write and verify a backup/restore runbook for Postgres and MinIO.
-3. Add pagination to large lists and continue reducing N+1 query patterns.
+2. Run a manual restore drill from the backup/restore runbook and record the result.
+3. Add pagination to any remaining large-detail endpoints.
 4. Revisit auth before any public deployment.
 
 ## Useful Links
