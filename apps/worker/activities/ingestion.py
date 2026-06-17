@@ -11,24 +11,15 @@ import json
 import logging
 import time
 import uuid
-from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, field
 
 from packages.cache.semantic import semantic_cache
 from packages.core import settings
-from packages.llm import complete_vision_text
 from packages.rag import build_document_insights, chunk_segments, embed_texts, parse_to_segments
 from packages.rag.parser import ParsedSegment
-from packages.rag.summaries import DocumentInsights
 from packages.rag.visual import (
-    OCRResult,
-    VisualPage,
     build_page_batches,
     is_visual_filename,
-    merge_visual_text,
-    needs_vision_analysis,
     render_visual_pages,
-    run_paddle_ocr,
     split_visual_sections,
     visual_page_count,
 )
@@ -48,147 +39,21 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from temporalio import activity
 
+from apps.worker.activities.ingestion_types import (
+    ChunkBatch,
+    IngestionInput,
+    ParsedDoc,
+    VisualBatchInput,
+    VisualBatchRef,
+    VisualManifest,
+    VisualPageAnalysis,
+)
+from apps.worker.activities.visual_analysis import (
+    analyze_visual_page,
+    await_with_heartbeat as _await_with_heartbeat,
+)
+
 log = logging.getLogger(__name__)
-
-
-@dataclass
-class IngestionInput:
-    document_id: str
-    tenant_id: str
-    object_key: str
-    filename: str
-
-
-@dataclass
-class ParsedDoc:
-    # `text` remains for Temporal compatibility with already-produced activity results.
-    segments: list[ParsedSegment] = field(default_factory=list)
-    text: str = ""
-    insights: DocumentInsights = field(default_factory=DocumentInsights)
-
-
-@dataclass
-class ChunkBatch:
-    contents: list[str]
-    embeddings: list[list[float]]
-    metadata: list[dict] = field(default_factory=list)
-    summary: str = ""
-    suggested_questions: list[str] = field(default_factory=list)
-
-
-@dataclass(frozen=True)
-class VisualBatchRef:
-    object_key: str
-    processed_pages: int
-    warnings: list[str] = field(default_factory=list)
-
-
-@dataclass(frozen=True)
-class VisualManifest:
-    is_visual: bool
-    total_pages: int = 0
-    batches: list[tuple[int, int]] = field(default_factory=list)
-
-
-@dataclass(frozen=True)
-class VisualBatchInput:
-    ingestion: IngestionInput
-    start_page: int
-    end_page: int
-
-
-@dataclass(frozen=True)
-class VisualPageAnalysis:
-    text: str
-    ocr_text: str
-    ocr_confidence: float | None
-    vision_description: str
-    warning: str | None = None
-    ocr_latency_ms: int = 0
-    vision_latency_ms: int = 0
-
-
-async def analyze_visual_page(
-    page: VisualPage,
-    *,
-    ocr_reader: Callable[[bytes], OCRResult] = run_paddle_ocr,
-    vision_reader: Callable[..., Awaitable[str]] = complete_vision_text,
-) -> VisualPageAnalysis:
-    text_layer = page.text_layer.strip()
-    ocr_latency_ms = 0
-    if len(" ".join(text_layer.split())) >= 80:
-        ocr = OCRResult(text=text_layer, confidence=1.0)
-    else:
-        ocr_started = time.monotonic()
-        ocr = await asyncio.to_thread(ocr_reader, page.preview_bytes)
-        ocr_latency_ms = int((time.monotonic() - ocr_started) * 1000)
-        if not ocr.text and text_layer:
-            ocr = OCRResult(text=text_layer, confidence=ocr.confidence)
-
-    vision_description = ""
-    vision_latency_ms = 0
-    if needs_vision_analysis(
-        ocr.text,
-        ocr.confidence,
-        has_visuals=page.has_visuals,
-    ):
-        vision_started = time.monotonic()
-        try:
-            vision_description = await vision_reader(
-                page.preview_bytes,
-                "image/webp",
-                prompt=(
-                    f"Analyze page {page.page_number} of a knowledge-base document. "
-                    "Extract diagram and table semantics that OCR cannot preserve. "
-                    "For diagrams, describe nodes, conditions, directed transitions, and loops "
-                    "in execution order. For tables, preserve headers and row relationships. "
-                    "Use the same language as the page. Be factual and concise. "
-                    "Describe only visual content that is actually visible on this page. "
-                    "Do not reconstruct or infer diagrams that are only mentioned in text. "
-                    "Do not describe colors, typography, spacing, or decoration unless they "
-                    "change the meaning."
-                ),
-            )
-        except Exception as exc:  # noqa: BLE001
-            vision_latency_ms = int((time.monotonic() - vision_started) * 1000)
-            return VisualPageAnalysis(
-                text=ocr.text.strip(),
-                ocr_text=ocr.text,
-                ocr_confidence=ocr.confidence,
-                vision_description="",
-                warning=f"page {page.page_number}: vision analysis failed: {exc}",
-                ocr_latency_ms=ocr_latency_ms,
-                vision_latency_ms=vision_latency_ms,
-            )
-        vision_latency_ms = int((time.monotonic() - vision_started) * 1000)
-
-    return VisualPageAnalysis(
-        text=merge_visual_text(ocr.text, vision_description),
-        ocr_text=ocr.text,
-        ocr_confidence=ocr.confidence,
-        vision_description=vision_description,
-        ocr_latency_ms=ocr_latency_ms,
-        vision_latency_ms=vision_latency_ms,
-    )
-
-
-async def _await_with_heartbeat(
-    awaitable: Awaitable[VisualPageAnalysis],
-    *,
-    details: dict[str, object],
-    interval_seconds: float = 20.0,
-) -> VisualPageAnalysis:
-    task = asyncio.create_task(awaitable)
-    while not task.done():
-        activity.heartbeat(details)
-        try:
-            return await asyncio.wait_for(
-                asyncio.shield(task),
-                timeout=interval_seconds,
-            )
-        except TimeoutError:
-            continue
-    return await task
 
 
 async def _upsert_document_asset(
