@@ -11,7 +11,6 @@ up: ## Start all infra services
 	@echo "→ MinIO:       localhost:9002 (console: http://localhost:9001)"
 	@echo "→ Temporal:    localhost:7233 (UI: http://localhost:8233)"
 	@echo "→ Langfuse:    http://localhost:3000"
-	@echo "→ Bifrost:     http://localhost:8088"
 
 down: ## Stop all services
 	docker compose down
