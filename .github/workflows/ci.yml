@@ -1,0 +1,98 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+          enable-cache: true
+
+      - name: Install Python dependencies
+        run: uv sync
+
+      - name: Run backend tests
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: uv run pytest -q
+
+  frontend:
+    name: Frontend tests and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: apps/ui/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: apps/ui
+        run: npm ci
+
+      - name: Run frontend tests
+        working-directory: apps/ui
+        run: npm test
+
+      - name: Build frontend
+        working-directory: apps/ui
+        run: npm run build
+
+  compose:
+    name: Docker Compose config
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    env:
+      HOST_BIND_ADDRESS: 127.0.0.1
+      POSTGRES_PASSWORD: ci-postgres-password
+      APP_DB_PASSWORD: ci-app-password
+      CLICKHOUSE_PASSWORD: ci-clickhouse-password
+      MINIO_ROOT_USER: aap_minio
+      MINIO_ROOT_PASSWORD: ci-minio-password
+      LANGFUSE_NEXTAUTH_SECRET: ci-nextauth-secret
+      LANGFUSE_SALT: ci-langfuse-salt
+      LANGFUSE_ENCRYPTION_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      ADMIN_SECRET: ci-admin-secret
+      MOONSHOT_API_KEY: ""
+      DEEPSEEK_API_KEY: ""
+      VITE_API_BASE_URL: /api
+      VITE_API_KEY: ""
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate Docker Compose config
+        run: docker compose config --quiet

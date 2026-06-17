@@ -30,9 +30,9 @@ jobs:
 
     env:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/app
-      # Stub values — no real LLM/Bifrost in CI, eval uses DB only
-      BIFROST_BASE_URL: http://localhost:8088/openai/v1
-      BIFROST_API_KEY: ci-stub
+      # Stub provider values — retrieval eval uses DB only.
+      MOONSHOT_API_KEY: ""
+      DEEPSEEK_API_KEY: ""
       MINIO_ENDPOINT: localhost:9002
       REDIS_URL: redis://localhost:6379/0
       CLICKHOUSE_URL: http://default:@localhost:8123/analytics

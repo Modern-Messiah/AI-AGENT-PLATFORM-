@@ -456,8 +456,8 @@ docker compose config --quiet
 # exit 0
 ```
 
-The next missing quality gate is a full CI workflow that runs backend tests, frontend
-tests, frontend build, and Compose validation on every pull request or push.
+The repository has a CI workflow that runs backend tests, frontend tests, frontend
+build, and Compose validation on pushes, pull requests, and manual dispatches.
 
 ## Operational Notes
 
@@ -475,12 +475,10 @@ tests, frontend build, and Compose validation on every pull request or push.
 
 ## Current Priorities
 
-1. Add a CI workflow for backend tests, frontend tests, frontend build, and Compose
-   config validation.
-2. Add an end-to-end smoke test for upload -> ingestion -> ask -> citation -> delete.
-3. Write and verify a backup/restore runbook for Postgres and MinIO.
-4. Add pagination to large lists and continue reducing N+1 query patterns.
-5. Revisit auth before any public deployment.
+1. Add an end-to-end smoke test for upload -> ingestion -> ask -> citation -> delete.
+2. Write and verify a backup/restore runbook for Postgres and MinIO.
+3. Add pagination to large lists and continue reducing N+1 query patterns.
+4. Revisit auth before any public deployment.
 
 ## Useful Links
 
