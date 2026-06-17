@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from types import SimpleNamespace
 
-from apps.api import main as api
+from apps.api.routers import documents as document_routes
 from packages.storage import DocumentAssetStatus
 
 
@@ -49,15 +49,15 @@ async def test_asset_content_is_tenant_scoped_and_returns_webp(monkeypatch) -> N
     fake_session = _FakeTenantSession(asset)
     requested_keys: list[str] = []
 
-    monkeypatch.setattr(api, "tenant_session", lambda tenant_id: fake_session)
+    monkeypatch.setattr(document_routes, "tenant_session", lambda tenant_id: fake_session)
 
     def fake_get(key: str) -> bytes:
         requested_keys.append(key)
         return b"webp-preview"
 
-    monkeypatch.setattr(api.object_store, "get", fake_get)
+    monkeypatch.setattr(document_routes.object_store, "get", fake_get)
 
-    response = await api.get_document_asset_content(document_id, asset_id, "tenant-a")
+    response = await document_routes.get_document_asset_content(document_id, asset_id, "tenant-a")
 
     query = str(fake_session.session.statement)
     assert "document_assets.id" in query

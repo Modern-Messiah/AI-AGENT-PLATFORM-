@@ -6,6 +6,7 @@ from types import SimpleNamespace
 
 from apps.api import main as api
 from apps.api.main import app
+from apps.api.routers import documents as document_routes
 from fastapi.routing import APIRoute
 from packages.storage import DocumentStatus
 
@@ -80,15 +81,16 @@ async def test_reindex_document_starts_new_ingestion_workflow(monkeypatch) -> No
     fake_temporal = _FakeTemporal()
     cleared: list[tuple[str, str]] = []
 
-    monkeypatch.setattr(api, "tenant_session", lambda tenant_id: fake_session)
+    monkeypatch.setattr(document_routes, "tenant_session", lambda tenant_id: fake_session)
     monkeypatch.setattr(api.app.state, "temporal", fake_temporal, raising=False)
 
     async def fake_invalidate(tenant_id: str, reason: str) -> None:
         cleared.append((tenant_id, reason))
 
-    monkeypatch.setattr(api, "_invalidate_semantic_cache", fake_invalidate)
+    monkeypatch.setattr(document_routes, "invalidate_semantic_cache", fake_invalidate)
 
-    response = await api.reindex_document(document_id, "tenant-a")
+    request = SimpleNamespace(app=api.app)
+    response = await document_routes.reindex_document(document_id, "tenant-a", request)
 
     assert fake_session.session.flushed is True
     assert response.status == DocumentStatus.pending
