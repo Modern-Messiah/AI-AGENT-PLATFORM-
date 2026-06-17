@@ -52,6 +52,14 @@ def document_response(doc: Document) -> DocumentResponse:
         filename=doc.filename,
         status=doc.status,
         size_bytes=doc.size_bytes,
+        source_type=getattr(doc, "source_type", "file") or "file",
+        source_url=getattr(doc, "source_url", None),
+        source_title=getattr(doc, "source_title", None),
+        source_checked_at=(
+            doc.source_checked_at.isoformat()
+            if getattr(doc, "source_checked_at", None)
+            else None
+        ),
         summary=doc.summary,
         suggested_questions=doc.suggested_questions or [],
         processing_stage=doc.processing_stage,

@@ -51,6 +51,7 @@ from apps.api.routers import (
 )
 from apps.api.schemas import (
     AddMessageRequest,
+    AddUrlDocumentRequest,
     AgentRunApiResponse,
     AgentStreamRequest,
     ChatMessageSchema,
@@ -63,6 +64,8 @@ from apps.api.schemas import (
     DocumentChunkPreview,
     DocumentResponse,
     NotebookResponse,
+    UrlCheckRequest,
+    UrlCheckResponse,
     UpdateSessionRequest,
     UpdateNotebookDocumentsRequest,
     WorkflowSignalResponse,

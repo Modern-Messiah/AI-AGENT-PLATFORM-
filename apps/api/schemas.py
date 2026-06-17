@@ -49,6 +49,10 @@ class DocumentResponse(BaseModel):
     filename: str
     status: DocumentStatus
     size_bytes: int = 0
+    source_type: str = "file"
+    source_url: str | None = None
+    source_title: str | None = None
+    source_checked_at: str | None = None
     summary: str | None = None
     suggested_questions: list[str] = Field(default_factory=list)
     processing_stage: str = "queued"
@@ -57,6 +61,24 @@ class DocumentResponse(BaseModel):
     warnings: list[str] = Field(default_factory=list)
     error: str | None = None
     created_at: str | None = None
+
+
+class UrlCheckRequest(BaseModel):
+    url: str = Field(min_length=1, max_length=4096)
+
+
+class AddUrlDocumentRequest(BaseModel):
+    url: str = Field(min_length=1, max_length=4096)
+
+
+class UrlCheckResponse(BaseModel):
+    ok: bool
+    url: str
+    final_url: str | None = None
+    content_type: str | None = None
+    title: str | None = None
+    size_bytes: int = 0
+    reason: str | None = None
 
 
 class DocumentAssetResponse(BaseModel):

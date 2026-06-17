@@ -47,6 +47,41 @@
       />
     </div>
 
+    <form class="url-source-panel" @submit.prevent="checkUrlSource">
+      <div>
+        <div class="url-source-title">{{ t('documents.urlTitle') }}</div>
+        <div class="url-source-sub">{{ t('documents.urlDescription') }}</div>
+      </div>
+      <div class="url-source-controls">
+        <input
+          v-model.trim="urlInput"
+          class="url-source-input"
+          type="url"
+          :placeholder="t('documents.urlPlaceholder')"
+          autocomplete="off"
+        />
+        <button class="btn btn-ghost" type="submit" :disabled="urlChecking || urlAdding">
+          <span v-if="urlChecking">{{ t('documents.urlChecking') }}</span>
+          <span v-else>{{ t('documents.urlCheck') }}</span>
+        </button>
+        <button
+          class="btn"
+          type="button"
+          :disabled="!canAddCheckedUrl || urlAdding"
+          @click="addUrlSource"
+        >
+          <span v-if="urlAdding">{{ t('documents.urlAdding') }}</span>
+          <span v-else>{{ t('documents.urlAdd') }}</span>
+        </button>
+      </div>
+      <div v-if="urlCheck?.ok" class="url-source-status ok">
+        {{ t('documents.urlReady', { title: urlCheck.title || urlCheck.final_url || urlCheck.url }) }}
+      </div>
+      <div v-else-if="urlError" class="url-source-status error">
+        {{ t('documents.urlRejected', { reason: urlError }) }}
+      </div>
+    </form>
+
     <div class="card">
       <div class="card-header">
         <div>
@@ -81,7 +116,7 @@
           <tr v-for="doc in docs" :key="doc.id">
             <td>
               <div class="file-name">
-                <div class="file-icon">{{ mimeIcon(doc.name) }}</div>
+                <div class="file-icon">{{ sourceIcon(doc) }}</div>
                 <div>
                   <button
                     class="file-title-button"
@@ -91,6 +126,7 @@
                   >
                     {{ doc.name }}
                   </button>
+                  <div v-if="doc.sourceType === 'url'" class="source-url">{{ doc.sourceUrl }}</div>
                   <div v-if="doc.error" style="font-size: 11px; color: var(--red); margin-top: 2px">{{ doc.error }}</div>
                   <div style="font-size: 10px; color: var(--muted); font-family: var(--mono); margin-top: 1px">{{ doc.id }}</div>
                 </div>
@@ -179,6 +215,12 @@ const docs = ref([])
 const dragging = ref(false)
 const toast = ref(null)
 const fileInput = ref(null)
+const urlInput = ref('')
+const urlCheck = ref(null)
+const urlError = ref('')
+const checkedUrl = ref('')
+const urlChecking = ref(false)
+const urlAdding = ref(false)
 
 async function loadDocs() {
   if (!settings.isConnected) { docs.value = []; return }
@@ -194,6 +236,18 @@ async function loadDocs() {
 watch([() => settings.apiKey, () => settings.locale], loadDocs, { immediate: true })
 
 const stats = computed(() => knowledgeBaseStats(docs.value))
+const canAddCheckedUrl = computed(() => Boolean(
+  urlCheck.value?.ok
+  && checkedUrl.value
+  && checkedUrl.value === urlInput.value.trim()
+  && !urlChecking.value
+))
+
+watch(urlInput, () => {
+  urlCheck.value = null
+  urlError.value = ''
+  checkedUrl.value = ''
+})
 
 function mimeIcon(name) {
   const ext = (name || '').split('.').pop().toLowerCase()
@@ -209,6 +263,10 @@ function mimeIcon(name) {
     jpeg: '🖼️',
     webp: '🖼️',
   })[ext] || '📁'
+}
+
+function sourceIcon(doc) {
+  return doc?.sourceType === 'url' ? '🌐' : mimeIcon(doc?.name)
 }
 
 function openDocument(doc) {
@@ -310,6 +368,59 @@ async function uploadFile(file) {
   }
 }
 
+async function checkUrlSource() {
+  if (!settings.isConnected) { toast.value = { msg: t('documents.apiKeyRequired'), type: 'error' }; return }
+  const url = urlInput.value.trim()
+  if (!url) { urlError.value = t('documents.urlRequired'); return }
+  urlChecking.value = true
+  urlCheck.value = null
+  urlError.value = ''
+  checkedUrl.value = ''
+  try {
+    const data = await apiFetch('/documents/url/check', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+    })
+    if (data.ok) {
+      urlCheck.value = data
+      checkedUrl.value = url
+    } else {
+      urlError.value = data.reason || 'URL rejected'
+    }
+  } catch (e) {
+    urlError.value = e.message
+  } finally {
+    urlChecking.value = false
+  }
+}
+
+async function addUrlSource() {
+  if (!canAddCheckedUrl.value || urlAdding.value) return
+  const url = checkedUrl.value
+  urlAdding.value = true
+  try {
+    const data = await apiFetch('/documents/url', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+    })
+    const normalized = normalizeDocument(data, settings.locale)
+    docs.value = [{ ...normalized, _pending: true }, ...docs.value.filter(d => d.id !== normalized.id)]
+    toast.value = { msg: t('documents.urlAdded', { name: normalized.name }), type: 'info' }
+    urlInput.value = ''
+    urlCheck.value = null
+    urlError.value = ''
+    checkedUrl.value = ''
+    pollStatus(data.id)
+  } catch (e) {
+    urlError.value = e.message
+    toast.value = { msg: t('common.error', { message: e.message }), type: 'error' }
+  } finally {
+    urlAdding.value = false
+  }
+}
+
 function handleDrop(e) {
   e.preventDefault(); dragging.value = false
   Array.from(e.dataTransfer.files).forEach(uploadFile)
@@ -377,6 +488,48 @@ function handleFileInput(e) {
 .kb-stat.warn span {
   color: var(--red);
 }
+.url-source-panel {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.8fr) minmax(320px, 1.2fr);
+  gap: 14px;
+  align-items: start;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--s1);
+}
+.url-source-title {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+}
+.url-source-sub,
+.source-url {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+.url-source-controls {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto auto;
+  gap: 8px;
+}
+.url-source-input {
+  width: 100%;
+  min-width: 0;
+}
+.url-source-status {
+  grid-column: 2;
+  font-size: 11px;
+  line-height: 1.45;
+}
+.url-source-status.ok {
+  color: var(--green);
+}
+.url-source-status.error {
+  color: var(--red);
+}
 .file-title-button {
   padding: 0;
   border: 0;
@@ -425,6 +578,15 @@ function handleFileInput(e) {
   }
   .kb-stats {
     min-width: 0;
+  }
+  .url-source-panel {
+    grid-template-columns: 1fr;
+  }
+  .url-source-controls {
+    grid-template-columns: 1fr;
+  }
+  .url-source-status {
+    grid-column: 1;
   }
 }
 </style>

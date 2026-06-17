@@ -52,6 +52,12 @@ class Document(Base):
     mime_type: Mapped[str] = mapped_column(String(128), nullable=False)
     object_key: Mapped[str] = mapped_column(String(512), nullable=False)
     size_bytes: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
+    source_type: Mapped[str] = mapped_column(String(32), default="file", nullable=False)
+    source_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_title: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    source_checked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     suggested_questions: Mapped[list[str]] = mapped_column(
         JSONB, default=list, nullable=False
@@ -86,6 +92,10 @@ class Document(Base):
     )
     notebook_links: Mapped[list["NotebookDocument"]] = relationship(
         back_populates="document", cascade="all, delete-orphan"
+    )
+
+    __table_args__ = (
+        Index("ix_documents_tenant_source_type", "tenant_id", "source_type"),
     )
 
 

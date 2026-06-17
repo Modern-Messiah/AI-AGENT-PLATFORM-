@@ -102,6 +102,9 @@ class Settings(BaseSettings):
     # Prevents memory exhaustion from 20 × 50 MB = 1 GB bulk uploads.
     max_bulk_total_bytes: int = 200 * 1024 * 1024  # 200 MB
 
+    # Maximum bytes fetched from a URL source before it is stored as a document.
+    url_source_max_bytes: int = 10 * 1024 * 1024  # 10 MB
+
     @model_validator(mode="after")
     def _check_production_secrets(self) -> "Settings":
         is_local = self.app_env.strip().lower() == "local"

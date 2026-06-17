@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile
 from sqlalchemy import select, update
@@ -14,7 +15,14 @@ from packages.storage import Chunk, Document, DocumentAsset, DocumentStatus, obj
 from packages.storage.db import tenant_session
 
 from apps.api.deps import TenantID, read_with_limit
-from apps.api.schemas import DocumentAssetResponse, DocumentChunkPreview, DocumentResponse
+from apps.api.schemas import (
+    AddUrlDocumentRequest,
+    DocumentAssetResponse,
+    DocumentChunkPreview,
+    DocumentResponse,
+    UrlCheckRequest,
+    UrlCheckResponse,
+)
 from apps.api.serializers import (
     chunk_excerpt,
     document_asset_response,
@@ -22,6 +30,7 @@ from apps.api.serializers import (
     metadata_page,
 )
 from apps.api.services.cache import invalidate_semantic_cache
+from apps.api.services.url_sources import UrlSourceError, fetch_url_source
 from apps.worker.activities.ingestion import IngestionInput
 from apps.worker.workflows.ingestion import IngestionWorkflow
 
@@ -193,6 +202,90 @@ async def upload_documents_bulk(
         responses.append(document_response(doc))
 
     return responses
+
+
+@router.post("/documents/url/check", response_model=UrlCheckResponse)
+async def check_url_document(body: UrlCheckRequest, tenant_id: TenantID) -> UrlCheckResponse:
+    try:
+        fetched = await fetch_url_source(body.url)
+    except UrlSourceError as exc:
+        return UrlCheckResponse(
+            ok=False,
+            url=body.url,
+            reason=exc.message,
+        )
+    return UrlCheckResponse(
+        ok=True,
+        url=fetched.requested_url,
+        final_url=fetched.final_url,
+        content_type=fetched.content_type,
+        title=fetched.title,
+        size_bytes=fetched.size_bytes,
+    )
+
+
+@router.post("/documents/url", response_model=DocumentResponse, status_code=202)
+async def add_url_document(
+    body: AddUrlDocumentRequest,
+    request: Request,
+    tenant_id: TenantID,
+) -> DocumentResponse:
+    try:
+        fetched = await fetch_url_source(body.url)
+    except UrlSourceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+    document_id = uuid.uuid4()
+    object_key = f"{tenant_id}/{document_id}/{fetched.filename}"
+    object_store.put(object_key, fetched.data, content_type=fetched.content_type)
+    checked_at = datetime.now(timezone.utc)
+
+    async with tenant_session(tenant_id) as s:
+        s.add(Document(
+            id=document_id,
+            tenant_id=tenant_id,
+            filename=fetched.filename,
+            mime_type=fetched.content_type,
+            object_key=object_key,
+            size_bytes=fetched.size_bytes,
+            source_type="url",
+            source_url=fetched.final_url,
+            source_title=fetched.title,
+            source_checked_at=checked_at,
+            status=DocumentStatus.pending,
+            processing_stage="queued",
+            processed_pages=0,
+            total_pages=0,
+            warnings=[],
+        ))
+
+    await invalidate_semantic_cache(tenant_id, f"document-url:{document_id}")
+
+    client: Client = request.app.state.temporal
+    try:
+        await client.start_workflow(
+            IngestionWorkflow.run,
+            IngestionInput(
+                document_id=str(document_id),
+                tenant_id=tenant_id,
+                object_key=object_key,
+                filename=fetched.filename,
+            ),
+            id=f"ingest-{tenant_id}-{document_id}",
+            task_queue=settings.temporal_task_queue,
+        )
+    except Exception as e:
+        async with tenant_session(tenant_id) as s:
+            await s.execute(
+                update(Document)
+                .where(Document.id == document_id)
+                .values(status=DocumentStatus.failed, error="Failed to start ingestion workflow")
+            )
+        raise HTTPException(status_code=503, detail="ingestion service unavailable") from e
+
+    async with tenant_session(tenant_id) as s:
+        doc = (await s.execute(select(Document).where(Document.id == document_id))).scalar_one()
+    return document_response(doc)
 
 
 @router.get("/documents/{document_id}", response_model=DocumentResponse)

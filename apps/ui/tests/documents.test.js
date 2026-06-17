@@ -24,6 +24,10 @@ test('normalizes API documents for the knowledge-base table', () => {
     processed_pages: 3,
     total_pages: 8,
     warnings: ['Page 2 used OCR fallback.'],
+    source_type: 'url',
+    source_url: 'https://example.com/manual',
+    source_title: 'Example Manual',
+    source_checked_at: '2026-06-07T08:59:00Z',
   })
 
   assert.equal(doc.id, 'doc-1')
@@ -31,6 +35,10 @@ test('normalizes API documents for the knowledge-base table', () => {
   assert.equal(doc.size, '1.5 KB')
   assert.equal(doc.status, 'done')
   assert.equal(doc.error, null)
+  assert.equal(doc.sourceType, 'url')
+  assert.equal(doc.sourceUrl, 'https://example.com/manual')
+  assert.equal(doc.sourceTitle, 'Example Manual')
+  assert.equal(doc.sourceCheckedAt, '2026-06-07T08:59:00Z')
   assert.equal(doc.createdLabel, '07.06.2026')
   assert.equal(doc.summary, 'Short summary.')
   assert.deepEqual(doc.suggestedQuestions, ['Что внутри manual.pdf?'])
