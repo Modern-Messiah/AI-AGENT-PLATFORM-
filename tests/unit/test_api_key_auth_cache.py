@@ -3,6 +3,9 @@ from __future__ import annotations
 import asyncio
 from types import SimpleNamespace
 
+import pytest
+from fastapi import HTTPException
+
 from packages.auth import api_keys
 
 
@@ -62,3 +65,17 @@ async def test_require_tenant_collapses_concurrent_same_key_lookups(monkeypatch)
     assert tenants == ["tenant-a"] * 20
     assert factory.select_count == 1
     assert factory.update_count == 1
+
+
+async def test_require_tenant_returns_401_for_missing_api_key(monkeypatch) -> None:
+    api_keys._AUTH_CACHE.clear()
+    api_keys._AUTH_LOCKS.clear()
+    factory = FakeSessionFactory()
+    monkeypatch.setattr(api_keys, "async_session", factory)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await api_keys.require_tenant(None)
+
+    assert exc_info.value.status_code == 401
+    assert exc_info.value.detail == "missing API key"
+    assert factory.execute_count == 0

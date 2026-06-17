@@ -33,8 +33,11 @@ def generate_key() -> tuple[str, str]:
     return raw, _hash(raw)
 
 
-async def require_tenant(x_api_key: str = Header(..., alias="X-API-Key")) -> str:
+async def require_tenant(x_api_key: str | None = Header(None, alias="X-API-Key")) -> str:
     """FastAPI dependency — validates the key and returns tenant_id."""
+    if x_api_key is None or not x_api_key.strip():
+        raise HTTPException(status_code=401, detail="missing API key")
+
     key_hash = _hash(x_api_key)
 
     now = time.monotonic()
