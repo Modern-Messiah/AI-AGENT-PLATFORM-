@@ -34,7 +34,6 @@ import re
 import time
 import uuid
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
 from functools import lru_cache
 from typing import AsyncIterator
 
@@ -54,10 +53,8 @@ from packages.llm import stream_chat_text
 from packages.observability import setup_tracing
 from packages.rag import (
     CitationSource,
-    NotebookInsightSource,
     build_citations,
     build_grounded_messages,
-    generate_notebook_insights,
     retrieve_chunks,
     select_answer_sources,
     select_diverse_chunks,
@@ -69,11 +66,10 @@ from packages.storage import (
     DocumentAsset,
     DocumentStatus,
     Notebook,
-    NotebookDocument,
     object_store,
 )
 from packages.storage.db import tenant_session
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import func, select, update
 from starlette.responses import Response, StreamingResponse
 from temporalio.client import Client
 
@@ -82,6 +78,7 @@ from apps.api.routers import (
     analytics_router,
     auth_router,
     health_router,
+    notebooks_router,
     sessions_router,
     workflows_router,
 )
@@ -111,6 +108,14 @@ from apps.api.serializers import (
     notebook_response,
     serialize_sources,
 )
+from apps.api.services.cache import invalidate_semantic_cache
+from apps.api.services.notebooks import (
+    clean_notebook_title,
+    dedupe_uuid_list,
+    load_notebook_documents,
+    load_notebook_insight_sources,
+    load_tenant_documents,
+)
 from apps.worker.activities.ingestion import IngestionInput
 from apps.worker.workflows.agent_run import AgentRunWorkflow
 from apps.worker.workflows.ingestion import IngestionWorkflow
@@ -123,6 +128,12 @@ _document_response = document_response
 _metadata_page = metadata_page
 _notebook_response = notebook_response
 _read_with_limit = read_with_limit
+_invalidate_semantic_cache = invalidate_semantic_cache
+_clean_notebook_title = clean_notebook_title
+_dedupe_uuid_list = dedupe_uuid_list
+_load_notebook_documents = load_notebook_documents
+_load_notebook_insight_sources = load_notebook_insight_sources
+_load_tenant_documents = load_tenant_documents
 _serialize_sources = serialize_sources
 
 logging.basicConfig(level=settings.log_level)
@@ -163,27 +174,6 @@ def _extract_partial_answer(parts: list[object]) -> str | None:
                 .replace("\\\\", "\\")
             )
     return None
-
-
-def _serialize_sources(
-    sources: list[str | CitationSource],
-) -> list[str | dict[str, object]]:
-    return [
-        source.model_dump(mode="json") if isinstance(source, CitationSource) else source
-        for source in sources
-    ]
-
-
-async def _invalidate_semantic_cache(tenant_id: str, reason: str) -> None:
-    try:
-        await semantic_cache.clear(tenant_id)
-    except Exception as exc:
-        log.warning(
-            "semantic cache invalidation failed | tenant=%s reason=%s error=%s",
-            tenant_id,
-            reason,
-            exc,
-        )
 
 
 def _validate_agent_query(query: str) -> str:
@@ -249,95 +239,6 @@ async def _enforce_agent_limits(tenant_id: str, query: str, route: str) -> str:
         log.warning("rate limit check failed open | tenant=%s route=%s error=%s", tenant_id, route, exc)
     return query
 
-def _dedupe_uuid_list(ids: list[uuid.UUID]) -> list[uuid.UUID]:
-    seen: set[uuid.UUID] = set()
-    deduped: list[uuid.UUID] = []
-    for item in ids:
-        if item in seen:
-            continue
-        seen.add(item)
-        deduped.append(item)
-    return deduped
-
-
-def _clean_notebook_title(title: str) -> str:
-    cleaned = title.strip()
-    if not cleaned:
-        raise HTTPException(status_code=400, detail="title must not be empty")
-    return cleaned
-
-
-async def _load_tenant_documents(
-    db,
-    tenant_id: str,
-    document_ids: list[uuid.UUID],
-) -> list[Document]:
-    if not document_ids:
-        return []
-    rows = (
-        await db.execute(
-            select(Document)
-            .where(Document.id.in_(document_ids), Document.tenant_id == tenant_id)
-            .order_by(Document.created_at.desc())
-        )
-    ).scalars().all()
-    if len(rows) != len(document_ids):
-        raise HTTPException(status_code=404, detail="one or more documents not found")
-    by_id = {doc.id: doc for doc in rows}
-    return [by_id[doc_id] for doc_id in document_ids]
-
-
-async def _load_notebook_documents(db, tenant_id: str, notebook_id: uuid.UUID) -> list[Document]:
-    return (
-        await db.execute(
-            select(Document)
-            .join(NotebookDocument, NotebookDocument.document_id == Document.id)
-            .where(
-                NotebookDocument.notebook_id == notebook_id,
-                NotebookDocument.tenant_id == tenant_id,
-                Document.tenant_id == tenant_id,
-            )
-            .order_by(NotebookDocument.created_at, Document.created_at.desc())
-        )
-    ).scalars().all()
-
-
-async def _load_notebook_insight_sources(
-    db,
-    *,
-    tenant_id: str,
-    documents: list[Document],
-) -> list[NotebookInsightSource]:
-    if not documents:
-        return []
-
-    document_ids = [doc.id for doc in documents]
-    chunks = (
-        await db.execute(
-            select(Chunk)
-            .where(
-                Chunk.document_id.in_(document_ids),
-                Chunk.tenant_id == tenant_id,
-            )
-            .order_by(Chunk.document_id, Chunk.chunk_idx)
-        )
-    ).scalars().all()
-    chunks_by_document: dict[uuid.UUID, list[str]] = {
-        document_id: [] for document_id in document_ids
-    }
-    for chunk in chunks:
-        chunks_by_document.setdefault(chunk.document_id, []).append(chunk.content)
-
-    return [
-        NotebookInsightSource(
-            filename=doc.filename,
-            summary=doc.summary or "",
-            suggested_questions=doc.suggested_questions or [],
-            chunks=chunks_by_document.get(doc.id, []),
-        )
-        for doc in documents
-    ]
-
 
 # ── App lifecycle ─────────────────────────────────────────────────────────────
 
@@ -368,6 +269,7 @@ app.add_middleware(
 app.include_router(health_router)
 app.include_router(auth_router)
 app.include_router(analytics_router)
+app.include_router(notebooks_router)
 app.include_router(sessions_router)
 app.include_router(workflows_router)
 
@@ -1023,278 +925,3 @@ async def delete_document(document_id: uuid.UUID, tenant_id: TenantID) -> None:
                 exc,
             )
     await _invalidate_semantic_cache(tenant_id, f"document-delete:{document_id}")
-
-
-# ── Notebooks ─────────────────────────────────────────────────────────────────
-
-@app.get("/notebooks", response_model=list[NotebookResponse])
-async def list_notebooks(tenant_id: TenantID) -> list[NotebookResponse]:
-    async with tenant_session(tenant_id) as s:
-        notebooks = (
-            await s.execute(
-                select(Notebook)
-                .where(Notebook.tenant_id == tenant_id)
-                .order_by(Notebook.created_at.desc())
-            )
-        ).scalars().all()
-        responses: list[NotebookResponse] = []
-        for notebook in notebooks:
-            documents = await _load_notebook_documents(s, tenant_id, notebook.id)
-            responses.append(_notebook_response(notebook, documents))
-    return responses
-
-
-@app.post("/notebooks", response_model=NotebookResponse, status_code=201)
-async def create_notebook(
-    body: CreateNotebookRequest,
-    tenant_id: TenantID,
-) -> NotebookResponse:
-    document_ids = _dedupe_uuid_list(body.document_ids)
-    async with tenant_session(tenant_id) as s:
-        documents = await _load_tenant_documents(s, tenant_id, document_ids)
-        notebook = Notebook(
-            id=uuid.uuid4(),
-            tenant_id=tenant_id,
-            title=_clean_notebook_title(body.title),
-            description=body.description.strip() if body.description else None,
-        )
-        s.add(notebook)
-        await s.flush()
-        s.add_all(
-            [
-                NotebookDocument(
-                    notebook_id=notebook.id,
-                    document_id=document_id,
-                    tenant_id=tenant_id,
-                )
-                for document_id in document_ids
-            ]
-        )
-        await s.flush()
-        await s.refresh(notebook)
-        response = _notebook_response(notebook, documents)
-    return response
-
-
-@app.get("/notebooks/{notebook_id}", response_model=NotebookResponse)
-async def get_notebook(notebook_id: uuid.UUID, tenant_id: TenantID) -> NotebookResponse:
-    async with tenant_session(tenant_id) as s:
-        notebook = (
-            await s.execute(
-                select(Notebook).where(Notebook.id == notebook_id, Notebook.tenant_id == tenant_id)
-            )
-        ).scalar_one_or_none()
-        if notebook is None:
-            raise HTTPException(status_code=404, detail="notebook not found")
-        documents = await _load_notebook_documents(s, tenant_id, notebook_id)
-        response = _notebook_response(notebook, documents)
-    return response
-
-
-@app.put("/notebooks/{notebook_id}/documents", response_model=NotebookResponse)
-async def replace_notebook_documents(
-    notebook_id: uuid.UUID,
-    body: UpdateNotebookDocumentsRequest,
-    tenant_id: TenantID,
-) -> NotebookResponse:
-    document_ids = _dedupe_uuid_list(body.document_ids)
-    async with tenant_session(tenant_id) as s:
-        notebook = (
-            await s.execute(
-                select(Notebook).where(Notebook.id == notebook_id, Notebook.tenant_id == tenant_id)
-            )
-        ).scalar_one_or_none()
-        if notebook is None:
-            raise HTTPException(status_code=404, detail="notebook not found")
-        documents = await _load_tenant_documents(s, tenant_id, document_ids)
-        await s.execute(
-            delete(NotebookDocument).where(
-                NotebookDocument.notebook_id == notebook_id,
-                NotebookDocument.tenant_id == tenant_id,
-            )
-        )
-        s.add_all(
-            [
-                NotebookDocument(
-                    notebook_id=notebook_id,
-                    document_id=document_id,
-                    tenant_id=tenant_id,
-                )
-                for document_id in document_ids
-            ]
-        )
-        notebook.updated_at = datetime.now(timezone.utc)
-        notebook.summary = None
-        notebook.suggested_questions = []
-        notebook.key_topics = []
-        notebook.insights_updated_at = None
-        await s.flush()
-        response = _notebook_response(notebook, documents)
-    return response
-
-
-@app.post("/notebooks/{notebook_id}/documents/upload", response_model=DocumentResponse, status_code=202)
-async def upload_notebook_document(
-    notebook_id: uuid.UUID,
-    request: Request,
-    tenant_id: TenantID,
-    file: UploadFile = File(...),
-) -> DocumentResponse:
-    cl = request.headers.get("content-length")
-    if cl and int(cl) > settings.max_upload_bytes * 2:
-        raise HTTPException(status_code=413, detail=f"file exceeds {settings.max_upload_bytes // (1024 * 1024)} MB limit")
-
-    data = await _read_with_limit(file, settings.max_upload_bytes)
-    if not data:
-        raise HTTPException(status_code=400, detail="empty file")
-
-    document_id = uuid.uuid4()
-    filename = file.filename or "unnamed"
-    object_key = f"{tenant_id}/{document_id}/{filename}"
-
-    async with tenant_session(tenant_id) as s:
-        notebook = (
-            await s.execute(
-                select(Notebook).where(Notebook.id == notebook_id, Notebook.tenant_id == tenant_id)
-            )
-        ).scalar_one_or_none()
-        if notebook is None:
-            raise HTTPException(status_code=404, detail="notebook not found")
-
-        object_store.put(object_key, data, content_type=file.content_type or "application/octet-stream")
-        doc = Document(
-            id=document_id,
-            tenant_id=tenant_id,
-            filename=filename,
-            mime_type=file.content_type or "application/octet-stream",
-            object_key=object_key,
-            size_bytes=len(data),
-            status=DocumentStatus.pending,
-        )
-        s.add(doc)
-        s.add(NotebookDocument(
-            notebook_id=notebook_id,
-            document_id=document_id,
-            tenant_id=tenant_id,
-        ))
-        notebook.summary = None
-        notebook.suggested_questions = []
-        notebook.key_topics = []
-        notebook.insights_updated_at = None
-        await s.flush()
-        response = _document_response(doc)
-
-    await _invalidate_semantic_cache(tenant_id, f"notebook-document-upload:{notebook_id}:{document_id}")
-
-    client: Client = app.state.temporal
-    try:
-        await client.start_workflow(
-            IngestionWorkflow.run,
-            IngestionInput(
-                document_id=str(document_id),
-                tenant_id=tenant_id,
-                object_key=object_key,
-                filename=filename,
-            ),
-            id=f"ingest-{tenant_id}-{document_id}",
-            task_queue=settings.temporal_task_queue,
-        )
-    except Exception as e:
-        async with tenant_session(tenant_id) as s:
-            await s.execute(
-                update(Document)
-                .where(Document.id == document_id)
-                .values(status=DocumentStatus.failed, error="Failed to start ingestion workflow")
-            )
-        raise HTTPException(status_code=503, detail="ingestion service unavailable") from e
-
-    return response
-
-
-@app.post("/notebooks/{notebook_id}/insights", response_model=NotebookResponse)
-async def rebuild_notebook_insights(
-    notebook_id: uuid.UUID,
-    tenant_id: TenantID,
-) -> NotebookResponse:
-    async with tenant_session(tenant_id) as s:
-        notebook = (
-            await s.execute(
-                select(Notebook).where(Notebook.id == notebook_id, Notebook.tenant_id == tenant_id)
-            )
-        ).scalar_one_or_none()
-        if notebook is None:
-            raise HTTPException(status_code=404, detail="notebook not found")
-
-        documents = await _load_notebook_documents(s, tenant_id, notebook_id)
-        ready_documents = [doc for doc in documents if doc.status == DocumentStatus.done]
-        if not ready_documents:
-            raise HTTPException(status_code=409, detail="notebook has no indexed documents yet")
-
-        title = notebook.title
-        ready_document_ids = {doc.id for doc in ready_documents}
-        insight_sources = await _load_notebook_insight_sources(
-            s,
-            tenant_id=tenant_id,
-            documents=ready_documents,
-        )
-
-    try:
-        insights = await generate_notebook_insights(insight_sources, title=title)
-    except Exception as exc:
-        log.exception(
-            "notebook insight generation failed | tenant=%s notebook=%s",
-            tenant_id,
-            notebook_id,
-        )
-        raise HTTPException(
-            status_code=502,
-            detail=f"DeepSeek overview generation failed: {exc}",
-        ) from exc
-
-    if not insights.summary:
-        raise HTTPException(status_code=409, detail="notebook documents have no extractable text")
-
-    async with tenant_session(tenant_id) as s:
-        notebook = (
-            await s.execute(
-                select(Notebook).where(
-                    Notebook.id == notebook_id,
-                    Notebook.tenant_id == tenant_id,
-                )
-            )
-        ).scalar_one_or_none()
-        if notebook is None:
-            raise HTTPException(status_code=404, detail="notebook not found")
-
-        documents = await _load_notebook_documents(s, tenant_id, notebook_id)
-        current_ready_ids = {
-            doc.id for doc in documents if doc.status == DocumentStatus.done
-        }
-        if current_ready_ids != ready_document_ids:
-            raise HTTPException(
-                status_code=409,
-                detail="notebook sources changed while the overview was generated; retry",
-            )
-
-        now = datetime.now(timezone.utc)
-        notebook.summary = insights.summary
-        notebook.suggested_questions = insights.suggested_questions
-        notebook.key_topics = insights.key_topics
-        notebook.insights_updated_at = now
-        notebook.updated_at = now
-        await s.flush()
-        response = _notebook_response(notebook, documents)
-    return response
-
-
-@app.delete("/notebooks/{notebook_id}", status_code=204)
-async def delete_notebook(notebook_id: uuid.UUID, tenant_id: TenantID) -> None:
-    async with tenant_session(tenant_id) as s:
-        notebook = (
-            await s.execute(
-                select(Notebook).where(Notebook.id == notebook_id, Notebook.tenant_id == tenant_id)
-            )
-        ).scalar_one_or_none()
-        if notebook is None:
-            raise HTTPException(status_code=404, detail="notebook not found")
-        await s.delete(notebook)
