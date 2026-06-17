@@ -5,7 +5,7 @@ from packages.agents.schemas import AgentRunOutput
 from packages.rag.citations import CitationSource
 
 
-def test_merge_sources_deduplicates_legacy_and_structured_sources() -> None:
+def test_merge_sources_returns_only_structured_sources() -> None:
     citation = CitationSource(
         id=1,
         document_id="document-1",
@@ -19,7 +19,11 @@ def test_merge_sources_deduplicates_legacy_and_structured_sources() -> None:
 
     merged = _merge_sources(["legacy.txt", citation], [citation, "legacy.txt"])
 
-    assert merged == ["legacy.txt", citation]
+    assert merged == [citation]
+
+
+def test_merge_sources_drops_legacy_only_sources() -> None:
+    assert _merge_sources(["legacy-a.txt"], ["legacy-b.txt"]) == []
 
 
 async def test_collect_child_results_awaits_child_handles_instead_of_calling_result() -> None:

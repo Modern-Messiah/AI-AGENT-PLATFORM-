@@ -43,16 +43,15 @@ def _synthesis_prompt(main_query: str, sub_results: list[AgentRunOutput]) -> str
 
 def _merge_sources(
     *source_groups: list[str | CitationSource],
-) -> list[str | CitationSource]:
-    merged: list[str | CitationSource] = []
-    seen: set[tuple[str, ...]] = set()
+) -> list[CitationSource]:
+    merged: list[CitationSource] = []
+    seen: set[tuple[str, str]] = set()
 
     for source in (source for group in source_groups for source in group):
-        key = (
-            ("legacy", source)
-            if isinstance(source, str)
-            else ("citation", source.document_id, source.chunk_id)
-        )
+        if not isinstance(source, CitationSource):
+            continue
+
+        key = (source.document_id, source.chunk_id)
         if key in seen:
             continue
         seen.add(key)
