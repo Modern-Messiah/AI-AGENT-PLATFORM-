@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import func, select
 
 from packages.storage import ChatMessage, ChatSession
@@ -27,7 +27,11 @@ router = APIRouter()
 
 
 @router.get("/sessions", response_model=list[ChatSessionSchema])
-async def list_sessions(tenant_id: TenantID) -> list[ChatSessionSchema]:
+async def list_sessions(
+    tenant_id: TenantID,
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+) -> list[ChatSessionSchema]:
     msg_count_sq = (
         select(func.count())
         .select_from(ChatMessage)
@@ -40,6 +44,8 @@ async def list_sessions(tenant_id: TenantID) -> list[ChatSessionSchema]:
             select(ChatSession, msg_count_sq.label("cnt"))
             .where(ChatSession.tenant_id == tenant_id)
             .order_by(ChatSession.updated_at.desc())
+            .limit(limit)
+            .offset(offset)
         )).all()
     return [
         ChatSessionSchema(

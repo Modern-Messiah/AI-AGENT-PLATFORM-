@@ -30,12 +30,18 @@ router = APIRouter()
 
 
 @router.get("/documents", response_model=list[DocumentResponse])
-async def list_documents(tenant_id: TenantID) -> list[DocumentResponse]:
+async def list_documents(
+    tenant_id: TenantID,
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+) -> list[DocumentResponse]:
     async with tenant_session(tenant_id) as s:
         rows = (await s.execute(
             select(Document)
             .where(Document.tenant_id == tenant_id)
             .order_by(Document.created_at.desc())
+            .limit(limit)
+            .offset(offset)
         )).scalars().all()
     return [document_response(doc) for doc in rows]
 

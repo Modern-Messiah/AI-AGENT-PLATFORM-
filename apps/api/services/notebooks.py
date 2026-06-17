@@ -6,7 +6,7 @@ from fastapi import HTTPException
 from sqlalchemy import select
 
 from packages.rag import NotebookInsightSource
-from packages.storage import Chunk, Document, NotebookDocument
+from packages.storage import Chunk, Document, Notebook, NotebookDocument
 
 
 def dedupe_uuid_list(ids: list[uuid.UUID]) -> list[uuid.UUID]:
@@ -60,6 +60,55 @@ async def load_notebook_documents(db, tenant_id: str, notebook_id: uuid.UUID) ->
             .order_by(NotebookDocument.created_at, Document.created_at.desc())
         )
     ).scalars().all()
+
+
+async def load_notebooks_with_documents(
+    db,
+    *,
+    tenant_id: str,
+    limit: int,
+    offset: int,
+) -> list[tuple[Notebook, list[Document]]]:
+    notebooks = (
+        await db.execute(
+            select(Notebook)
+            .where(Notebook.tenant_id == tenant_id)
+            .order_by(Notebook.created_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+    ).scalars().all()
+    if not notebooks:
+        return []
+
+    notebook_ids = [notebook.id for notebook in notebooks]
+    documents_by_notebook: dict[uuid.UUID, list[Document]] = {
+        notebook_id: [] for notebook_id in notebook_ids
+    }
+    rows = (
+        await db.execute(
+            select(NotebookDocument.notebook_id, Document)
+            .select_from(NotebookDocument)
+            .join(Document, NotebookDocument.document_id == Document.id)
+            .where(
+                NotebookDocument.notebook_id.in_(notebook_ids),
+                NotebookDocument.tenant_id == tenant_id,
+                Document.tenant_id == tenant_id,
+            )
+            .order_by(
+                NotebookDocument.notebook_id,
+                NotebookDocument.created_at,
+                Document.created_at.desc(),
+            )
+        )
+    ).all()
+    for notebook_id, document in rows:
+        documents_by_notebook.setdefault(notebook_id, []).append(document)
+
+    return [
+        (notebook, documents_by_notebook.get(notebook.id, []))
+        for notebook in notebooks
+    ]
 
 
 async def load_notebook_insight_sources(

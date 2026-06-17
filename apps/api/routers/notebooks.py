@@ -4,7 +4,7 @@ import logging
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile
 from sqlalchemy import delete, select, update
 from temporalio.client import Client
 
@@ -27,6 +27,7 @@ from apps.api.services.notebooks import (
     dedupe_uuid_list,
     load_notebook_documents,
     load_notebook_insight_sources,
+    load_notebooks_with_documents,
     load_tenant_documents,
 )
 from apps.worker.activities.ingestion import IngestionInput
@@ -37,20 +38,19 @@ router = APIRouter()
 
 
 @router.get("/notebooks", response_model=list[NotebookResponse])
-async def list_notebooks(tenant_id: TenantID) -> list[NotebookResponse]:
+async def list_notebooks(
+    tenant_id: TenantID,
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+) -> list[NotebookResponse]:
     async with tenant_session(tenant_id) as s:
-        notebooks = (
-            await s.execute(
-                select(Notebook)
-                .where(Notebook.tenant_id == tenant_id)
-                .order_by(Notebook.created_at.desc())
-            )
-        ).scalars().all()
-        responses: list[NotebookResponse] = []
-        for notebook in notebooks:
-            documents = await load_notebook_documents(s, tenant_id, notebook.id)
-            responses.append(notebook_response(notebook, documents))
-    return responses
+        rows = await load_notebooks_with_documents(
+            s,
+            tenant_id=tenant_id,
+            limit=limit,
+            offset=offset,
+        )
+    return [notebook_response(notebook, documents) for notebook, documents in rows]
 
 
 @router.post("/notebooks", response_model=NotebookResponse, status_code=201)
