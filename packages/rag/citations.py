@@ -2,11 +2,35 @@
 
 from __future__ import annotations
 
+import re
 from collections import defaultdict
 
 from pydantic import BaseModel, Field
 
 from packages.rag.retriever import RetrievedChunk
+
+_CITATION_MARKER_RE = re.compile(r"\[([0-9][0-9,\-\s]*)\]")
+_INSUFFICIENT_CONTEXT_PHRASES = (
+    "не нашел релевантной информации",
+    "не нашла релевантной информации",
+    "нет релевантной информации",
+    "в базе знаний нет данных",
+    "в базе знаний нет информации",
+    "в загруженных документах нет",
+    "в выбранном документе нет",
+    "в выбранной коллекции нет",
+    "контекст не содержит",
+    "предоставленный контекст не содержит",
+    "предоставленные материалы не содержат",
+    "не удалось найти информацию",
+    "no relevant information",
+    "not enough information",
+    "provided context does not contain",
+    "provided context doesn't contain",
+    "knowledge base does not contain",
+    "knowledge base doesn't contain",
+    "i don't have enough information",
+)
 
 
 class CitationSource(BaseModel):
@@ -82,6 +106,54 @@ def build_citations(chunks: list[RetrievedChunk]) -> list[CitationSource]:
             )
         )
     return citations
+
+
+def _normalise_answer(answer: str) -> str:
+    return " ".join(answer.lower().replace("ё", "е").split())
+
+
+def answer_indicates_insufficient_context(answer: str) -> bool:
+    text = _normalise_answer(answer)
+    return any(phrase in text for phrase in _INSUFFICIENT_CONTEXT_PHRASES)
+
+
+def _citation_ids_in_answer(answer: str) -> set[int]:
+    ids: set[int] = set()
+    for match in _CITATION_MARKER_RE.finditer(answer):
+        marker = match.group(1)
+        for raw_part in marker.split(","):
+            part = raw_part.strip()
+            if not part:
+                continue
+            if "-" in part:
+                start_raw, end_raw = (value.strip() for value in part.split("-", 1))
+                if not start_raw.isdigit() or not end_raw.isdigit():
+                    continue
+                start = int(start_raw)
+                end = int(end_raw)
+                if start <= 0 or end < start or end - start > 50:
+                    continue
+                ids.update(range(start, end + 1))
+                continue
+            if part.isdigit():
+                value = int(part)
+                if value > 0:
+                    ids.add(value)
+    return ids
+
+
+def select_answer_sources(
+    answer: str,
+    sources: list[CitationSource],
+) -> list[CitationSource]:
+    if not answer.strip() or answer_indicates_insufficient_context(answer):
+        return []
+
+    cited_ids = _citation_ids_in_answer(answer)
+    if not cited_ids:
+        return []
+
+    return [source for source in sources if source.id in cited_ids]
 
 
 def build_grounded_messages(

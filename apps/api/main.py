@@ -62,6 +62,7 @@ from packages.rag import (
     build_grounded_messages,
     generate_notebook_insights,
     retrieve_chunks,
+    select_answer_sources,
     select_diverse_chunks,
 )
 from packages.rag.embedder import embed_texts
@@ -752,7 +753,10 @@ async def agent_stream(body: AgentStreamRequest, tenant_id: TenantID) -> Streami
             )
 
         if cached is not None:
-            cached_sources = _serialize_sources(cached.sources)
+            cached_sources = cached.sources
+            if all(isinstance(source, CitationSource) for source in cached_sources):
+                cached_sources = select_answer_sources(cached.answer, cached_sources)
+            cached_sources = _serialize_sources(cached_sources)
             yield f"data: {json.dumps({'type': 'token', 'content': cached.answer})}\n\n"
             yield f"data: {json.dumps({'type': 'done', 'answer': cached.answer, 'sources': cached_sources, 'confidence': cached.confidence, 'cached': True})}\n\n"
             return
@@ -839,10 +843,11 @@ async def agent_stream(body: AgentStreamRequest, tenant_id: TenantID) -> Streami
                 yield f"data: {json.dumps({'type': 'token', 'content': event.content})}\n\n"
 
             answer = "".join(answer_parts).strip()
+            answer_sources = select_answer_sources(answer, sources)
             output = AgentRunOutput(
                 answer=answer or "Не удалось получить ответ от модели.",
-                sources=sources if answer else [],
-                confidence=0.85 if answer else 0.0,
+                sources=answer_sources if answer else [],
+                confidence=0.85 if answer_sources else 0.2 if answer else 0.0,
                 cached=False,
             )
             latency_ms = int((time.monotonic() - request_t0) * 1000)

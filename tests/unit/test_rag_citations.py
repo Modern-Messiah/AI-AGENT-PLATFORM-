@@ -7,6 +7,7 @@ from packages.rag.chunker import chunk_segments
 from packages.rag.citations import (
     build_citations,
     build_grounded_messages,
+    select_answer_sources,
     select_diverse_chunks,
 )
 from packages.rag.parser import ParsedSegment, parse_to_segments
@@ -178,3 +179,69 @@ def test_grounded_prompt_keeps_every_selected_source_with_long_excerpts() -> Non
     for index in range(1, 7):
         assert f"[{index}] incident-bot.pdf (page {index}," in prompt
         assert f"Unique evidence {index}." in prompt
+
+
+def test_select_answer_sources_keeps_only_sources_cited_in_answer() -> None:
+    sources = build_citations([
+        _chunk("chunk-1", "document-1", "linux.pdf", 0.91, chunk_idx=1),
+        _chunk("chunk-2", "document-1", "linux.pdf", 0.89, chunk_idx=2),
+        _chunk("chunk-3", "document-2", "vim.pdf", 0.87, chunk_idx=1),
+    ])
+
+    selected = select_answer_sources(
+        "Команды описаны в Linux-документе [1] и Vim-документе [3].",
+        sources,
+    )
+
+    assert [source.id for source in selected] == [1, 3]
+
+
+def test_select_answer_sources_expands_citation_ranges() -> None:
+    sources = build_citations([
+        _chunk("chunk-1", "document-1", "incident.pdf", 0.91, chunk_idx=1),
+        _chunk("chunk-2", "document-1", "incident.pdf", 0.89, chunk_idx=2),
+        _chunk("chunk-3", "document-1", "incident.pdf", 0.87, chunk_idx=3),
+    ])
+
+    selected = select_answer_sources("Процесс описан в нескольких местах [1-2].", sources)
+
+    assert [source.id for source in selected] == [1, 2]
+
+
+def test_select_answer_sources_clears_sources_for_insufficient_context_answer() -> None:
+    sources = build_citations([
+        _chunk("chunk-1", "document-1", "incident.pdf", 0.91, chunk_idx=1),
+    ])
+
+    selected = select_answer_sources(
+        "В базе знаний нет данных о погоде сегодня.",
+        sources,
+    )
+
+    assert selected == []
+
+
+def test_select_answer_sources_clears_sources_when_answer_has_no_citation_markers() -> None:
+    sources = build_citations([
+        _chunk("chunk-1", "document-1", "incident.pdf", 0.91, chunk_idx=1),
+    ])
+
+    selected = select_answer_sources(
+        "Документ описывает процесс проверки оплаты.",
+        sources,
+    )
+
+    assert selected == []
+
+
+def test_select_answer_sources_does_not_treat_business_values_as_missing_context() -> None:
+    sources = build_citations([
+        _chunk("chunk-1", "document-1", "incident.pdf", 0.91, chunk_idx=1),
+    ])
+
+    selected = select_answer_sources(
+        "В таблице указан результат проверки: нет оплаты [1].",
+        sources,
+    )
+
+    assert [source.id for source in selected] == [1]

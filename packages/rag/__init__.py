@@ -3,6 +3,7 @@ from packages.rag.citations import (
     CitationSource,
     build_citations,
     build_grounded_messages,
+    select_answer_sources,
     select_diverse_chunks,
 )
 from packages.rag.embedder import embed_texts
@@ -33,5 +34,6 @@ __all__ = [
     "parse_to_segments",
     "parse_to_text",
     "retrieve_chunks",
+    "select_answer_sources",
     "select_diverse_chunks",
 ]
