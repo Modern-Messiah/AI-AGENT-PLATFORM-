@@ -10,9 +10,7 @@ import asyncio
 import json
 import logging
 import time
-import uuid
 
-from packages.cache.semantic import semantic_cache
 from packages.core import settings
 from packages.rag import build_document_insights, embed_texts
 from packages.rag.parser import ParsedSegment
@@ -21,16 +19,9 @@ from packages.rag.visual import (
     split_visual_sections,
 )
 from packages.storage import (
-    Document,
     DocumentAssetStatus,
-    DocumentStatus,
-    Notebook,
-    NotebookDocument,
     object_store,
 )
-from packages.storage.db import tenant_session
-from sqlalchemy import select, update
-from sqlalchemy.ext.asyncio import AsyncSession
 from temporalio import activity
 
 from apps.worker.activities.ingestion_types import (
@@ -41,6 +32,13 @@ from apps.worker.activities.ingestion_types import (
     VisualBatchRef,
     VisualManifest,
     VisualPageAnalysis,
+)
+from apps.worker.activities.ingestion_status import (
+    invalidate_notebook_insights_for_document,
+    mark_document_done,
+    mark_document_failed,
+    mark_document_processing,
+    mark_visual_document_embedding,
 )
 from apps.worker.activities.document_chunks import (
     build_chunk_batch,
@@ -62,23 +60,12 @@ log = logging.getLogger(__name__)
 
 _upsert_document_asset = upsert_document_asset
 _update_visual_progress = update_visual_progress
+_invalidate_notebook_insights_for_document = invalidate_notebook_insights_for_document
 
 
 @activity.defn
 async def mark_processing(input: IngestionInput) -> None:
-    async with tenant_session(input.tenant_id) as s:
-        await s.execute(
-            update(Document)
-            .where(
-                Document.id == uuid.UUID(input.document_id),
-                Document.tenant_id == input.tenant_id,
-            )
-            .values(
-                status=DocumentStatus.processing,
-                processing_stage="preparing",
-                error=None,
-            )
-        )
+    await mark_document_processing(input)
 
 
 @activity.defn
@@ -263,18 +250,7 @@ async def finalize_visual_document(
     if not segments:
         raise ValueError("visual document contains no extractable content")
 
-    async with tenant_session(input.tenant_id) as session:
-        await session.execute(
-            update(Document)
-            .where(
-                Document.id == uuid.UUID(input.document_id),
-                Document.tenant_id == input.tenant_id,
-            )
-            .values(
-                processing_stage="embedding",
-                warnings=list(dict.fromkeys(warnings)),
-            )
-        )
+    await mark_visual_document_embedding(input, warnings)
 
     insights = build_document_insights(segments, filename=input.filename)
     batch = await chunk_and_embed(ParsedDoc(segments=segments, insights=insights))
@@ -288,90 +264,11 @@ async def finalize_visual_document(
     return written
 
 
-async def _invalidate_notebook_insights_for_document(
-    session: AsyncSession,
-    *,
-    tenant_id: str,
-    document_id: uuid.UUID,
-) -> int:
-    notebooks = (
-        await session.execute(
-            select(Notebook)
-            .join(NotebookDocument, NotebookDocument.notebook_id == Notebook.id)
-            .where(
-                Notebook.tenant_id == tenant_id,
-                NotebookDocument.tenant_id == tenant_id,
-                NotebookDocument.document_id == document_id,
-            )
-            .order_by(Notebook.created_at)
-        )
-    ).scalars().all()
-    if not notebooks:
-        return 0
-
-    for notebook in notebooks:
-        notebook.summary = None
-        notebook.suggested_questions = []
-        notebook.key_topics = []
-        notebook.insights_updated_at = None
-    return len(notebooks)
-
-
 @activity.defn
 async def mark_done(input: IngestionInput) -> None:
-    document_id = uuid.UUID(input.document_id)
-    async with tenant_session(input.tenant_id) as s:
-        await s.execute(
-            update(Document)
-            .where(
-                Document.id == document_id,
-                Document.tenant_id == input.tenant_id,
-            )
-            .values(
-                status=DocumentStatus.done,
-                processing_stage="done",
-                processed_pages=Document.total_pages,
-            )
-        )
-
-    try:
-        async with tenant_session(input.tenant_id) as s:
-            await _invalidate_notebook_insights_for_document(
-                s,
-                tenant_id=input.tenant_id,
-                document_id=document_id,
-            )
-    except Exception as exc:
-        log.warning(
-            "notebook insights refresh failed | tenant=%s document=%s error=%s",
-            input.tenant_id,
-            input.document_id,
-            exc,
-        )
-
-    try:
-        await semantic_cache.clear(input.tenant_id)
-    except Exception as exc:
-        log.warning(
-            "semantic cache invalidation failed | tenant=%s document=%s error=%s",
-            input.tenant_id,
-            input.document_id,
-            exc,
-        )
+    await mark_document_done(input)
 
 
 @activity.defn
 async def mark_failed(input: IngestionInput, error: str) -> None:
-    async with tenant_session(input.tenant_id) as s:
-        await s.execute(
-            update(Document)
-            .where(
-                Document.id == uuid.UUID(input.document_id),
-                Document.tenant_id == input.tenant_id,
-            )
-            .values(
-                status=DocumentStatus.failed,
-                processing_stage="failed",
-                error=error[:2000],
-            )
-        )
+    await mark_document_failed(input, error)

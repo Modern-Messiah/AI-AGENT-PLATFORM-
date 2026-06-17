@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 
 from apps.worker.activities import ingestion
+from apps.worker.activities import ingestion_status
 from apps.worker.activities import visual_analysis
 from apps.worker.activities.ingestion import (
     IngestionInput,
@@ -211,12 +212,12 @@ async def test_mark_done_invalidates_tenant_semantic_cache(monkeypatch) -> None:
     tenant_session = _FakeTenantSession([None, _ScalarListResult([])])
     cleared: list[str] = []
 
-    monkeypatch.setattr(ingestion, "tenant_session", lambda tenant_id: tenant_session)
+    monkeypatch.setattr(ingestion_status, "tenant_session", lambda tenant_id: tenant_session)
 
     async def fake_clear(tenant_id: str) -> None:
         cleared.append(tenant_id)
 
-    monkeypatch.setattr(ingestion.semantic_cache, "clear", fake_clear)
+    monkeypatch.setattr(ingestion_status.semantic_cache, "clear", fake_clear)
 
     await mark_done(
         IngestionInput(
@@ -233,7 +234,7 @@ async def test_mark_done_invalidates_tenant_semantic_cache(monkeypatch) -> None:
 
 async def test_mark_failed_update_is_explicitly_tenant_scoped(monkeypatch) -> None:
     tenant_session = _FakeTenantSession()
-    monkeypatch.setattr(ingestion, "tenant_session", lambda tenant_id: tenant_session)
+    monkeypatch.setattr(ingestion_status, "tenant_session", lambda tenant_id: tenant_session)
 
     await mark_failed(
         IngestionInput(
@@ -277,12 +278,12 @@ async def test_mark_done_invalidates_linked_notebook_insights(monkeypatch) -> No
         ]
     )
 
-    monkeypatch.setattr(ingestion, "tenant_session", lambda tenant_id: tenant_session)
+    monkeypatch.setattr(ingestion_status, "tenant_session", lambda tenant_id: tenant_session)
 
     async def fake_clear(tenant_id: str) -> None:
         return None
 
-    monkeypatch.setattr(ingestion.semantic_cache, "clear", fake_clear)
+    monkeypatch.setattr(ingestion_status.semantic_cache, "clear", fake_clear)
 
     await mark_done(
         IngestionInput(
