@@ -188,9 +188,17 @@ async def append_url_visual_segments(
 
     await _clear_url_image_assets(input)
     if not sources:
+        log.info(
+            "URL image analysis summary | tenant=%s document=%s found=0 processed=0 failed=0 segments=0",
+            input.tenant_id,
+            input.document_id,
+        )
         return segments
 
     enriched = list(segments)
+    processed = 0
+    failed = 0
+    segment_count = 0
     for index, source in enumerate(sources, start=1):
         _heartbeat({
             "document_id": input.document_id,
@@ -232,15 +240,19 @@ async def append_url_visual_segments(
                 "source_alt": source.alt,
                 "source_title": source.title,
             }
-            enriched.extend(
+            page_segments = [
                 ParsedSegment(text=text, metadata=metadata)
                 for text in split_visual_sections(
                     analysis.ocr_text,
                     analysis.vision_description,
                 )
                 if text.strip()
-            )
+            ]
+            enriched.extend(page_segments)
+            processed += 1
+            segment_count += len(page_segments)
         except Exception as exc:
+            failed += 1
             log.warning(
                 "URL image analysis failed | tenant=%s document=%s image=%s error=%s",
                 input.tenant_id,
@@ -253,4 +265,13 @@ async def append_url_visual_segments(
             "stage": "url-image-complete",
             "image_index": index,
         })
+    log.info(
+        "URL image analysis summary | tenant=%s document=%s found=%s processed=%s failed=%s segments=%s",
+        input.tenant_id,
+        input.document_id,
+        len(sources),
+        processed,
+        failed,
+        segment_count,
+    )
     return enriched

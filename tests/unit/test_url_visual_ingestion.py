@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from apps.api.services.url_sources import UrlImageSource, url_image_sidecar_payload
 from apps.worker.activities.ingestion_types import IngestionInput, VisualPageAnalysis
 from apps.worker.activities.url_visuals import append_url_visual_segments
@@ -193,6 +195,85 @@ async def test_multiple_url_images_get_distinct_asset_indexes(monkeypatch) -> No
     assert seen_page_numbers == [1, 2]
     assert [segment.metadata["image_index"] for segment in segments] == [1, 2]
     assert [segment.metadata["asset_id"] for segment in segments] == ["asset-1", "asset-2"]
+
+
+async def test_url_visual_ingestion_logs_summary_counters(monkeypatch, caplog) -> None:
+    input = IngestionInput(
+        document_id="5ef2d843-ddaf-4ae3-a73d-d25f27fb8621",
+        tenant_id="tenant-a",
+        object_key="tenant-a/url-source.txt",
+        filename="Example Page.txt",
+    )
+    sources = [
+        UrlImageSource(url="https://docs.example.com/one.png"),
+        UrlImageSource(url="https://docs.example.com/broken.png"),
+    ]
+
+    monkeypatch.setattr(
+        "apps.worker.activities.url_visuals._load_url_image_sources",
+        lambda _object_key: sources,
+    )
+
+    async def fake_clear_assets(_input: IngestionInput) -> None:
+        return None
+
+    async def fake_fetch_image(candidate: UrlImageSource):
+        if candidate.url.endswith("broken.png"):
+            raise RuntimeError("image unavailable")
+        return b"png-bytes", "image/png", "image.png"
+
+    def fake_render(_data: bytes, _filename: str, _start_page: int, _end_page: int):
+        return [
+            VisualPage(
+                page_number=1,
+                preview_bytes=b"webp-preview",
+                width=100,
+                height=100,
+                text_layer="",
+                has_visuals=True,
+            )
+        ]
+
+    async def fake_analyze(_page: VisualPage) -> VisualPageAnalysis:
+        return VisualPageAnalysis(
+            text="Recognized text:\nvisible text",
+            ocr_text="visible text",
+            ocr_confidence=0.9,
+            vision_description="",
+        )
+
+    async def fake_upsert_asset(
+        _input: IngestionInput,
+        page: VisualPage,
+        *,
+        preview_object_key: str,
+        analysis: VisualPageAnalysis,
+    ) -> str:
+        return f"asset-{page.page_number}"
+
+    monkeypatch.setattr("apps.worker.activities.url_visuals._clear_url_image_assets", fake_clear_assets)
+    monkeypatch.setattr("apps.worker.activities.url_visuals._fetch_url_image", fake_fetch_image)
+    monkeypatch.setattr("apps.worker.activities.url_visuals.render_visual_pages", fake_render)
+    monkeypatch.setattr("apps.worker.activities.url_visuals.analyze_visual_page", fake_analyze)
+    monkeypatch.setattr("apps.worker.activities.url_visuals._upsert_url_image_asset", fake_upsert_asset)
+    monkeypatch.setattr("apps.worker.activities.url_visuals.object_store.put", lambda *args: None)
+
+    with caplog.at_level(logging.INFO, logger="apps.worker.activities.url_visuals"):
+        segments = await append_url_visual_segments(input, [])
+
+    assert len(segments) == 1
+    summary = [
+        record.message
+        for record in caplog.records
+        if "URL image analysis summary" in record.message
+    ]
+    assert summary == [
+        (
+            "URL image analysis summary | tenant=tenant-a "
+            "document=5ef2d843-ddaf-4ae3-a73d-d25f27fb8621 "
+            "found=2 processed=1 failed=1 segments=1"
+        )
+    ]
 
 
 def test_url_image_sidecar_payload_fixture_matches_worker_contract() -> None:
