@@ -186,10 +186,6 @@
       </div>
     </div>
 
-    <div style="font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 8px">
-      <span style="font-family: var(--mono)">pgvector</span> · multi-document citations · page-aware PDF parsing · semantic cache invalidation
-    </div>
-
     <AppToast v-if="toast" v-bind="toast" @done="toast = null" />
   </div>
 </template>
@@ -623,7 +619,7 @@ function handleFileInput(e) {
 .documents-memory-card {
   display: flex;
   flex-direction: column;
-  height: clamp(320px, 44vh, 560px);
+  height: clamp(440px, 62vh, 760px);
   min-height: 0;
 }
 .file-title-button {

@@ -56,10 +56,17 @@ test('knowledge base file table scrolls inside its card', () => {
   assert.match(documentsViewSource, /class="card documents-memory-card"/)
   assert.match(documentsViewSource, /class="documents-table-scroll"/)
   assert.match(documentsViewSource, /\.documents-memory-card\s*\{[^}]*display:\s*flex/s)
-  assert.match(documentsViewSource, /\.documents-memory-card\s*\{[^}]*height:\s*clamp\(320px,\s*44vh,\s*560px\)/s)
+  assert.match(documentsViewSource, /\.documents-memory-card\s*\{[^}]*height:\s*clamp\(440px,\s*62vh,\s*760px\)/s)
   assert.match(documentsViewSource, /\.documents-table-scroll\s*\{[^}]*flex:\s*1 1 auto/s)
   assert.match(documentsViewSource, /\.documents-table-scroll\s*\{[^}]*overflow-y:\s*auto/s)
   assert.match(documentsViewSource, /\.documents-table-scroll thead\s*\{[^}]*position:\s*sticky/s)
+})
+
+test('knowledge base hides implementation footer text', () => {
+  assert.doesNotMatch(documentsViewSource, /pgvector/)
+  assert.doesNotMatch(documentsViewSource, /multi-document citations/)
+  assert.doesNotMatch(documentsViewSource, /page-aware PDF parsing/)
+  assert.doesNotMatch(documentsViewSource, /semantic cache invalidation/)
 })
 
 test('knowledge base file table scrollbar uses subdued theme colors', () => {
