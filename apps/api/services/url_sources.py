@@ -4,6 +4,7 @@ import asyncio
 import html as html_lib
 import ipaddress
 import json
+import logging
 import re
 import socket
 from dataclasses import dataclass, field
@@ -13,6 +14,8 @@ from urllib.parse import urljoin, urlparse, urlunparse
 
 import httpx
 from packages.core import settings
+
+log = logging.getLogger(__name__)
 
 _TIMEOUT = 10.0
 _MAX_REDIRECTS = 3
@@ -25,7 +28,6 @@ _TEXT_TYPES = {
 }
 _PDF_TYPES = {"application/pdf"}
 _IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp"}
-_MAX_URL_IMAGES = 8
 _MIN_DECLARED_IMAGE_EDGE = 120
 _NOISE_IMAGE_RE = re.compile(
     r"(avatar|badge|button|captcha|favicon|icon|logo|pixel|sprite|tracking)",
@@ -234,7 +236,15 @@ def _is_supported_image_url(url: str) -> bool:
 def extract_html_image_sources(data: bytes, base_url: str) -> list[UrlImageSource]:
     parser = _ImageSourceParser(base_url)
     parser.feed(data.decode("utf-8", errors="ignore"))
-    return parser.sources[:_MAX_URL_IMAGES]
+    selected = max(0, settings.url_source_max_images)
+    if len(parser.sources) > selected:
+        log.info(
+            "URL image source limit applied | base_url=%s found=%s selected=%s",
+            base_url,
+            len(parser.sources),
+            selected,
+        )
+    return parser.sources[:selected]
 
 
 def url_image_sidecar_key(object_key: str) -> str:

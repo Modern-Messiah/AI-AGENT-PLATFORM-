@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
@@ -157,6 +158,37 @@ def test_html_image_source_extraction_filters_noise_and_resolves_urls() -> None:
             alt="",
             title="Network topology",
         ),
+    ]
+
+
+def test_html_image_source_limit_uses_settings_and_logs(monkeypatch, caplog) -> None:
+    html = "\n".join(
+        f'<img src="/diagrams/flow-{index}.png" width="900" height="640" alt="Flow {index}">'
+        for index in range(10)
+    ).encode()
+    monkeypatch.setattr(
+        url_sources,
+        "settings",
+        SimpleNamespace(url_source_max_images=3),
+    )
+
+    with caplog.at_level(logging.INFO, logger="apps.api.services.url_sources"):
+        sources = extract_html_image_sources(html, "https://docs.example.com/page.html")
+
+    assert [source.url for source in sources] == [
+        "https://docs.example.com/diagrams/flow-0.png",
+        "https://docs.example.com/diagrams/flow-1.png",
+        "https://docs.example.com/diagrams/flow-2.png",
+    ]
+    assert [
+        record.message
+        for record in caplog.records
+        if "URL image source limit applied" in record.message
+    ] == [
+        (
+            "URL image source limit applied | "
+            "base_url=https://docs.example.com/page.html found=10 selected=3"
+        )
     ]
 
 

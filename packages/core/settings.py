@@ -104,6 +104,8 @@ class Settings(BaseSettings):
 
     # Maximum bytes fetched from a URL source before it is stored as a document.
     url_source_max_bytes: int = 10 * 1024 * 1024  # 10 MB
+    # Maximum hidden images extracted from one HTML URL source for OCR/Vision.
+    url_source_max_images: int = 8
     # Maximum bytes fetched for each hidden image discovered inside an HTML URL source.
     url_source_image_max_bytes: int = 5 * 1024 * 1024  # 5 MB per image
 
