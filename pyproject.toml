@@ -87,3 +87,6 @@ ignore_missing_imports = true
 asyncio_mode = "auto"
 testpaths = ["tests"]
 addopts = "-ra --strict-markers"
+markers = [
+    "e2e: tests that require live Docker services, Temporal worker, and provider access",
+]
