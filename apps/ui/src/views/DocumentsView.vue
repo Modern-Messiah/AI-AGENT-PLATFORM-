@@ -82,7 +82,7 @@
       </div>
     </form>
 
-    <div class="card">
+    <div class="card documents-memory-card">
       <div class="card-header">
         <div>
           <div class="card-title">{{ t('documents.memoryFiles') }}</div>
@@ -587,8 +587,10 @@ function handleFileInput(e) {
   color: var(--red);
 }
 .documents-table-scroll {
-  max-height: min(48vh, 460px);
-  overflow: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: auto;
+  overflow-y: auto;
   scrollbar-gutter: stable;
 }
 .documents-table-scroll table {
@@ -615,6 +617,12 @@ function handleFileInput(e) {
 }
 .documents-table-scroll::-webkit-scrollbar-thumb:hover {
   background: color-mix(in oklch, var(--accent) 62%, var(--muted));
+}
+.documents-memory-card {
+  display: flex;
+  flex-direction: column;
+  height: clamp(320px, 44vh, 560px);
+  min-height: 0;
 }
 .file-title-button {
   padding: 0;

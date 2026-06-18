@@ -53,9 +53,12 @@ test('knowledge base file table does not render document insights inline', () =>
 })
 
 test('knowledge base file table scrolls inside its card', () => {
+  assert.match(documentsViewSource, /class="card documents-memory-card"/)
   assert.match(documentsViewSource, /class="documents-table-scroll"/)
-  assert.match(documentsViewSource, /\.documents-table-scroll\s*\{[^}]*max-height:\s*min\(48vh,\s*460px\)/s)
-  assert.match(documentsViewSource, /\.documents-table-scroll\s*\{[^}]*overflow:\s*auto/s)
+  assert.match(documentsViewSource, /\.documents-memory-card\s*\{[^}]*display:\s*flex/s)
+  assert.match(documentsViewSource, /\.documents-memory-card\s*\{[^}]*height:\s*clamp\(320px,\s*44vh,\s*560px\)/s)
+  assert.match(documentsViewSource, /\.documents-table-scroll\s*\{[^}]*flex:\s*1 1 auto/s)
+  assert.match(documentsViewSource, /\.documents-table-scroll\s*\{[^}]*overflow-y:\s*auto/s)
   assert.match(documentsViewSource, /\.documents-table-scroll thead\s*\{[^}]*position:\s*sticky/s)
 })
 
