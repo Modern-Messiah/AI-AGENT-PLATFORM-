@@ -26,9 +26,10 @@ async def upsert_document_asset(
     preview_object_key: str,
     analysis: VisualPageAnalysis | None,
     status: DocumentAssetStatus,
+    asset_kind: str | None = None,
     error: str | None = None,
 ) -> str:
-    asset_kind = "page" if input.filename.lower().endswith(".pdf") else "image"
+    asset_kind = asset_kind or ("page" if input.filename.lower().endswith(".pdf") else "image")
     values = {
         "tenant_id": input.tenant_id,
         "document_id": uuid.UUID(input.document_id),

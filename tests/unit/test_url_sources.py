@@ -97,6 +97,46 @@ async def test_validate_fetch_url_rejects_private_dns(monkeypatch) -> None:
         await validate_fetch_url("https://docs.example.com/page")
 
 
+async def test_validate_fetch_url_allows_host_docker_internal_only_for_local_e2e(monkeypatch) -> None:
+    def fake_getaddrinfo(*args, **kwargs):
+        return [(None, None, None, None, ("192.168.65.2", 0))]
+
+    monkeypatch.setattr("apps.api.services.url_sources.socket.getaddrinfo", fake_getaddrinfo)
+    monkeypatch.setattr(
+        url_sources,
+        "settings",
+        SimpleNamespace(
+            app_env="local",
+            e2e_allow_local_url_sources=True,
+            http_fetch_allowed_domains=[],
+        ),
+    )
+
+    assert (
+        await validate_fetch_url("http://host.docker.internal:8765/page.html")
+        == "http://host.docker.internal:8765/page.html"
+    )
+
+
+async def test_validate_fetch_url_rejects_host_docker_internal_outside_local_e2e(monkeypatch) -> None:
+    def fake_getaddrinfo(*args, **kwargs):
+        return [(None, None, None, None, ("192.168.65.2", 0))]
+
+    monkeypatch.setattr("apps.api.services.url_sources.socket.getaddrinfo", fake_getaddrinfo)
+    monkeypatch.setattr(
+        url_sources,
+        "settings",
+        SimpleNamespace(
+            app_env="production",
+            e2e_allow_local_url_sources=True,
+            http_fetch_allowed_domains=[],
+        ),
+    )
+
+    with pytest.raises(UrlSourceError, match="HTTP_FETCH_ALLOWED_DOMAINS"):
+        await validate_fetch_url("http://host.docker.internal:8765/page.html")
+
+
 async def test_validate_fetch_url_accepts_public_dns(monkeypatch) -> None:
     def fake_getaddrinfo(*args, **kwargs):
         return [(None, None, None, None, ("93.184.216.34", 0))]

@@ -108,6 +108,9 @@ class Settings(BaseSettings):
     url_source_max_images: int = 8
     # Maximum bytes fetched for each hidden image discovered inside an HTML URL source.
     url_source_image_max_bytes: int = 5 * 1024 * 1024  # 5 MB per image
+    # Test-only escape hatch for live e2e URL source tests running Docker services
+    # against a fixture HTTP server on the host machine.
+    e2e_allow_local_url_sources: bool = False
 
     @model_validator(mode="after")
     def _check_production_secrets(self) -> "Settings":

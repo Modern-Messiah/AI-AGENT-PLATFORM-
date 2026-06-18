@@ -101,7 +101,7 @@ async def _clear_url_image_assets(input: IngestionInput) -> None:
                 select(DocumentAsset).where(
                     DocumentAsset.document_id == document_id,
                     DocumentAsset.tenant_id == input.tenant_id,
-                    DocumentAsset.asset_kind == "image",
+                    DocumentAsset.asset_kind.in_(("image", "url_image")),
                 )
             )
         ).scalars().all()
@@ -109,7 +109,7 @@ async def _clear_url_image_assets(input: IngestionInput) -> None:
             delete(DocumentAsset).where(
                 DocumentAsset.document_id == document_id,
                 DocumentAsset.tenant_id == input.tenant_id,
-                DocumentAsset.asset_kind == "image",
+                DocumentAsset.asset_kind.in_(("image", "url_image")),
             )
         )
 
@@ -175,6 +175,7 @@ async def _upsert_url_image_asset(
         preview_object_key=preview_object_key,
         analysis=analysis,
         status=DocumentAssetStatus.done,
+        asset_kind="url_image",
     )
 
 

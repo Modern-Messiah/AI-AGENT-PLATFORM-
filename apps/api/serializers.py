@@ -72,6 +72,7 @@ def document_response(doc: Document) -> DocumentResponse:
 
 
 def document_asset_response(asset: DocumentAsset) -> DocumentAssetResponse:
+    is_hidden_url_image = asset.asset_kind == "url_image"
     return DocumentAssetResponse(
         id=str(asset.id),
         document_id=str(asset.document_id),
@@ -84,7 +85,7 @@ def document_asset_response(asset: DocumentAsset) -> DocumentAssetResponse:
         height=asset.height,
         status=asset.status,
         error=asset.error,
-        preview_available=bool(asset.preview_object_key),
+        preview_available=bool(asset.preview_object_key) and not is_hidden_url_image,
     )
 
 

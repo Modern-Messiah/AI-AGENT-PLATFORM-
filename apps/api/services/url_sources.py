@@ -65,6 +65,7 @@ _BLOCK_TAGS = {
     "tr",
 }
 _SKIP_TAGS = {"script", "style", "noscript", "svg", "canvas"}
+_E2E_LOCAL_HOSTS = {"host.docker.internal"}
 
 
 class UrlSourceError(ValueError):
@@ -336,12 +337,23 @@ def _is_blocked_ip(value: str) -> bool:
     )
 
 
+def _is_e2e_local_host_allowed(host: str) -> bool:
+    return (
+        settings.app_env.strip().lower() == "local"
+        and settings.e2e_allow_local_url_sources
+        and host.rstrip(".").lower() in _E2E_LOCAL_HOSTS
+    )
+
+
 async def validate_fetch_url(url: str) -> str:
     normalized = _normalize_url(url)
     parsed = urlparse(normalized)
     host = parsed.hostname
     if not host:
         raise UrlSourceError("URL host is required")
+
+    if _is_e2e_local_host_allowed(host):
+        return normalized
 
     host_is_ip = False
     try:

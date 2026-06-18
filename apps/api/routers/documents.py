@@ -360,7 +360,11 @@ async def get_document_asset_content(
                 )
             )
         ).scalar_one_or_none()
-    if asset is None or not asset.preview_object_key:
+    if (
+        asset is None
+        or not asset.preview_object_key
+        or getattr(asset, "asset_kind", "") == "url_image"
+    ):
         raise HTTPException(status_code=404, detail="document asset not found")
 
     try:
