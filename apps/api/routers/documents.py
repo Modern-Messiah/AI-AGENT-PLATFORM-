@@ -419,6 +419,22 @@ async def reindex_document(
         if doc.status in {DocumentStatus.pending, DocumentStatus.processing}:
             raise HTTPException(status_code=409, detail="document is already being indexed")
 
+        if getattr(doc, "source_type", "file") == "url":
+            if not doc.source_url:
+                raise HTTPException(status_code=409, detail="URL document has no source URL")
+            try:
+                fetched = await fetch_url_source(doc.source_url)
+            except UrlSourceError as exc:
+                raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+            object_store.put(doc.object_key, fetched.data, content_type=fetched.content_type)
+            doc.filename = fetched.filename
+            doc.mime_type = fetched.content_type
+            doc.size_bytes = fetched.size_bytes
+            doc.source_url = fetched.final_url
+            doc.source_title = fetched.title
+            doc.source_checked_at = datetime.now(timezone.utc)
+
         doc.status = DocumentStatus.pending
         doc.processing_stage = "queued"
         doc.processed_pages = 0

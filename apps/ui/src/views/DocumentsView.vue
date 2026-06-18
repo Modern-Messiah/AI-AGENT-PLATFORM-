@@ -126,7 +126,10 @@
                   >
                     {{ doc.name }}
                   </button>
-                  <div v-if="doc.sourceType === 'url'" class="source-url">{{ doc.sourceUrl }}</div>
+                  <div v-if="doc.sourceType === 'url'" class="source-url">
+                    <span class="source-pill">{{ t('documents.urlBadge') }}</span>
+                    <span>{{ doc.sourceUrl }}</span>
+                  </div>
                   <div v-if="doc.error" style="font-size: 11px; color: var(--red); margin-top: 2px">{{ doc.error }}</div>
                   <div style="font-size: 10px; color: var(--muted); font-family: var(--mono); margin-top: 1px">{{ doc.id }}</div>
                 </div>
@@ -505,10 +508,28 @@ function handleFileInput(e) {
 }
 .url-source-sub,
 .source-url {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  align-items: center;
   margin-top: 3px;
   color: var(--muted);
   font-size: 11px;
   line-height: 1.45;
+}
+.url-source-sub {
+  display: block;
+}
+.source-pill {
+  padding: 1px 6px;
+  border: 1px solid color-mix(in oklch, var(--accent) 35%, transparent);
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--accent) 10%, transparent);
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
 }
 .url-source-controls {
   display: grid;

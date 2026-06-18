@@ -21,6 +21,7 @@ export function normalizeDocument(doc, locale = 'ru') {
     sourceUrl: doc.source_url || doc.sourceUrl || '',
     sourceTitle: doc.source_title || doc.sourceTitle || '',
     sourceCheckedAt: doc.source_checked_at || doc.sourceCheckedAt || null,
+    sourceCheckedLabel: formatLocaleDate(doc.source_checked_at || doc.sourceCheckedAt, locale),
     time: formatLocaleDate(doc.created_at, locale),
     createdLabel: formatLocaleDate(doc.created_at, locale),
     summary: doc.summary || '',

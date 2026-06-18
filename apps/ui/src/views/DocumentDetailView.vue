@@ -93,6 +93,38 @@
         </ul>
       </div>
 
+      <div v-if="normalized.sourceType === 'url' && normalized.sourceUrl" class="card source-card">
+        <div class="card-header">
+          <div>
+            <div class="card-title">{{ t('documentDetail.sourceUrlTitle') }}</div>
+            <div class="card-sub">
+              {{ normalized.sourceCheckedLabel
+                ? t('documentDetail.sourceCheckedAt', { date: normalized.sourceCheckedLabel })
+                : t('documentDetail.sourceUrlSub') }}
+            </div>
+          </div>
+          <a
+            class="btn btn-ghost btn-sm"
+            :href="normalized.sourceUrl"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            {{ t('documentDetail.openOriginal') }}
+          </a>
+        </div>
+        <div class="detail-card-body">
+          <a
+            class="source-url-link"
+            :href="normalized.sourceUrl"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            {{ normalized.sourceTitle || normalized.sourceUrl }}
+          </a>
+          <div v-if="normalized.sourceTitle" class="source-url-text">{{ normalized.sourceUrl }}</div>
+        </div>
+      </div>
+
       <div class="card chunks-card">
         <div class="card-header">
           <div>
@@ -351,6 +383,24 @@ function openDocumentChat() {
   color: var(--yellow);
   font-size: 11px;
   line-height: 1.5;
+}
+.source-url-link {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+  text-decoration: none;
+}
+.source-url-link:hover {
+  color: var(--accent);
+}
+.source-url-text {
+  margin-top: 6px;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 .chunks-card {
   display: flex;
