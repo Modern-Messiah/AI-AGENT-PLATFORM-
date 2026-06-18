@@ -6,13 +6,12 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile
-from sqlalchemy import select, update
-from starlette.responses import Response
-from temporalio.client import Client
-
 from packages.core import settings
 from packages.storage import Chunk, Document, DocumentAsset, DocumentStatus, object_store
 from packages.storage.db import tenant_session
+from sqlalchemy import select, update
+from starlette.responses import Response
+from temporalio.client import Client
 
 from apps.api.deps import TenantID, read_with_limit
 from apps.api.schemas import (
@@ -30,12 +29,27 @@ from apps.api.serializers import (
     metadata_page,
 )
 from apps.api.services.cache import invalidate_semantic_cache
-from apps.api.services.url_sources import UrlSourceError, fetch_url_source
+from apps.api.services.url_sources import (
+    FetchedUrlSource,
+    UrlSourceError,
+    fetch_url_source,
+    url_image_sidecar_key,
+    url_image_sidecar_payload,
+)
 from apps.worker.activities.ingestion import IngestionInput
 from apps.worker.workflows.ingestion import IngestionWorkflow
 
 log = logging.getLogger(__name__)
 router = APIRouter()
+
+
+def _store_url_source_objects(object_key: str, fetched: FetchedUrlSource) -> None:
+    object_store.put(object_key, fetched.data, content_type=fetched.content_type)
+    object_store.put(
+        url_image_sidecar_key(object_key),
+        url_image_sidecar_payload(fetched.image_sources),
+        content_type="application/json",
+    )
 
 
 @router.get("/documents", response_model=list[DocumentResponse])
@@ -237,7 +251,7 @@ async def add_url_document(
 
     document_id = uuid.uuid4()
     object_key = f"{tenant_id}/{document_id}/{fetched.filename}"
-    object_store.put(object_key, fetched.data, content_type=fetched.content_type)
+    _store_url_source_objects(object_key, fetched)
     checked_at = datetime.now(timezone.utc)
 
     async with tenant_session(tenant_id) as s:
@@ -427,7 +441,7 @@ async def reindex_document(
             except UrlSourceError as exc:
                 raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
 
-            object_store.put(doc.object_key, fetched.data, content_type=fetched.content_type)
+            _store_url_source_objects(doc.object_key, fetched)
             doc.filename = fetched.filename
             doc.mime_type = fetched.content_type
             doc.size_bytes = fetched.size_bytes
@@ -497,7 +511,7 @@ async def delete_document(document_id: uuid.UUID, tenant_id: TenantID) -> None:
         )
         await s.delete(doc)  # CASCADE deletes chunks via FK ondelete="CASCADE"
 
-    for key in [object_key, *preview_object_keys]:
+    for key in [object_key, url_image_sidecar_key(object_key), *preview_object_keys]:
         try:
             object_store.delete(key)
         except Exception as exc:

@@ -104,6 +104,8 @@ class Settings(BaseSettings):
 
     # Maximum bytes fetched from a URL source before it is stored as a document.
     url_source_max_bytes: int = 10 * 1024 * 1024  # 10 MB
+    # Maximum bytes fetched for each hidden image discovered inside an HTML URL source.
+    url_source_image_max_bytes: int = 5 * 1024 * 1024  # 5 MB per image
 
     @model_validator(mode="after")
     def _check_production_secrets(self) -> "Settings":

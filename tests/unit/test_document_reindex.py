@@ -7,7 +7,7 @@ from types import SimpleNamespace
 from apps.api import main as api
 from apps.api.main import app
 from apps.api.routers import documents as document_routes
-from apps.api.services.url_sources import FetchedUrlSource
+from apps.api.services.url_sources import FetchedUrlSource, url_image_sidecar_key
 from fastapi.routing import APIRoute
 from packages.storage import DocumentStatus
 
@@ -164,7 +164,14 @@ async def test_reindex_url_document_refetches_source(monkeypatch) -> None:
     response = await document_routes.reindex_document(document_id, "tenant-url", request)
 
     assert fetched_urls == ["https://example.com/old"]
-    assert stored == [("tenant-url/source.txt", b"fresh url body", "text/plain")]
+    assert stored == [
+        ("tenant-url/source.txt", b"fresh url body", "text/plain"),
+        (
+            url_image_sidecar_key("tenant-url/source.txt"),
+            b'{"images":[]}',
+            "application/json",
+        ),
+    ]
     assert document.filename == "new-title.txt"
     assert document.mime_type == "text/plain"
     assert document.size_bytes == len(b"fresh url body")

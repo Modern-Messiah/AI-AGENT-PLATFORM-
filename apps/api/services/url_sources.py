@@ -3,15 +3,15 @@ from __future__ import annotations
 import asyncio
 import html as html_lib
 import ipaddress
+import json
 import re
 import socket
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from html.parser import HTMLParser
 from pathlib import PurePosixPath
 from urllib.parse import urljoin, urlparse, urlunparse
 
 import httpx
-
 from packages.core import settings
 
 _TIMEOUT = 10.0
@@ -24,6 +24,13 @@ _TEXT_TYPES = {
     "application/markdown",
 }
 _PDF_TYPES = {"application/pdf"}
+_IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp"}
+_MAX_URL_IMAGES = 8
+_MIN_DECLARED_IMAGE_EDGE = 120
+_NOISE_IMAGE_RE = re.compile(
+    r"(avatar|badge|button|captcha|favicon|icon|logo|pixel|sprite|tracking)",
+    re.IGNORECASE,
+)
 _SUPPORTED_SUFFIX_TYPES = {
     ".html": "text/html",
     ".htm": "text/html",
@@ -66,6 +73,13 @@ class UrlSourceError(ValueError):
 
 
 @dataclass(frozen=True)
+class UrlImageSource:
+    url: str
+    alt: str = ""
+    title: str = ""
+
+
+@dataclass(frozen=True)
 class FetchedUrlSource:
     requested_url: str
     final_url: str
@@ -73,6 +87,7 @@ class FetchedUrlSource:
     filename: str
     content_type: str
     data: bytes
+    image_sources: list[UrlImageSource] = field(default_factory=list)
 
     @property
     def size_bytes(self) -> int:
@@ -85,7 +100,7 @@ class _ReadableTextParser(HTMLParser):
         self._parts: list[str] = []
         self._skip_depth = 0
 
-    def handle_starttag(self, tag: str, attrs) -> None:  # noqa: ANN001
+    def handle_starttag(self, tag: str, attrs) -> None:
         tag = tag.lower()
         if tag in _SKIP_TAGS:
             self._skip_depth += 1
@@ -114,6 +129,40 @@ class _ReadableTextParser(HTMLParser):
         return "\n".join(line.strip() for line in text.splitlines() if line.strip())
 
 
+class _ImageSourceParser(HTMLParser):
+    def __init__(self, base_url: str) -> None:
+        super().__init__(convert_charrefs=True)
+        self.base_url = base_url
+        self.sources: list[UrlImageSource] = []
+        self._seen: set[str] = set()
+
+    def handle_starttag(self, tag: str, attrs) -> None:
+        if tag.lower() != "img":
+            return
+        attr = {str(key).lower(): str(value or "") for key, value in attrs}
+        if not _declared_image_size_is_useful(attr):
+            return
+        raw_url = _image_attr_url(attr)
+        if not raw_url:
+            return
+        url = urljoin(self.base_url, raw_url.strip())
+        if not _is_supported_image_url(url):
+            return
+        descriptor = " ".join(
+            value for value in (url, attr.get("alt", ""), attr.get("title", "")) if value
+        )
+        if _NOISE_IMAGE_RE.search(descriptor):
+            return
+        if url in self._seen:
+            return
+        self._seen.add(url)
+        self.sources.append(UrlImageSource(
+            url=url,
+            alt=attr.get("alt", "").strip()[:500],
+            title=attr.get("title", "").strip()[:500],
+        ))
+
+
 def extract_html_title(data: bytes) -> str | None:
     text = data[:200_000].decode("utf-8", errors="ignore")
     match = re.search(r"<title[^>]*>(.*?)</title>", text, flags=re.IGNORECASE | re.DOTALL)
@@ -127,6 +176,82 @@ def html_to_text(data: bytes) -> str:
     parser = _ReadableTextParser()
     parser.feed(data.decode("utf-8", errors="ignore"))
     return parser.text()
+
+
+def _int_attr(value: str) -> int | None:
+    match = re.match(r"^\s*([0-9]{1,5})", value or "")
+    return int(match.group(1)) if match else None
+
+
+def _declared_image_size_is_useful(attrs: dict[str, str]) -> bool:
+    width = _int_attr(attrs.get("width", ""))
+    height = _int_attr(attrs.get("height", ""))
+    if width is None or height is None:
+        return True
+    return max(width, height) >= _MIN_DECLARED_IMAGE_EDGE
+
+
+def _srcset_largest_url(value: str) -> str:
+    best_url = ""
+    best_score = -1
+    for candidate in value.split(","):
+        parts = candidate.strip().split()
+        if not parts:
+            continue
+        score = 0
+        if len(parts) > 1:
+            descriptor = parts[1].lower()
+            if descriptor.endswith("w") and descriptor[:-1].isdigit():
+                score = int(descriptor[:-1])
+            elif descriptor.endswith("x"):
+                try:
+                    score = int(float(descriptor[:-1]) * 1000)
+                except ValueError:
+                    score = 0
+        if score >= best_score:
+            best_score = score
+            best_url = parts[0]
+    return best_url
+
+
+def _image_attr_url(attrs: dict[str, str]) -> str:
+    for key in ("src", "data-src", "data-original", "data-lazy-src"):
+        value = attrs.get(key, "").strip()
+        if value:
+            return value
+    srcset = attrs.get("srcset", "").strip() or attrs.get("data-srcset", "").strip()
+    return _srcset_largest_url(srcset) if srcset else ""
+
+
+def _is_supported_image_url(url: str) -> bool:
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"}:
+        return False
+    suffix = PurePosixPath(parsed.path).suffix.lower()
+    return suffix in _IMAGE_SUFFIXES
+
+
+def extract_html_image_sources(data: bytes, base_url: str) -> list[UrlImageSource]:
+    parser = _ImageSourceParser(base_url)
+    parser.feed(data.decode("utf-8", errors="ignore"))
+    return parser.sources[:_MAX_URL_IMAGES]
+
+
+def url_image_sidecar_key(object_key: str) -> str:
+    return f"{object_key}.url-images.json"
+
+
+def url_image_sidecar_payload(sources: list[UrlImageSource]) -> bytes:
+    return json.dumps(
+        {
+            "images": [
+                {"url": source.url, "alt": source.alt, "title": source.title}
+                for source in sources
+            ]
+        },
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).encode("utf-8")
 
 
 def _content_type_header(value: str | None) -> str:
@@ -310,8 +435,10 @@ async def fetch_url_source(url: str) -> FetchedUrlSource:
                 current_url,
             )
             title = extract_html_title(data) if original_type in _HTML_TYPES else None
+            image_sources: list[UrlImageSource] = []
 
             if original_type in _HTML_TYPES:
+                image_sources = extract_html_image_sources(data, current_url)
                 text = html_to_text(data)
                 if not text.strip():
                     raise UrlSourceError("HTML page has no readable text")
@@ -331,6 +458,7 @@ async def fetch_url_source(url: str) -> FetchedUrlSource:
                 filename=safe_url_filename(current_url, title, original_type),
                 content_type=content_type,
                 data=data,
+                image_sources=image_sources,
             )
 
     raise UrlSourceError("URL redirected too many times")

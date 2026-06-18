@@ -2,22 +2,24 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from types import SimpleNamespace
-from uuid import UUID
 
 import pytest
-from fastapi.routing import APIRoute
-
 from apps.api.main import DocumentResponse, UrlCheckResponse, app
 from apps.api.routers import documents as documents_router
 from apps.api.services import url_sources
 from apps.api.services.url_sources import (
     FetchedUrlSource,
+    UrlImageSource,
     UrlSourceError,
+    extract_html_image_sources,
     extract_html_title,
     html_to_text,
     safe_url_filename,
+    url_image_sidecar_key,
+    url_image_sidecar_payload,
     validate_fetch_url,
 )
+from fastapi.routing import APIRoute
 from packages.storage import DocumentStatus
 
 
@@ -124,6 +126,56 @@ def test_html_helpers_extract_readable_text_and_title() -> None:
     assert "alert" not in html_to_text(html)
 
 
+def test_html_image_source_extraction_filters_noise_and_resolves_urls() -> None:
+    html = b"""
+    <html>
+      <body>
+        <img src="/static/logo.png" width="64" height="32" alt="Company logo">
+        <img src="/diagrams/payment-flow.png" width="900" height="640" alt="Payment flow diagram">
+        <img data-src="https://cdn.example.com/table.webp" alt="Tariff comparison table">
+        <img srcset="/small.jpg 320w, /large.jpg 1200w" title="Network topology">
+        <img src="data:image/png;base64,AAAA" alt="inline">
+      </body>
+    </html>
+    """
+
+    sources = extract_html_image_sources(html, "https://docs.example.com/help/index.html")
+
+    assert sources == [
+        UrlImageSource(
+            url="https://docs.example.com/diagrams/payment-flow.png",
+            alt="Payment flow diagram",
+            title="",
+        ),
+        UrlImageSource(
+            url="https://cdn.example.com/table.webp",
+            alt="Tariff comparison table",
+            title="",
+        ),
+        UrlImageSource(
+            url="https://docs.example.com/large.jpg",
+            alt="",
+            title="Network topology",
+        ),
+    ]
+
+
+def test_url_image_sidecar_payload_is_stable_json() -> None:
+    sources = [
+        UrlImageSource(
+            url="https://docs.example.com/diagram.png",
+            alt="Flow",
+            title="Payment flow",
+        )
+    ]
+
+    assert url_image_sidecar_key("tenant/doc/Example.txt") == "tenant/doc/Example.txt.url-images.json"
+    assert url_image_sidecar_payload(sources) == (
+        b'{"images":[{"url":"https://docs.example.com/diagram.png",'
+        b'"alt":"Flow","title":"Payment flow"}]}'
+    )
+
+
 def test_safe_url_filename_uses_title_or_path() -> None:
     assert safe_url_filename("https://example.com/docs/guide.html", "Product Guide", "text/html") == "Product_Guide.txt"
     assert safe_url_filename("https://example.com/files/spec.pdf", None, "application/pdf") == "spec.pdf"
@@ -177,6 +229,13 @@ async def test_add_url_document_persists_metadata_and_starts_ingestion(monkeypat
         filename="Example_Docs.txt",
         content_type="text/plain; charset=utf-8",
         data=b"Source URL: https://example.com/docs\n\nHello docs",
+        image_sources=[
+            UrlImageSource(
+                url="https://example.com/diagram.png",
+                alt="Payment flow",
+                title="",
+            )
+        ],
     )
     fake_session = _FakeSession()
     stored_objects = []
@@ -216,6 +275,12 @@ async def test_add_url_document_persists_metadata_and_starts_ingestion(monkeypat
     assert response.status == DocumentStatus.pending
     assert stored_objects[0][1] == fetched.data
     assert stored_objects[0][2] == "text/plain; charset=utf-8"
+    assert stored_objects[1][0] == f"{stored_objects[0][0]}.url-images.json"
+    assert stored_objects[1][1] == (
+        b'{"images":[{"url":"https://example.com/diagram.png",'
+        b'"alt":"Payment flow","title":""}]}'
+    )
+    assert stored_objects[1][2] == "application/json"
     assert temporal.started
     assert temporal.started[0][1].filename == "Example_Docs.txt"
     assert fake_session.added[0].source_type == "url"

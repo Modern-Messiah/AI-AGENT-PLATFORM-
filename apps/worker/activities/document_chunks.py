@@ -10,11 +10,13 @@ from packages.storage.db import tenant_session
 from sqlalchemy import update
 
 from apps.worker.activities.ingestion_types import ChunkBatch, IngestionInput, ParsedDoc
+from apps.worker.activities.url_visuals import append_url_visual_segments
 
 
 async def parse_original_document(input: IngestionInput) -> ParsedDoc:
     data = object_store.get(input.object_key)
     segments = await parse_to_segments(data, input.filename)
+    segments = await append_url_visual_segments(input, segments)
     insights = build_document_insights(segments, filename=input.filename)
     return ParsedDoc(
         segments=[
