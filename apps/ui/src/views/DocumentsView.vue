@@ -591,6 +591,8 @@ function handleFileInput(e) {
   min-height: 0;
   overflow-x: auto;
   overflow-y: auto;
+  scrollbar-color: color-mix(in oklch, var(--muted2) 42%, var(--border2)) transparent;
+  scrollbar-width: thin;
   scrollbar-gutter: stable;
 }
 .documents-table-scroll table {
@@ -604,19 +606,19 @@ function handleFileInput(e) {
   box-shadow: 0 1px 0 var(--border);
 }
 .documents-table-scroll::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 12px;
+  height: 12px;
 }
 .documents-table-scroll::-webkit-scrollbar-track {
-  background: color-mix(in oklch, var(--s1) 86%, transparent);
+  background: transparent;
 }
 .documents-table-scroll::-webkit-scrollbar-thumb {
-  border: 3px solid color-mix(in oklch, var(--s1) 86%, transparent);
+  border: 3px solid var(--s1);
   border-radius: 999px;
-  background: color-mix(in oklch, var(--accent) 42%, var(--muted));
+  background: color-mix(in oklch, var(--muted2) 42%, var(--border2));
 }
 .documents-table-scroll::-webkit-scrollbar-thumb:hover {
-  background: color-mix(in oklch, var(--accent) 62%, var(--muted));
+  background: color-mix(in oklch, var(--muted2) 58%, var(--border2));
 }
 .documents-memory-card {
   display: flex;

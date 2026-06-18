@@ -62,6 +62,15 @@ test('knowledge base file table scrolls inside its card', () => {
   assert.match(documentsViewSource, /\.documents-table-scroll thead\s*\{[^}]*position:\s*sticky/s)
 })
 
+test('knowledge base file table scrollbar uses subdued theme colors', () => {
+  const thumbRule = documentsViewSource.match(
+    /\.documents-table-scroll::-webkit-scrollbar-thumb\s*\{([^}]*)\}/s,
+  )?.[1] || ''
+
+  assert.match(thumbRule, /var\(--muted2\)/)
+  assert.doesNotMatch(thumbRule, /var\(--accent\)/)
+})
+
 test('URL source input uses themed field styling', () => {
   assert.match(documentsViewSource, /class="url-source-input"/)
   assert.match(documentsViewSource, /\.url-source-input\s*\{[^}]*background:\s*[\s\S]*var\(--s2\)/)
