@@ -320,13 +320,12 @@ function updateDoc(id, patch) {
 }
 
 async function pollStatus(docId) {
-  // Poll for up to 10 minutes (120 × 5s). Large PDFs + embedding can take several minutes.
+  // Poll for up to 10 minutes (120 × 5s). Check immediately, then wait between attempts.
   for (let i = 0; i < 120; i++) {
-    await new Promise(r => setTimeout(r, 5000))
+    if (i > 0) await new Promise(r => setTimeout(r, 5000))
     try {
       const data = await apiFetch(`/documents/${docId}`)
       const normalized = normalizeDocument(data, settings.locale)
-      updateDoc(docId, { ...normalized, _pending: true })
       if (data.status === 'done') {
         updateDoc(docId, { ...normalized, _pending: false })
         return
@@ -335,6 +334,7 @@ async function pollStatus(docId) {
         updateDoc(docId, { ...normalized, error: data.error || 'Failed', _pending: false })
         return
       }
+      updateDoc(docId, { ...normalized, _pending: true })
     } catch {}
   }
   // After 10 min show 'processing' (not 'failed') — Temporal may still be running

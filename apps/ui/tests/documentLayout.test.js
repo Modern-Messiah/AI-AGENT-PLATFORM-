@@ -92,6 +92,29 @@ test('URL source input uses themed field styling', () => {
   assert.match(documentsViewSource, /\.url-source-input:focus\s*\{[^}]*var\(--accent\)/s)
 })
 
+test('document status polling refreshes immediately and clears pending final states', () => {
+  assert.match(
+    documentsViewSource,
+    /for\s*\(let i = 0; i < 120; i\+\+\)\s*\{\s*if\s*\(i > 0\)\s*await new Promise\(\(?r\)?\s*=> setTimeout\(r,\s*5000\)\)/s,
+  )
+  assert.doesNotMatch(
+    documentsViewSource,
+    /for\s*\(let i = 0; i < 120; i\+\+\)\s*\{\s*await new Promise\(\(?r\)?\s*=> setTimeout\(r,\s*5000\)\)/s,
+  )
+
+  const doneIndex = documentsViewSource.search(/if\s*\(\s*data\.status\s*===\s*['"]done['"]\s*\)/)
+  const failedIndex = documentsViewSource.search(/if\s*\(\s*data\.status\s*===\s*['"]failed['"]\s*\)/)
+  const pendingIndex = documentsViewSource.search(
+    /updateDoc\s*\(\s*docId\s*,\s*\{\s*\.\.\.normalized,\s*_pending:\s*true\s*\}\s*\)/,
+  )
+
+  assert.notEqual(doneIndex, -1)
+  assert.notEqual(failedIndex, -1)
+  assert.notEqual(pendingIndex, -1)
+  assert.ok(doneIndex < pendingIndex)
+  assert.ok(failedIndex < pendingIndex)
+})
+
 test('knowledge base accepts image sources and shows page progress', () => {
   assert.match(documentsViewSource, /accept="[^"]*image\/png[^"]*image\/jpeg[^"]*image\/webp/)
   assert.match(documentsViewSource, /doc\.processedPages/)
