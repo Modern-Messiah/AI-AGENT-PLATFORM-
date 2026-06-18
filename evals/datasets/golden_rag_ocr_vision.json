@@ -1,0 +1,50 @@
+[
+  {
+    "id": "linux_command_navigation",
+    "query": "Какая Linux-команда показывает текущую директорию?",
+    "expected_source_ids": ["linux_text"],
+    "expected_substrings": ["GOLDEN_LINUX_PWD", "pwd"],
+    "forbidden_source_ids": ["vim_text"]
+  },
+  {
+    "id": "vim_visual_mode",
+    "query": "Какая клавиша включает visual mode в Vim?",
+    "expected_source_ids": ["vim_text"],
+    "expected_substrings": ["GOLDEN_VIM_VISUAL", "visual mode"],
+    "forbidden_source_ids": ["linux_text"]
+  },
+  {
+    "id": "scan_ru_ocr",
+    "query": "Какой маяк указан на сканированной странице?",
+    "expected_source_ids": ["scan_pdf"],
+    "expected_pages": [1],
+    "expected_substrings": ["СКАН МАЯК", "42"]
+  },
+  {
+    "id": "schema_payment_flow",
+    "query": "Что изображено на схеме проверки оплаты?",
+    "expected_source_ids": ["schema_pdf"],
+    "expected_pages": [1],
+    "expected_substrings": ["PAYMENT_FLOW_GOLDEN", "проверка оплаты", "нет оплаты"]
+  },
+  {
+    "id": "table_tariff_values",
+    "query": "Какая цена у тарифа Premium в таблице?",
+    "expected_source_ids": ["table_pdf"],
+    "expected_pages": [1],
+    "expected_substrings": ["GOLDEN_TABLE_PLAN", "Premium", "9900"]
+  },
+  {
+    "id": "url_image_router_action",
+    "query": "Что написано на картинке URL про действие с роутером?",
+    "expected_source_ids": ["url_image_page"],
+    "expected_substrings": ["URL_IMAGE_GOLDEN", "restart router"],
+    "expected_asset_kind": "url_image",
+    "forbidden_source_ids": ["vim_text"]
+  },
+  {
+    "id": "out_of_knowledge",
+    "query": "ZXQ-77 methane weather forecast on Europa tomorrow",
+    "expect_no_results": true
+  }
+]

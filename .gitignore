@@ -9,6 +9,7 @@ __pycache__/
 .pytest_cache/
 .coverage
 htmlcov/
+.tmp/
 dist/
 build/
 .DS_Store
