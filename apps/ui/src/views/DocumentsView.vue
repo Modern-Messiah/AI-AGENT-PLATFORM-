@@ -619,7 +619,7 @@ function handleFileInput(e) {
 .documents-memory-card {
   display: flex;
   flex-direction: column;
-  height: clamp(440px, 62vh, 760px);
+  height: clamp(500px, 68vh, 840px);
   min-height: 0;
 }
 .file-title-button {

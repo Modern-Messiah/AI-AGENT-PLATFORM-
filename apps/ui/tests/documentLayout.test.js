@@ -56,7 +56,7 @@ test('knowledge base file table scrolls inside its card', () => {
   assert.match(documentsViewSource, /class="card documents-memory-card"/)
   assert.match(documentsViewSource, /class="documents-table-scroll"/)
   assert.match(documentsViewSource, /\.documents-memory-card\s*\{[^}]*display:\s*flex/s)
-  assert.match(documentsViewSource, /\.documents-memory-card\s*\{[^}]*height:\s*clamp\(440px,\s*62vh,\s*760px\)/s)
+  assert.match(documentsViewSource, /\.documents-memory-card\s*\{[^}]*height:\s*clamp\(500px,\s*68vh,\s*840px\)/s)
   assert.match(documentsViewSource, /\.documents-table-scroll\s*\{[^}]*flex:\s*1 1 auto/s)
   assert.match(documentsViewSource, /\.documents-table-scroll\s*\{[^}]*overflow-y:\s*auto/s)
   assert.match(documentsViewSource, /\.documents-table-scroll thead\s*\{[^}]*position:\s*sticky/s)
