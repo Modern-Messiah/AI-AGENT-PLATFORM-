@@ -52,6 +52,20 @@ test('knowledge base file table does not render document insights inline', () =>
   assert.doesNotMatch(documentsViewSource, /class="doc-questions"/)
 })
 
+test('knowledge base file table scrolls inside its card', () => {
+  assert.match(documentsViewSource, /class="documents-table-scroll"/)
+  assert.match(documentsViewSource, /\.documents-table-scroll\s*\{[^}]*max-height:\s*min\(48vh,\s*460px\)/s)
+  assert.match(documentsViewSource, /\.documents-table-scroll\s*\{[^}]*overflow:\s*auto/s)
+  assert.match(documentsViewSource, /\.documents-table-scroll thead\s*\{[^}]*position:\s*sticky/s)
+})
+
+test('URL source input uses themed field styling', () => {
+  assert.match(documentsViewSource, /class="url-source-input"/)
+  assert.match(documentsViewSource, /\.url-source-input\s*\{[^}]*background:\s*[\s\S]*var\(--s2\)/)
+  assert.match(documentsViewSource, /\.url-source-input\s*\{[^}]*border:\s*1px solid var\(--border\)/s)
+  assert.match(documentsViewSource, /\.url-source-input:focus\s*\{[^}]*var\(--accent\)/s)
+})
+
 test('knowledge base accepts image sources and shows page progress', () => {
   assert.match(documentsViewSource, /accept="[^"]*image\/png[^"]*image\/jpeg[^"]*image\/webp/)
   assert.match(documentsViewSource, /doc\.processedPages/)

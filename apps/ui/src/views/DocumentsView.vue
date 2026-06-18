@@ -106,82 +106,84 @@
         <div class="empty-title">{{ t('documents.emptyTitle') }}</div>
         <div class="empty-sub">{{ t('documents.emptyDescription') }}</div>
       </div>
-      <table v-else>
-        <thead>
-          <tr>
-            <th>{{ t('documents.file') }}</th><th>{{ t('documents.status') }}</th><th>{{ t('documents.size') }}</th><th>{{ t('documents.uploaded') }}</th><th></th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="doc in docs" :key="doc.id">
-            <td>
-              <div class="file-name">
-                <div class="file-icon">{{ sourceIcon(doc) }}</div>
-                <div>
+      <div v-else class="documents-table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>{{ t('documents.file') }}</th><th>{{ t('documents.status') }}</th><th>{{ t('documents.size') }}</th><th>{{ t('documents.uploaded') }}</th><th></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="doc in docs" :key="doc.id">
+              <td>
+                <div class="file-name">
+                  <div class="file-icon">{{ sourceIcon(doc) }}</div>
+                  <div>
+                    <button
+                      class="file-title-button"
+                      type="button"
+                      :disabled="doc._pending"
+                      @click="openDocument(doc)"
+                    >
+                      {{ doc.name }}
+                    </button>
+                    <div v-if="doc.sourceType === 'url'" class="source-url">
+                      <span class="source-pill">{{ t('documents.urlBadge') }}</span>
+                      <span>{{ doc.sourceUrl }}</span>
+                    </div>
+                    <div v-if="doc.error" style="font-size: 11px; color: var(--red); margin-top: 2px">{{ doc.error }}</div>
+                    <div style="font-size: 10px; color: var(--muted); font-family: var(--mono); margin-top: 1px">{{ doc.id }}</div>
+                  </div>
+                </div>
+              </td>
+              <td>
+                <div class="document-status">
+                  <div class="document-status-line">
+                    <StatusBadge :status="doc.status" />
+                    <div v-if="doc.status === 'processing' || doc.status === 'pending'" class="spinner"></div>
+                  </div>
+                  <div v-if="doc.totalPages > 0 && doc.status !== 'done'" class="page-progress">
+                    <div class="page-progress-label">
+                      {{ t('documents.pageProgress', { processed: doc.processedPages, total: doc.totalPages }) }}
+                    </div>
+                    <div class="progress">
+                      <div class="progress-fill" :style="{ width: doc.progressPct + '%' }"></div>
+                    </div>
+                  </div>
+                </div>
+              </td>
+              <td class="td-mono">{{ doc.size }}</td>
+              <td class="td-mono">{{ doc.time }}</td>
+              <td>
+                <div style="display: flex; gap: 6px; justify-content: flex-end">
                   <button
-                    class="file-title-button"
-                    type="button"
+                    class="btn btn-ghost btn-sm"
+                    :title="t('documents.openDocument')"
                     :disabled="doc._pending"
                     @click="openDocument(doc)"
                   >
-                    {{ doc.name }}
+                    <AppIcon name="docs" />
                   </button>
-                  <div v-if="doc.sourceType === 'url'" class="source-url">
-                    <span class="source-pill">{{ t('documents.urlBadge') }}</span>
-                    <span>{{ doc.sourceUrl }}</span>
-                  </div>
-                  <div v-if="doc.error" style="font-size: 11px; color: var(--red); margin-top: 2px">{{ doc.error }}</div>
-                  <div style="font-size: 10px; color: var(--muted); font-family: var(--mono); margin-top: 1px">{{ doc.id }}</div>
+                  <button class="btn btn-ghost btn-sm" :title="t('documents.copyId')" @click="copyId(doc.id)">
+                    <AppIcon name="copy" />
+                  </button>
+                  <button
+                    class="btn btn-ghost btn-sm"
+                    :title="t('documents.reindex')"
+                    :disabled="!canReindexDocument(doc)"
+                    @click="reindexDoc(doc)"
+                  >
+                    <AppIcon name="refresh" />
+                  </button>
+                  <button class="btn btn-ghost btn-sm" :title="t('common.delete')" @click="removeDoc(doc.id)">
+                    <AppIcon name="trash" />
+                  </button>
                 </div>
-              </div>
-            </td>
-            <td>
-              <div class="document-status">
-                <div class="document-status-line">
-                  <StatusBadge :status="doc.status" />
-                  <div v-if="doc.status === 'processing' || doc.status === 'pending'" class="spinner"></div>
-                </div>
-                <div v-if="doc.totalPages > 0 && doc.status !== 'done'" class="page-progress">
-                  <div class="page-progress-label">
-                    {{ t('documents.pageProgress', { processed: doc.processedPages, total: doc.totalPages }) }}
-                  </div>
-                  <div class="progress">
-                    <div class="progress-fill" :style="{ width: doc.progressPct + '%' }"></div>
-                  </div>
-                </div>
-              </div>
-            </td>
-            <td class="td-mono">{{ doc.size }}</td>
-            <td class="td-mono">{{ doc.time }}</td>
-            <td>
-              <div style="display: flex; gap: 6px; justify-content: flex-end">
-                <button
-                  class="btn btn-ghost btn-sm"
-                  :title="t('documents.openDocument')"
-                  :disabled="doc._pending"
-                  @click="openDocument(doc)"
-                >
-                  <AppIcon name="docs" />
-                </button>
-                <button class="btn btn-ghost btn-sm" :title="t('documents.copyId')" @click="copyId(doc.id)">
-                  <AppIcon name="copy" />
-                </button>
-                <button
-                  class="btn btn-ghost btn-sm"
-                  :title="t('documents.reindex')"
-                  :disabled="!canReindexDocument(doc)"
-                  @click="reindexDoc(doc)"
-                >
-                  <AppIcon name="refresh" />
-                </button>
-                <button class="btn btn-ghost btn-sm" :title="t('common.delete')" @click="removeDoc(doc.id)">
-                  <AppIcon name="trash" />
-                </button>
-              </div>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
 
     <div style="font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 8px">
@@ -539,6 +541,39 @@ function handleFileInput(e) {
 .url-source-input {
   width: 100%;
   min-width: 0;
+  height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  outline: none;
+  background:
+    linear-gradient(180deg, color-mix(in oklch, var(--s2) 92%, var(--text) 3%), var(--s2));
+  box-shadow: inset 0 1px 0 color-mix(in oklch, var(--text) 4%, transparent);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 13px;
+  line-height: 38px;
+  transition:
+    border-color 0.16s ease,
+    box-shadow 0.16s ease,
+    background 0.16s ease;
+}
+.url-source-input::placeholder {
+  color: var(--muted);
+}
+.url-source-input:hover {
+  border-color: color-mix(in oklch, var(--accent) 38%, var(--border));
+}
+.url-source-input:focus {
+  border-color: color-mix(in oklch, var(--accent) 72%, var(--border));
+  background: color-mix(in oklch, var(--s2) 94%, var(--accent) 6%);
+  box-shadow:
+    0 0 0 3px color-mix(in oklch, var(--accent) 14%, transparent),
+    inset 0 1px 0 color-mix(in oklch, var(--text) 5%, transparent);
+}
+.url-source-input:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 .url-source-status {
   grid-column: 2;
@@ -550,6 +585,36 @@ function handleFileInput(e) {
 }
 .url-source-status.error {
   color: var(--red);
+}
+.documents-table-scroll {
+  max-height: min(48vh, 460px);
+  overflow: auto;
+  scrollbar-gutter: stable;
+}
+.documents-table-scroll table {
+  min-width: 860px;
+}
+.documents-table-scroll thead {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--s1);
+  box-shadow: 0 1px 0 var(--border);
+}
+.documents-table-scroll::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.documents-table-scroll::-webkit-scrollbar-track {
+  background: color-mix(in oklch, var(--s1) 86%, transparent);
+}
+.documents-table-scroll::-webkit-scrollbar-thumb {
+  border: 3px solid color-mix(in oklch, var(--s1) 86%, transparent);
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--accent) 42%, var(--muted));
+}
+.documents-table-scroll::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in oklch, var(--accent) 62%, var(--muted));
 }
 .file-title-button {
   padding: 0;
