@@ -7,8 +7,10 @@ from evals.golden.suite import (
     evaluate_case,
     generate_fixture_files,
     load_golden_cases,
+    resolve_eval_font_path,
     summarize_results,
 )
+from packages.rag.retriever import RetrievedChunk, filter_unsupported_query_chunks
 
 
 def test_evaluate_case_matches_expected_sources_pages_and_substrings() -> None:
@@ -135,6 +137,58 @@ def test_generate_fixture_files_creates_valid_documents(tmp_path) -> None:
 
     with fitz.open(artifacts["table_pdf"].path) as table_doc:
         assert "GOLDEN_TABLE_PLAN" in table_doc[0].get_text("text")
+
+
+def test_eval_fixture_font_supports_cyrillic_text_layers(tmp_path) -> None:
+    assert resolve_eval_font_path() is not None
+
+    artifacts = generate_fixture_files(tmp_path)
+
+    with fitz.open(artifacts["schema_pdf"].path) as schema_doc:
+        schema_text = schema_doc[0].get_text("text").casefold()
+        assert "проверка оплаты" in schema_text
+        assert "нет оплаты" in schema_text
+
+
+def test_filter_unsupported_query_chunks_rejects_obvious_out_of_knowledge_results() -> None:
+    chunks = [
+        RetrievedChunk(
+            chunk_id="chunk-1",
+            document_id="doc-linux",
+            filename="golden_linux.txt",
+            content="Golden Linux command notes. Команда pwd показывает текущую директорию shell.",
+            score=0.57,
+            metadata={},
+        ),
+        RetrievedChunk(
+            chunk_id="chunk-2",
+            document_id="doc-table",
+            filename="golden_table.pdf",
+            content="GOLDEN_TABLE_PLAN Premium 9900",
+            score=0.56,
+            metadata={"page": 1},
+        ),
+    ]
+
+    assert filter_unsupported_query_chunks(
+        "ZXQ-77 methane weather forecast on Europa tomorrow",
+        chunks,
+    ) == []
+
+
+def test_filter_unsupported_query_chunks_keeps_lexically_supported_results() -> None:
+    chunks = [
+        RetrievedChunk(
+            chunk_id="chunk-1",
+            document_id="doc-table",
+            filename="golden_table.pdf",
+            content="GOLDEN_TABLE_PLAN Premium 9900",
+            score=0.56,
+            metadata={"page": 1},
+        )
+    ]
+
+    assert filter_unsupported_query_chunks("Какая цена у тарифа Premium?", chunks) == chunks
 
 
 def test_load_golden_cases_has_unique_required_cases() -> None:

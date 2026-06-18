@@ -173,6 +173,28 @@ def rerank_chunks(query: str, chunks: list[RetrievedChunk]) -> list[RetrievedChu
     )
 
 
+def filter_unsupported_query_chunks(
+    query: str,
+    chunks: list[RetrievedChunk],
+    *,
+    min_semantic_score_without_lexical_support: float = 0.62,
+) -> list[RetrievedChunk]:
+    """Drop unscoped nearest-neighbour noise for clearly unsupported queries.
+
+    Vector search always has a nearest chunk, even for questions outside the
+    corpus. If none of the retrieved chunks share meaningful lexical evidence
+    with the query and the semantic scores are weak, treat the result as no
+    knowledge instead of handing random context to the agent.
+    """
+    if not chunks:
+        return []
+    if any(_lexical_relevance(query, chunk.content) > 0 for chunk in chunks):
+        return chunks
+    if max(chunk.score for chunk in chunks) >= min_semantic_score_without_lexical_support:
+        return chunks
+    return []
+
+
 def candidate_limit_for_scope(
     *,
     default_limit: int,
@@ -251,4 +273,7 @@ async def retrieve_chunks(
         )
         for chunk, filename, distance in rows
     ]
-    return rerank_chunks(query, chunks)
+    ranked = rerank_chunks(query, chunks)
+    if document_uuids:
+        return ranked
+    return filter_unsupported_query_chunks(query, ranked)

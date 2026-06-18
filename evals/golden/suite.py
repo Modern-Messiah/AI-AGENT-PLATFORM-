@@ -11,6 +11,15 @@ import fitz
 from PIL import Image, ImageDraw, ImageFont
 
 DATASET_PATH = Path(__file__).resolve().parents[1] / "datasets" / "golden_rag_ocr_vision.json"
+_FONT_CANDIDATES = (
+    "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+    "/Library/Fonts/Arial Unicode.ttf",
+    "/System/Library/Fonts/Supplemental/Arial.ttf",
+    "/Library/Fonts/Arial.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    "/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf",
+    "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+)
 
 
 @dataclass(frozen=True)
@@ -48,6 +57,14 @@ class CaseResult:
 
 def load_golden_cases(path: Path = DATASET_PATH) -> list[dict[str, Any]]:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def resolve_eval_font_path() -> Path | None:
+    for candidate in _FONT_CANDIDATES:
+        path = Path(candidate)
+        if path.exists():
+            return path
+    return None
 
 
 def _normalize_text(value: str) -> str:
@@ -199,6 +216,9 @@ def _write_vim_text(path: Path) -> FixtureArtifact:
 
 
 def _font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
+    font_path = resolve_eval_font_path()
+    if font_path is not None:
+        return ImageFont.truetype(str(font_path), size=size)
     return ImageFont.load_default(size=size)
 
 
@@ -228,21 +248,52 @@ def _write_scan_pdf(path: Path) -> FixtureArtifact:
     return FixtureArtifact("scan_pdf", path, "file", "application/pdf")
 
 
+def _insert_text(
+    page: fitz.Page,
+    point: tuple[float, float],
+    text: str,
+    *,
+    fontsize: float,
+) -> None:
+    font_path = resolve_eval_font_path()
+    kwargs: dict[str, object] = {"fontsize": fontsize}
+    if font_path is not None:
+        kwargs["fontname"] = "EvalUnicode"
+        kwargs["fontfile"] = str(font_path)
+    page.insert_text(point, text, **kwargs)
+
+
+def _insert_textbox(
+    page: fitz.Page,
+    rect: fitz.Rect,
+    text: str,
+    *,
+    fontsize: float,
+    align: int = 0,
+) -> None:
+    font_path = resolve_eval_font_path()
+    kwargs: dict[str, object] = {"fontsize": fontsize, "align": align}
+    if font_path is not None:
+        kwargs["fontname"] = "EvalUnicode"
+        kwargs["fontfile"] = str(font_path)
+    page.insert_textbox(rect, text, **kwargs)
+
+
 def _insert_box(page: fitz.Page, rect: fitz.Rect, text: str) -> None:
     page.draw_rect(rect, color=(0, 0, 0), width=1.0)
-    page.insert_textbox(rect + (4, 4, -4, -4), text, fontsize=10, align=1)
+    _insert_textbox(page, rect + (4, 4, -4, -4), text, fontsize=10, align=1)
 
 
 def _write_schema_pdf(path: Path) -> FixtureArtifact:
     doc = fitz.open()
     page = doc.new_page(width=595, height=842)
-    page.insert_text((72, 60), "PAYMENT_FLOW_GOLDEN: Схема проверки оплаты", fontsize=16)
+    _insert_text(page, (72, 60), "PAYMENT_FLOW_GOLDEN: Схема проверки оплаты", fontsize=16)
     boxes = [
-        (fitz.Rect(70, 120, 230, 175), "Новый тикет?\nДа"),
-        (fitz.Rect(310, 120, 470, 175), "Тематика:\nне работает интернет"),
-        (fitz.Rect(70, 250, 230, 305), "Проверка оплаты\nв биллинге"),
-        (fitz.Rect(310, 250, 470, 305), "Нет оплаты:\nпопросить оплатить"),
-        (fitz.Rect(190, 390, 390, 445), "Оплата есть:\nперезагрузка роутера"),
+        (fitz.Rect(70, 120, 230, 175), "NEW_TICKET\nНовый тикет? Да"),
+        (fitz.Rect(310, 120, 470, 175), "INTERNET_DOWN\nне работает интернет"),
+        (fitz.Rect(70, 250, 230, 305), "CHECK_PAYMENT\nПроверка оплаты"),
+        (fitz.Rect(310, 250, 470, 305), "NO_PAYMENT\nНет оплаты"),
+        (fitz.Rect(190, 390, 390, 445), "RESTART_ROUTER\nперезагрузка роутера"),
     ]
     for rect, text in boxes:
         _insert_box(page, rect, text)
@@ -262,7 +313,7 @@ def _write_schema_pdf(path: Path) -> FixtureArtifact:
 def _write_table_pdf(path: Path) -> FixtureArtifact:
     doc = fitz.open()
     page = doc.new_page(width=595, height=842)
-    page.insert_text((72, 60), "GOLDEN_TABLE_PLAN: Тарифная таблица", fontsize=16)
+    _insert_text(page, (72, 60), "GOLDEN_TABLE_PLAN: Тарифная таблица", fontsize=16)
     rows = [
         ["Plan", "Speed", "Price"],
         ["Basic", "50 Mbps", "4900"],
@@ -278,7 +329,7 @@ def _write_table_pdf(path: Path) -> FixtureArtifact:
         for col_index, value in enumerate(row):
             rect = fitz.Rect(x, y, x + col_widths[col_index], y + row_height)
             page.draw_rect(rect, color=(0, 0, 0), width=1.0)
-            page.insert_textbox(rect + (6, 10, -6, -6), value, fontsize=11)
+            _insert_textbox(page, rect + (6, 10, -6, -6), value, fontsize=11)
             x += col_widths[col_index]
     doc.save(path)
     doc.close()
