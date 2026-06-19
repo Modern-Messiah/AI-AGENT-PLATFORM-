@@ -9,6 +9,7 @@ from datetime import datetime
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     BigInteger,
+    CheckConstraint,
     DateTime,
     Enum,
     Float,
@@ -238,10 +239,33 @@ class ChatSession(Base):
     tenant_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
     title: Mapped[str] = mapped_column(String(256), default="New Chat", nullable=False)
     model: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    scope_type: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    document_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("documents.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    notebook_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("notebooks.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
     messages: Mapped[list["ChatMessage"]] = relationship(back_populates="session", cascade="all, delete-orphan", order_by="ChatMessage.created_at")
+
+    __table_args__ = (
+        CheckConstraint(
+            """
+            (scope_type IS NULL OR scope_type IN ('document', 'notebook'))
+            AND NOT (document_id IS NOT NULL AND notebook_id IS NOT NULL)
+            """,
+            name="ck_chat_sessions_scope_consistent",
+        ),
+        Index("ix_chat_sessions_tenant_document", "tenant_id", "document_id"),
+        Index("ix_chat_sessions_tenant_notebook", "tenant_id", "notebook_id"),
+    )
 
 
 class ChatMessage(Base):

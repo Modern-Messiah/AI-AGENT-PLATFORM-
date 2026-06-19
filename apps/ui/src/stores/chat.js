@@ -82,6 +82,19 @@ export const useChatStore = defineStore('chat', () => {
     return loading.value && loadingSessionId.value === activeId.value
   }
 
+  function _sessionScopeOptions(sess) {
+    if (sess?.scope_type === 'document' && sess.document_id) return { documentId: sess.document_id }
+    if (sess?.scope_type === 'notebook' && sess.notebook_id) return { notebookId: sess.notebook_id }
+    return {}
+  }
+
+  function _createSessionBody(title, model, options = {}) {
+    const body = { title, model }
+    if (options.documentId) body.document_id = options.documentId
+    if (options.notebookId) body.notebook_id = options.notebookId
+    return body
+  }
+
   async function loadSessions(apiKey = null) {
     const { apiFetch } = useApi()
     sessions.value = []
@@ -136,7 +149,7 @@ export const useChatStore = defineStore('chat', () => {
     const sess = await apiFetch('/sessions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title, model })
+      body: JSON.stringify(_createSessionBody(title, model, options))
     })
     sessions.value = [sess, ...sessions.value]
     activeId.value = sess.id
@@ -162,15 +175,21 @@ export const useChatStore = defineStore('chat', () => {
   async function sendMessage(query, model, requireApproval = false, options = {}) {
     const { apiFetch, apiStreamFetch } = useApi()
     if (!query.trim() || loading.value) return null
-    const documentId = options.documentId || null
-    const notebookId = options.notebookId || null
+    const activeSession = sessions.value.find(s => s.id === activeId.value)
+    const sessionScope = _sessionScopeOptions(activeSession)
+    const documentId = options.documentId || sessionScope.documentId || null
+    const notebookId = options.notebookId || sessionScope.notebookId || null
 
     let sessId = activeId.value
     if (!sessId) {
       const sess = await apiFetch('/sessions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: query.slice(0, 40), model })
+        body: JSON.stringify(_createSessionBody(
+          query.slice(0, 40),
+          model,
+          { documentId, notebookId },
+        ))
       })
       sessId = sess.id
       sessions.value = [sess, ...sessions.value]

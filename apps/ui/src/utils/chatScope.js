@@ -53,6 +53,16 @@ export function scopeSendOptions(scope) {
   return {}
 }
 
+export function normalizeStoredChatScope(session = {}, locale = 'ru') {
+  if (session?.scope_type === 'notebook' && cleanId(session.notebook_id)) {
+    return normalizeChatScope({ notebook: session.notebook_id }, locale)
+  }
+  if (session?.scope_type === 'document' && cleanId(session.document_id)) {
+    return normalizeChatScope({ document: session.document_id }, locale)
+  }
+  return normalizeChatScope({}, locale)
+}
+
 export function scopeSessionTitle(scope, fallbackTitle = '', locale = 'ru') {
   const title = String(fallbackTitle || '').trim()
   if (title) return title
@@ -77,6 +87,23 @@ export function sessionScopeMeta(title = '', locale = 'ru') {
       type === 'notebook' ? 'chat.notebookSubtitle' : 'chat.documentSubtitle',
       { title: sourceTitle },
     ),
+  }
+}
+
+export function sessionScopeMetaFromSession(session = {}, locale = 'ru') {
+  const meta = sessionScopeMeta(session?.title, locale)
+  if (meta) return meta
+
+  const scope = normalizeStoredChatScope(session, locale)
+  if (scope.type === 'global') return null
+
+  const badge = translate(locale, scope.type === 'notebook' ? 'chat.notebookBadge' : 'chat.documentBadge')
+  const title = String(session?.title || '').trim() || scope.title
+  return {
+    type: scope.type,
+    badge,
+    title,
+    subtitle: scope.title,
   }
 }
 

@@ -4,6 +4,8 @@ import assert from 'node:assert/strict'
 import {
   buildChatScopeQuery,
   normalizeChatScope,
+  normalizeStoredChatScope,
+  sessionScopeMetaFromSession,
   sessionScopeMeta,
   scopeSessionTitle,
   scopeSendOptions,
@@ -69,6 +71,44 @@ test('extracts visible session scope metadata from scoped titles', () => {
   })
 
   assert.equal(sessionScopeMeta('New Chat'), null)
+})
+
+
+test('restores persisted document and notebook scopes from session payloads', () => {
+  const documentScope = normalizeStoredChatScope({
+    scope_type: 'document',
+    document_id: 'doc-1',
+  })
+  const notebookScope = normalizeStoredChatScope({
+    scope_type: 'notebook',
+    notebook_id: 'notebook-1',
+  })
+
+  assert.equal(documentScope.type, 'document')
+  assert.equal(documentScope.documentId, 'doc-1')
+  assert.equal(documentScope.backPath, '/documents/doc-1')
+  assert.deepEqual(scopeSendOptions(documentScope), { documentId: 'doc-1' })
+
+  assert.equal(notebookScope.type, 'notebook')
+  assert.equal(notebookScope.notebookId, 'notebook-1')
+  assert.equal(notebookScope.backPath, '/notebooks/notebook-1')
+  assert.deepEqual(scopeSendOptions(notebookScope), { notebookId: 'notebook-1' })
+})
+
+
+test('builds scope metadata from persisted session scope when title has no prefix', () => {
+  assert.deepEqual(sessionScopeMetaFromSession({
+    title: 'Manual lookup',
+    scope_type: 'document',
+    document_id: 'doc-1',
+  }), {
+    type: 'document',
+    badge: 'Документ',
+    title: 'Manual lookup',
+    subtitle: 'Чат по документу',
+  })
+
+  assert.equal(sessionScopeMetaFromSession({ title: 'New Chat' }), null)
 })
 
 

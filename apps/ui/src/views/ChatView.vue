@@ -51,7 +51,8 @@ import { useI18n } from '@/composables/useI18n'
 import {
   buildChatScopeQuery,
   normalizeChatScope,
-  sessionScopeMeta,
+  normalizeStoredChatScope,
+  sessionScopeMetaFromSession,
   scopeSessionTitle,
   scopeSendOptions,
   scopeWelcomeMessage,
@@ -86,12 +87,15 @@ const isResizingHistory = ref(false)
 let previousBodyCursor = ''
 let previousBodyUserSelect = ''
 const currentScope = computed(() => normalizeChatScope(route.query, settings.locale))
+const activeSession = computed(() => chat.sessions.find(session => session.id === chat.activeId) || null)
+const activeSessionScope = computed(() => normalizeStoredChatScope(activeSession.value, settings.locale))
 const activeSessionMeta = computed(() => {
-  const active = chat.sessions.find(session => session.id === chat.activeId)
-  return sessionScopeMeta(active?.title, settings.locale)
+  return sessionScopeMetaFromSession(activeSession.value, settings.locale)
 })
 const displayScope = computed(() => {
-  const scope = currentScope.value
+  const scope = currentScope.value.type !== 'global'
+    ? currentScope.value
+    : activeSessionScope.value
   const meta = activeSessionMeta.value
   if (scope.type !== 'global' && meta?.type === scope.type) {
     return { ...scope, title: meta.subtitle }
@@ -276,6 +280,7 @@ watch(
       await chat.newChat(model.value, {
         title: scopeSessionTitle(scope, typeof title === 'string' ? title : '', settings.locale),
         welcome: scopeWelcomeMessage(scope, settings.locale),
+        ...scopeSendOptions(scope),
       })
       await router.replace({ path: '/chat', query: buildChatScopeQuery(scope) })
       if (typeof ask !== 'string' || !ask.trim()) return
@@ -299,7 +304,11 @@ async function waitForSessionLoad() {
 }
 
 async function clearScope() {
+  const wasPersistedScope = activeSessionScope.value.type !== 'global'
   await router.replace({ path: '/chat' })
+  if (wasPersistedScope) {
+    await chat.newChat(model.value)
+  }
 }
 
 async function handleSend(query, options = {}) {
@@ -308,7 +317,7 @@ async function handleSend(query, options = {}) {
     return
   }
   try {
-    const scopeOptions = scopeSendOptions(currentScope.value)
+    const scopeOptions = scopeSendOptions(displayScope.value)
     const sendOptions = {
       documentId: options.documentId || scopeOptions.documentId,
       notebookId: options.notebookId || scopeOptions.notebookId,

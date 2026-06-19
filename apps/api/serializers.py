@@ -28,6 +28,17 @@ def chat_session_response(sess: ChatSession, message_count: int = 0) -> ChatSess
         id=str(sess.id),
         title=sess.title,
         model=sess.model,
+        scope_type=getattr(sess, "scope_type", None),
+        document_id=(
+            str(sess.document_id)
+            if getattr(sess, "document_id", None) is not None
+            else None
+        ),
+        notebook_id=(
+            str(sess.notebook_id)
+            if getattr(sess, "notebook_id", None) is not None
+            else None
+        ),
         created_at=sess.created_at.isoformat(),
         updated_at=sess.updated_at.isoformat(),
         message_count=message_count,

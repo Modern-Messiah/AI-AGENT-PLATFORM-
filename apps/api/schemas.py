@@ -21,6 +21,9 @@ class ChatSessionSchema(BaseModel):
     id: str
     title: str
     model: str | None
+    scope_type: str | None = None
+    document_id: str | None = None
+    notebook_id: str | None = None
     created_at: str
     updated_at: str
     message_count: int = 0
@@ -29,6 +32,14 @@ class ChatSessionSchema(BaseModel):
 class CreateSessionRequest(BaseModel):
     title: str = "New Chat"
     model: str | None = None
+    document_id: uuid.UUID | None = None
+    notebook_id: uuid.UUID | None = None
+
+    @model_validator(mode="after")
+    def validate_single_scope(self) -> "CreateSessionRequest":
+        if self.document_id is not None and self.notebook_id is not None:
+            raise ValueError("document_id and notebook_id cannot be used together")
+        return self
 
 
 class UpdateSessionRequest(BaseModel):

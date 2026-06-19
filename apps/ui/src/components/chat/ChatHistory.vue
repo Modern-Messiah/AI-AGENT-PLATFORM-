@@ -54,7 +54,7 @@ import { useSettingsStore } from '@/stores/settings'
 import { useI18n } from '@/composables/useI18n'
 import AppIcon from '@/components/AppIcon.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
-import { sessionScopeMeta } from '@/utils/chatScope'
+import { sessionScopeMetaFromSession } from '@/utils/chatScope'
 import { formatLocaleDate } from '@/i18n'
 
 const props = defineProps({
@@ -71,7 +71,7 @@ const confirmId    = ref(null)
 const confirmTitle = ref('')
 
 function sessionMeta(sess) {
-  return sessionScopeMeta(sess?.title, locale.value)
+  return sessionScopeMetaFromSession(sess, locale.value)
 }
 
 function sessionTitle(sess) {

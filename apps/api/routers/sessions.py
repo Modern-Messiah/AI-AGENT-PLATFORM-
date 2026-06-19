@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import func, select
 
-from packages.storage import ChatMessage, ChatSession
+from packages.storage import ChatMessage, ChatSession, Document, Notebook
 from packages.storage.db import tenant_session
 
 from apps.api.deps import TenantID
@@ -47,23 +47,42 @@ async def list_sessions(
             .limit(limit)
             .offset(offset)
         )).all()
-    return [
-        ChatSessionSchema(
-            id=str(sess.id),
-            title=sess.title,
-            model=sess.model,
-            created_at=sess.created_at.isoformat(),
-            updated_at=sess.updated_at.isoformat(),
-            message_count=cnt,
-        )
-        for sess, cnt in rows
-    ]
+    return [chat_session_response(sess, cnt) for sess, cnt in rows]
 
 
 @router.post("/sessions", response_model=ChatSessionSchema, status_code=201)
 async def create_session(body: CreateSessionRequest, tenant_id: TenantID) -> ChatSessionSchema:
     async with tenant_session(tenant_id) as s:
-        sess = ChatSession(tenant_id=tenant_id, title=body.title, model=body.model)
+        scope_type = None
+        if body.document_id is not None:
+            doc = (await s.execute(
+                select(Document.id).where(
+                    Document.id == body.document_id,
+                    Document.tenant_id == tenant_id,
+                )
+            )).scalar_one_or_none()
+            if doc is None:
+                raise HTTPException(status_code=404, detail="document not found")
+            scope_type = "document"
+        elif body.notebook_id is not None:
+            notebook = (await s.execute(
+                select(Notebook.id).where(
+                    Notebook.id == body.notebook_id,
+                    Notebook.tenant_id == tenant_id,
+                )
+            )).scalar_one_or_none()
+            if notebook is None:
+                raise HTTPException(status_code=404, detail="notebook not found")
+            scope_type = "notebook"
+
+        sess = ChatSession(
+            tenant_id=tenant_id,
+            title=body.title,
+            model=body.model,
+            scope_type=scope_type,
+            document_id=body.document_id,
+            notebook_id=body.notebook_id,
+        )
         s.add(sess)
         await s.flush()
         await s.refresh(sess)
