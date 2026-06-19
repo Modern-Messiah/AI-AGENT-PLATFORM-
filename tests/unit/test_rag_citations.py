@@ -7,6 +7,7 @@ from packages.rag.chunker import chunk_segments
 from packages.rag.citations import (
     build_citations,
     build_grounded_messages,
+    normalize_citation_sources,
     select_answer_sources,
     select_diverse_chunks,
 )
@@ -128,6 +129,35 @@ def test_build_citations_retains_exact_chunk_location_and_excerpt() -> None:
             "score": 0.84,
         }
     ]
+
+
+def test_normalize_citation_sources_returns_only_cited_structured_sources() -> None:
+    citations = build_citations(
+        [
+            _chunk("chunk-1", "document-1", "guide.pdf", 0.91, chunk_idx=1),
+            _chunk("chunk-2", "document-2", "manual.pdf", 0.88, chunk_idx=2),
+        ]
+    )
+
+    selected = normalize_citation_sources(
+        "Ответ основан на втором источнике [2].",
+        ["legacy.txt", citations[0], citations[1]],
+    )
+
+    assert selected == [citations[1]]
+
+
+def test_normalize_citation_sources_drops_sources_for_insufficient_context() -> None:
+    citations = build_citations(
+        [_chunk("chunk-1", "document-1", "guide.pdf", 0.91, chunk_idx=1)]
+    )
+
+    selected = normalize_citation_sources(
+        "Не нашёл релевантной информации в загруженных документах. [1]",
+        citations,
+    )
+
+    assert selected == []
 
 
 def test_grounded_prompt_numbers_sources_and_requires_inline_markers() -> None:

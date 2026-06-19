@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from collections import defaultdict
+from collections.abc import Iterable
 
 from pydantic import BaseModel, Field
 
@@ -154,6 +155,25 @@ def select_answer_sources(
         return []
 
     return [source for source in sources if source.id in cited_ids]
+
+
+def normalize_citation_sources(
+    answer: str,
+    sources: Iterable[str | CitationSource],
+) -> list[CitationSource]:
+    """Return structured sources that are explicitly cited by the answer."""
+    structured: list[CitationSource] = []
+    seen: set[tuple[str, str]] = set()
+    for source in sources:
+        if not isinstance(source, CitationSource):
+            continue
+        key = (source.document_id, source.chunk_id)
+        if key in seen:
+            continue
+        seen.add(key)
+        structured.append(source)
+
+    return select_answer_sources(answer, structured)
 
 
 def build_grounded_messages(

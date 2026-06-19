@@ -20,6 +20,7 @@ from packages.rag import (
     CitationSource,
     build_citations,
     build_grounded_messages,
+    normalize_citation_sources,
     retrieve_chunks,
     select_answer_sources,
     select_diverse_chunks,
@@ -86,10 +87,11 @@ async def run_agent(
             id=workflow_id,
             task_queue=settings.temporal_task_queue,
         )
+        sources = normalize_citation_sources(result.answer, result.sources)
         return AgentRunApiResponse(
             answer=result.answer,
             confidence=result.confidence,
-            sources=result.sources,
+            sources=sources,
             cached=result.cached,
         )
     except Exception as e:  # noqa: BLE001
@@ -304,7 +306,7 @@ async def agent_stream(body: AgentStreamRequest, tenant_id: TenantID) -> Streami
     )
 
 
-@router.post("/agent/research", response_model=AgentRunOutput)
+@router.post("/agent/research", response_model=AgentRunApiResponse)
 async def run_research(
     payload: MultiStepResearchInput,
     tenant_id: TenantID,
@@ -321,11 +323,17 @@ async def run_research(
     client: Client = request.app.state.temporal
     workflow_id = f"research-{tenant_id}-{uuid.uuid4()}"
     try:
-        return await client.execute_workflow(
+        result: AgentRunOutput = await client.execute_workflow(
             MultiStepResearchWorkflow.run,
             payload,
             id=workflow_id,
             task_queue=settings.temporal_task_queue,
+        )
+        return AgentRunApiResponse(
+            answer=result.answer,
+            confidence=result.confidence,
+            sources=normalize_citation_sources(result.answer, result.sources),
+            cached=result.cached,
         )
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=str(e)) from e

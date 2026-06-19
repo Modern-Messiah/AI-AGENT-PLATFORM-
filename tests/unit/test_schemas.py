@@ -89,6 +89,15 @@ def test_chat_api_schemas_accept_serialized_citations() -> None:
     assert json.loads(json.dumps(_serialize_sources(add_request.sources))) == [citation]
 
 
+def test_agent_run_api_response_rejects_legacy_string_sources() -> None:
+    with pytest.raises(ValidationError):
+        AgentRunApiResponse(
+            answer="Grounded answer",
+            confidence=0.9,
+            sources=["legacy.txt"],
+        )
+
+
 def test_document_response_accepts_insights() -> None:
     from apps.api.main import DocumentResponse
     from packages.storage import DocumentStatus

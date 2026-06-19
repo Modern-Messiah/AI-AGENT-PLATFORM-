@@ -3,6 +3,7 @@ from packages.rag.citations import (
     CitationSource,
     build_citations,
     build_grounded_messages,
+    normalize_citation_sources,
     select_answer_sources,
     select_diverse_chunks,
 )
@@ -31,6 +32,7 @@ __all__ = [
     "chunk_text",
     "embed_texts",
     "generate_notebook_insights",
+    "normalize_citation_sources",
     "parse_to_segments",
     "parse_to_text",
     "retrieve_chunks",

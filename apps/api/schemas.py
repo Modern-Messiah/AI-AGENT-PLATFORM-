@@ -143,7 +143,7 @@ class NotebookResponse(BaseModel):
 class AgentRunApiResponse(BaseModel):
     answer: str = ""
     confidence: float = 0.0
-    sources: list[str | CitationSource] = []
+    sources: list[CitationSource] = []
     cached: bool = False
     workflow_id: str | None = None
     pending_approval: bool = False

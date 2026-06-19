@@ -55,7 +55,7 @@ def _merge_sources(
         if key in seen:
             continue
         seen.add(key)
-        merged.append(source)
+        merged.append(source.model_copy(update={"id": len(merged) + 1}))
 
     return merged
 

@@ -26,6 +26,35 @@ def test_merge_sources_drops_legacy_only_sources() -> None:
     assert _merge_sources(["legacy-a.txt"], ["legacy-b.txt"]) == []
 
 
+def test_merge_sources_renumbers_duplicate_local_citation_ids() -> None:
+    first = CitationSource(
+        id=7,
+        document_id="document-1",
+        chunk_id="chunk-1",
+        filename="guide.pdf",
+        chunk_index=1,
+        excerpt="First evidence.",
+        score=0.9,
+    )
+    second = CitationSource(
+        id=7,
+        document_id="document-2",
+        chunk_id="chunk-2",
+        filename="manual.pdf",
+        chunk_index=2,
+        excerpt="Second evidence.",
+        score=0.8,
+    )
+
+    merged = _merge_sources([first], [second])
+
+    assert [source.id for source in merged] == [1, 2]
+    assert [(source.document_id, source.chunk_id) for source in merged] == [
+        ("document-1", "chunk-1"),
+        ("document-2", "chunk-2"),
+    ]
+
+
 async def test_collect_child_results_awaits_child_handles_instead_of_calling_result() -> None:
     first = AgentRunOutput(answer="first", confidence=0.8)
     second = AgentRunOutput(answer="second", confidence=0.8)
