@@ -274,7 +274,7 @@
                             </td>
                             <td class="td-mono">{{ doc.size }}</td>
                             <td class="td-mono">{{ doc.time }}</td>
-                            <td>
+                            <td class="documents-actions-cell">
                                 <div class="document-row-actions">
                                     <button
                                         class="btn btn-ghost btn-sm"
@@ -839,7 +839,11 @@ function handleFileInput(e) {
     width: 126px;
 }
 .documents-col-actions {
-    width: 132px;
+    width: 154px;
+}
+.documents-actions-cell {
+    padding-left: 6px;
+    padding-right: 18px;
 }
 .documents-table-scroll thead {
     position: sticky;
@@ -935,6 +939,13 @@ function handleFileInput(e) {
     display: flex;
     gap: 6px;
     justify-content: flex-end;
+}
+.document-row-actions .btn-sm {
+    width: 36px;
+    height: 36px;
+    flex: 0 0 36px;
+    justify-content: center;
+    padding: 0;
 }
 
 @media (max-width: 900px) {

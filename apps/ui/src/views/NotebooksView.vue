@@ -13,7 +13,7 @@
     </div>
 
     <div class="notebook-grid">
-      <div class="card">
+      <div class="card notebook-create">
         <div class="card-header">
           <div>
             <div class="card-title">{{ t('notebooks.newTitle') }}</div>
@@ -254,14 +254,33 @@ function openNotebook(id) {
 .form-panel {
   padding: 16px 18px;
 }
+.notebook-create {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+}
+.notebook-create .form-panel {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  flex: 1;
+}
 .textarea {
   min-height: 76px;
   resize: vertical;
 }
 .doc-picker {
   display: grid;
+  align-content: start;
+  flex: 1 1 auto;
   gap: 8px;
+  max-height: clamp(260px, 32vh, 420px);
   margin: 14px 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
+  scrollbar-color: color-mix(in oklch, var(--muted2) 42%, var(--border2)) transparent;
+  scrollbar-width: thin;
 }
 .doc-option {
   display: flex;
@@ -368,6 +387,7 @@ function openNotebook(id) {
 }
 
 @media (min-width: 901px) {
+  .notebook-create,
   .notebook-collection {
     height: clamp(560px, 65vh, 760px);
   }

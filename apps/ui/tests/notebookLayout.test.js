@@ -73,3 +73,31 @@ test('desktop notebook collection keeps its header fixed and scrolls the list', 
     /\.notebook-collection \.notebook-list\s*\{[^}]*overflow-y:\s*auto/s,
   )
 })
+
+
+test('new notebook document picker scrolls inside the form', () => {
+  assert.match(listViewSource, /class="doc-picker"/)
+  assert.match(
+    listViewSource,
+    /\.doc-picker\s*\{[^}]*max-height:\s*clamp\(260px,\s*32vh,\s*420px\)/s,
+  )
+  assert.match(listViewSource, /\.doc-picker\s*\{[^}]*overflow-y:\s*auto/s)
+  assert.match(listViewSource, /\.doc-picker\s*\{[^}]*padding-right:\s*4px/s)
+})
+
+
+test('new notebook card aligns with the notebook collection height on desktop', () => {
+  assert.match(listViewSource, /class="card notebook-create"/)
+  assert.match(
+    listViewSource,
+    /\.notebook-create\s*\{[^}]*display:\s*flex[^}]*flex-direction:\s*column/s,
+  )
+  assert.match(
+    listViewSource,
+    /\.notebook-create \.form-panel\s*\{[^}]*display:\s*flex[^}]*flex-direction:\s*column[^}]*flex:\s*1/s,
+  )
+  assert.match(
+    listViewSource,
+    /@media \(min-width:\s*901px\)\s*\{[^}]*\.notebook-create,\s*\.notebook-collection\s*\{[^}]*height:\s*clamp\(560px,\s*65vh,\s*760px\)/s,
+  )
+})
