@@ -18,6 +18,7 @@ from sqlalchemy import delete, select
 from temporalio import activity
 
 from apps.api.services.url_sources import (
+    URL_SOURCE_HEADERS,
     UrlImageSource,
     UrlSourceError,
     url_image_sidecar_key,
@@ -124,7 +125,11 @@ async def _fetch_url_image(source: UrlImageSource) -> tuple[bytes, str, str]:
     current_url = await validate_fetch_url(source.url)
     max_bytes = settings.url_source_image_max_bytes
 
-    async with httpx.AsyncClient(timeout=_FETCH_TIMEOUT, follow_redirects=False) as client:
+    async with httpx.AsyncClient(
+        timeout=_FETCH_TIMEOUT,
+        follow_redirects=False,
+        headers=URL_SOURCE_HEADERS,
+    ) as client:
         for _ in range(_MAX_REDIRECTS + 1):
             try:
                 response = await client.get(current_url)

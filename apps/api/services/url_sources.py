@@ -19,6 +19,9 @@ log = logging.getLogger(__name__)
 
 _TIMEOUT = 10.0
 _MAX_REDIRECTS = 3
+URL_SOURCE_HEADERS = {
+    "User-Agent": "AI-Agent-Platform/1.0 (self-hosted URL source fetcher)",
+}
 _HTML_TYPES = {"text/html", "application/xhtml+xml"}
 _TEXT_TYPES = {
     "text/plain",
@@ -420,7 +423,11 @@ async def fetch_url_source(url: str) -> FetchedUrlSource:
     current_url = requested_url
     max_bytes = settings.url_source_max_bytes
 
-    async with httpx.AsyncClient(timeout=_TIMEOUT, follow_redirects=False) as client:
+    async with httpx.AsyncClient(
+        timeout=_TIMEOUT,
+        follow_redirects=False,
+        headers=URL_SOURCE_HEADERS,
+    ) as client:
         for _ in range(_MAX_REDIRECTS + 1):
             try:
                 response = await client.get(current_url)

@@ -4,6 +4,7 @@ import logging
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
+import httpx
 import pytest
 from apps.api.main import DocumentResponse, UrlCheckResponse, app
 from apps.api.routers import documents as documents_router
@@ -251,6 +252,40 @@ def test_url_image_sidecar_payload_is_stable_json() -> None:
 def test_safe_url_filename_uses_title_or_path() -> None:
     assert safe_url_filename("https://example.com/docs/guide.html", "Product Guide", "text/html") == "Product_Guide.txt"
     assert safe_url_filename("https://example.com/files/spec.pdf", None, "application/pdf") == "spec.pdf"
+
+
+async def test_fetch_url_source_sends_project_user_agent(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    async def fake_validate(url: str) -> str:
+        return url
+
+    class FakeAsyncClient:
+        def __init__(self, **kwargs) -> None:
+            captured.update(kwargs)
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, traceback) -> None:
+            return None
+
+        async def get(self, url: str):
+            return httpx.Response(
+                200,
+                headers={"content-type": "text/html; charset=utf-8"},
+                content=b"<html><body><main><p>Hello from docs.</p></main></body></html>",
+                request=httpx.Request("GET", url),
+            )
+
+    monkeypatch.setattr(url_sources, "validate_fetch_url", fake_validate)
+    monkeypatch.setattr(url_sources.httpx, "AsyncClient", FakeAsyncClient)
+
+    fetched = await url_sources.fetch_url_source("https://docs.example.com/page")
+
+    user_agent = (captured.get("headers") or {}).get("User-Agent", "")
+    assert user_agent.startswith("AI-Agent-Platform/")
+    assert "Hello from docs." in fetched.data.decode()
 
 
 class _FakeResult:
