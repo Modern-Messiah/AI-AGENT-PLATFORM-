@@ -267,6 +267,10 @@ Important variables:
 | `AGENT_RATE_LIMIT_PER_MINUTE` | optional | Per-tenant agent request guardrail |
 | `AGENT_QUERY_MAX_CHARS` | optional | Rejects oversized prompts before LLM calls |
 | `LLM_TIMEOUT_SECONDS` | optional | Default provider timeout |
+| `BUDGET_ALERT_USD_PER_CALL` | optional | Logs a warning when one LLM call crosses this cost |
+| `HTTP_FETCH_ALLOWED_DOMAINS` | optional | Explicit allowlist for URL/http tools; recommended for shared/LAN deployments |
+| `ENABLE_CODE_EXEC` | optional | Enables the Python code execution tool; keep `false` unless isolated |
+| `MAX_UPLOAD_BYTES`, `MAX_BULK_TOTAL_BYTES` | optional | File and bulk-upload memory guards |
 | `RETRIEVAL_MAX_DISTANCE` | optional | Maximum vector distance accepted by retrieval |
 | `OCR_LANGUAGE` | optional | Defaults to `ru`, which covers Russian and English OCR |
 | `VISUAL_RENDER_MAX_DIMENSION` | optional | Caps rendered page/image size |
@@ -368,6 +372,29 @@ Validate Compose:
 docker compose config --quiet
 ```
 
+Run live e2e smoke tests only against an already running disposable local stack:
+
+```bash
+RUN_E2E_SMOKE=1 E2E_API_BASE_URL=http://127.0.0.1:8000 \
+  PYTHONPATH=$PWD .venv/bin/pytest -q -m e2e tests/e2e
+```
+
+URL-image and mutable URL lifecycle e2e tests use a host fixture server. Recreate
+`api` and `worker` with this flag before running them:
+
+```bash
+E2E_ALLOW_LOCAL_URL_SOURCES=true docker compose up -d --build api worker
+```
+
+Optional GitHub lifecycle e2e is opt-in because it depends on external network state:
+
+```bash
+RUN_E2E_SMOKE=1 RUN_E2E_GITHUB=1 \
+E2E_GITHUB_URL=https://github.com/user/repo/tree/main/docs \
+E2E_GITHUB_EXPECTED_SUBSTRING='text expected in retrieved chunks' \
+PYTHONPATH=$PWD .venv/bin/pytest -q tests/e2e/test_url_github_lifecycle.py
+```
+
 Run API and worker manually against already running infrastructure:
 
 ```bash
@@ -435,11 +462,12 @@ Known limitations:
 
 ## Testing Baseline
 
-The expected local baseline at the time of this README update:
+The expected local baseline is that all commands below finish with exit code `0`.
+Exact test counts change as the suite grows, so treat failures/errors as the signal,
+not an old number in the README.
 
 ```bash
 PYTHONPATH=$PWD .venv/bin/pytest -q
-# 148 passed
 ```
 
 ```bash
@@ -462,6 +490,21 @@ docker compose config --quiet
 The repository has a CI workflow that runs backend tests, frontend tests, frontend
 build, and Compose validation on pushes, pull requests, and manual dispatches.
 
+Golden retrieval/OCR/Vision evals can be run against a local stack:
+
+```bash
+PYTHONPATH=$PWD python -m evals.runners.golden_eval
+```
+
+To include a GitHub source in the golden eval:
+
+```bash
+PYTHONPATH=$PWD python -m evals.runners.golden_eval \
+  --include-github \
+  --github-url https://github.com/user/repo/tree/main/docs \
+  --github-expected-substring 'text expected in retrieved chunks'
+```
+
 ## Operational Notes
 
 - Ingestion failures should store a root-cause error on the document, not only a
@@ -478,10 +521,10 @@ build, and Compose validation on pushes, pull requests, and manual dispatches.
 
 ## Current Priorities
 
-1. Add an end-to-end smoke test for upload -> ingestion -> ask -> citation -> delete.
-2. Run a manual restore drill from the backup/restore runbook and record the result.
-3. Add pagination to any remaining large-detail endpoints.
-4. Revisit auth before any public deployment.
+1. Run a manual restore drill from the backup/restore runbook and record the result.
+2. Run live e2e smoke on a disposable tenant before merges that touch ingestion/RAG.
+3. Expand golden eval datasets when adding a new source type or retrieval behavior.
+4. Revisit browser auth before any public deployment.
 
 ## Useful Links
 
