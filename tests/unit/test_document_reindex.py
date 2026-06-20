@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 from apps.api import main as api
 from apps.api.main import app
 from apps.api.routers import documents as document_routes
-from apps.api.services.url_sources import FetchedUrlSource, url_image_sidecar_key
+from apps.api.services.url_sources import FetchedUrlSource, UrlImageSource, url_image_sidecar_key
 from fastapi.routing import APIRoute
 from packages.storage import DocumentStatus
 
@@ -76,7 +76,7 @@ async def test_reindex_document_starts_new_ingestion_workflow(monkeypatch) -> No
         suggested_questions=["Old question?"],
         status=DocumentStatus.done,
         error="old failure",
-        created_at=datetime(2026, 6, 7, tzinfo=timezone.utc),
+        created_at=datetime(2026, 6, 7, tzinfo=UTC),
     )
     fake_session = _FakeTenantSession(document)
     fake_temporal = _FakeTemporal()
@@ -109,7 +109,7 @@ async def test_reindex_document_starts_new_ingestion_workflow(monkeypatch) -> No
 
 async def test_reindex_url_document_refetches_source(monkeypatch) -> None:
     document_id = uuid.UUID("73e28adf-6f7a-442e-9077-4554fe49f6b3")
-    checked_at = datetime(2026, 6, 7, tzinfo=timezone.utc)
+    checked_at = datetime(2026, 6, 7, tzinfo=UTC)
     document = SimpleNamespace(
         id=document_id,
         tenant_id="tenant-url",
@@ -185,3 +185,94 @@ async def test_reindex_url_document_refetches_source(monkeypatch) -> None:
     ingestion_input = args[1]
     assert ingestion_input.object_key == "tenant-url/source.txt"
     assert ingestion_input.filename == "new-title.txt"
+
+
+async def test_reindex_github_document_rewrites_image_sidecar(monkeypatch) -> None:
+    document_id = uuid.UUID("e672ed1c-809e-41a1-b252-2b90de6f5e4d")
+    checked_at = datetime(2026, 6, 7, tzinfo=UTC)
+    document = SimpleNamespace(
+        id=document_id,
+        tenant_id="tenant-github",
+        filename="GitHub_old_repo.txt",
+        mime_type="text/plain",
+        object_key="tenant-github/source.txt",
+        size_bytes=9,
+        source_type="github",
+        source_url="https://github.com/acme/docs/tree/main/docs",
+        source_title="GitHub: acme/docs",
+        source_checked_at=checked_at,
+        summary="Old summary.",
+        suggested_questions=["Old question?"],
+        status=DocumentStatus.done,
+        processing_stage="done",
+        processed_pages=1,
+        total_pages=1,
+        warnings=["old warning"],
+        error=None,
+        created_at=checked_at,
+    )
+    fake_session = _FakeTenantSession(document)
+    fake_temporal = _FakeTemporal()
+    stored: list[tuple[str, bytes, str | None]] = []
+
+    async def fake_fetch_url_source(url: str) -> FetchedUrlSource:
+        assert url == "https://github.com/acme/docs/tree/main/docs"
+        return FetchedUrlSource(
+            requested_url=url,
+            final_url=url,
+            title="GitHub: acme/docs",
+            filename="GitHub_acme_docs.txt",
+            content_type="text/plain; charset=utf-8",
+            data=b"fresh github body",
+            image_sources=[
+                UrlImageSource(
+                    url="https://raw.githubusercontent.com/acme/docs/main/docs/flow.png",
+                    alt="Flow",
+                    title="Payment flow",
+                )
+            ],
+            source_type="github",
+            discovered_files=["docs/README.md"],
+        )
+
+    def fake_put(object_key: str, data: bytes, content_type: str | None = None) -> None:
+        stored.append((object_key, data, content_type))
+
+    monkeypatch.setattr(document_routes, "tenant_session", lambda tenant_id: fake_session)
+    monkeypatch.setattr(api.app.state, "temporal", fake_temporal, raising=False)
+    monkeypatch.setattr(document_routes, "fetch_url_source", fake_fetch_url_source)
+    monkeypatch.setattr(document_routes.object_store, "put", fake_put)
+
+    async def fake_invalidate(tenant_id: str, reason: str) -> None:
+        return None
+
+    monkeypatch.setattr(document_routes, "invalidate_semantic_cache", fake_invalidate)
+
+    request = SimpleNamespace(app=api.app)
+    response = await document_routes.reindex_document(document_id, "tenant-github", request)
+
+    assert stored == [
+        (
+            "tenant-github/source.txt",
+            b"fresh github body",
+            "text/plain; charset=utf-8",
+        ),
+        (
+            url_image_sidecar_key("tenant-github/source.txt"),
+            (
+                b'{"images":[{"url":"https://raw.githubusercontent.com/acme/docs/main/'
+                b'docs/flow.png","alt":"Flow","title":"Payment flow"}]}'
+            ),
+            "application/json",
+        ),
+    ]
+    assert document.filename == "GitHub_acme_docs.txt"
+    assert document.source_type == "github"
+    assert document.source_checked_at != checked_at
+    assert response.status == DocumentStatus.pending
+
+    [(args, kwargs)] = fake_temporal.calls
+    ingestion_input = args[1]
+    assert ingestion_input.object_key == "tenant-github/source.txt"
+    assert ingestion_input.filename == "GitHub_acme_docs.txt"
+    assert kwargs["id"].startswith(f"reindex-tenant-github-{document_id}-")

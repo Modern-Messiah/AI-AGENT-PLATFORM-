@@ -1,8 +1,12 @@
+# ruff: noqa: RUF001
+
 from __future__ import annotations
 
 import logging
+from types import SimpleNamespace
 
 from apps.api.services.url_sources import UrlImageSource, url_image_sidecar_payload
+from apps.worker.activities import url_visuals
 from apps.worker.activities.ingestion_types import IngestionInput, VisualPageAnalysis
 from apps.worker.activities.url_visuals import append_url_visual_segments
 from packages.rag.parser import ParsedSegment
@@ -289,3 +293,69 @@ def test_url_image_sidecar_payload_fixture_matches_worker_contract() -> None:
         b'{"images":[{"url":"https://docs.example.com/payment-flow.png",'
         b'"alt":"Payment flow","title":"Payment diagram"}]}'
     )
+
+
+class _AssetScalarResult:
+    def __init__(self, assets) -> None:
+        self.assets = assets
+
+    def scalars(self):
+        return self
+
+    def all(self):
+        return self.assets
+
+
+class _AssetCleanupSession:
+    def __init__(self, assets) -> None:
+        self.assets = assets
+        self.statements = []
+
+    async def execute(self, statement):
+        self.statements.append(statement)
+        if len(self.statements) == 1:
+            return _AssetScalarResult(self.assets)
+        return _AssetScalarResult([])
+
+
+class _AssetCleanupTenantSession:
+    def __init__(self, session: _AssetCleanupSession) -> None:
+        self.session = session
+
+    async def __aenter__(self) -> _AssetCleanupSession:
+        return self.session
+
+    async def __aexit__(self, exc_type, exc, traceback) -> None:
+        return None
+
+
+async def test_url_image_asset_cleanup_removes_old_rows_and_previews(monkeypatch) -> None:
+    input = IngestionInput(
+        document_id="5ef2d843-ddaf-4ae3-a73d-d25f27fb8621",
+        tenant_id="tenant-a",
+        object_key="tenant-a/url-source.txt",
+        filename="Example Page.txt",
+    )
+    session = _AssetCleanupSession([
+        SimpleNamespace(preview_object_key="tenant-a/doc/assets/url-image-1.webp"),
+        SimpleNamespace(preview_object_key="tenant-a/doc/assets/url-image-2.webp"),
+    ])
+    deleted: list[str] = []
+
+    monkeypatch.setattr(
+        url_visuals,
+        "tenant_session",
+        lambda _tenant_id: _AssetCleanupTenantSession(session),
+    )
+    monkeypatch.setattr(url_visuals.object_store, "delete", deleted.append)
+
+    await url_visuals._clear_url_image_assets(input)
+
+    assert len(session.statements) == 2
+    assert "SELECT" in str(session.statements[0]).upper()
+    assert "document_assets" in str(session.statements[0])
+    assert "DELETE FROM document_assets" in str(session.statements[1])
+    assert deleted == [
+        "tenant-a/doc/assets/url-image-1.webp",
+        "tenant-a/doc/assets/url-image-2.webp",
+    ]
