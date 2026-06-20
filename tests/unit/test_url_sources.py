@@ -402,6 +402,89 @@ async def test_fetch_github_blob_collects_markdown_image_sources(monkeypatch) ->
     ]
 
 
+async def test_fetch_github_blob_resolves_root_relative_html_images(monkeypatch) -> None:
+    async def fake_validate(url: str) -> str:
+        return url
+
+    class FakeAsyncClient:
+        def __init__(self, **kwargs) -> None:
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, traceback) -> None:
+            return None
+
+        async def get(self, url: str):
+            return httpx.Response(
+                200,
+                headers={"content-type": "text/plain; charset=utf-8"},
+                content=(
+                    b"# Project docs\n\n"
+                    b'<img src="/img/tutorial/payment.png" alt="Payment flow">'
+                ),
+                request=httpx.Request("GET", url),
+            )
+
+    monkeypatch.setattr(url_sources, "validate_fetch_url", fake_validate)
+    monkeypatch.setattr(url_sources.httpx, "AsyncClient", FakeAsyncClient)
+
+    fetched = await url_sources.fetch_url_source(
+        "https://github.com/acme/docs/blob/main/docs/README.md"
+    )
+
+    assert fetched.image_sources == [
+        UrlImageSource(
+            url="https://raw.githubusercontent.com/acme/docs/main/img/tutorial/payment.png",
+            alt="Payment flow",
+            title="",
+        )
+    ]
+
+
+async def test_fetch_github_blob_ignores_unsupported_raw_svg_images(monkeypatch) -> None:
+    async def fake_validate(url: str) -> str:
+        return url
+
+    class FakeAsyncClient:
+        def __init__(self, **kwargs) -> None:
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, traceback) -> None:
+            return None
+
+        async def get(self, url: str):
+            return httpx.Response(
+                200,
+                headers={"content-type": "text/plain; charset=utf-8"},
+                content=(
+                    b"# Project docs\n\n"
+                    b"![Vector](https://raw.githubusercontent.com/acme/docs/refs/heads/stable/diagram.svg)\n"
+                    b"![Diagram](https://github.com/acme/docs/blob/main/docs/diagram.png)\n"
+                ),
+                request=httpx.Request("GET", url),
+            )
+
+    monkeypatch.setattr(url_sources, "validate_fetch_url", fake_validate)
+    monkeypatch.setattr(url_sources.httpx, "AsyncClient", FakeAsyncClient)
+
+    fetched = await url_sources.fetch_url_source(
+        "https://github.com/acme/docs/blob/main/README.md"
+    )
+
+    assert fetched.image_sources == [
+        UrlImageSource(
+            url="https://raw.githubusercontent.com/acme/docs/main/docs/diagram.png",
+            alt="Diagram",
+            title="",
+        )
+    ]
+
+
 def _zip_bytes(entries: dict[str, bytes]) -> bytes:
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w") as archive:
@@ -515,6 +598,53 @@ async def test_fetch_github_tree_collects_markdown_image_sources(monkeypatch) ->
             alt="",
             title="",
         ),
+    ]
+
+
+async def test_fetch_github_tree_resolves_root_relative_images_from_tree_root(monkeypatch) -> None:
+    archive = _zip_bytes(
+        {
+            "docs-main/docs/guide.md": (
+                b"# Guide\n"
+                b'<img src="/img/tutorial/payment.png" alt="Payment flow">'
+            ),
+        }
+    )
+
+    async def fake_validate(url: str) -> str:
+        return url
+
+    class FakeAsyncClient:
+        def __init__(self, **kwargs) -> None:
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, traceback) -> None:
+            return None
+
+        async def get(self, url: str):
+            return httpx.Response(
+                200,
+                headers={"content-type": "application/zip"},
+                content=archive,
+                request=httpx.Request("GET", url),
+            )
+
+    monkeypatch.setattr(url_sources, "validate_fetch_url", fake_validate)
+    monkeypatch.setattr(url_sources.httpx, "AsyncClient", FakeAsyncClient)
+
+    fetched = await url_sources.fetch_url_source(
+        "https://github.com/acme/docs/tree/main/docs"
+    )
+
+    assert fetched.image_sources == [
+        UrlImageSource(
+            url="https://raw.githubusercontent.com/acme/docs/main/docs/img/tutorial/payment.png",
+            alt="Payment flow",
+            title="",
+        )
     ]
 
 

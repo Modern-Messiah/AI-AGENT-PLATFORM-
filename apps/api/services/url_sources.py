@@ -219,6 +219,27 @@ class _ImageSourceParser(HTMLParser):
         ))
 
 
+class _ImageRefParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.refs: list[tuple[str, str, str]] = []
+
+    def handle_starttag(self, tag: str, attrs) -> None:
+        if tag.lower() != "img":
+            return
+        attr = {str(key).lower(): str(value or "") for key, value in attrs}
+        if not _declared_image_size_is_useful(attr):
+            return
+        raw_url = _image_attr_url(attr)
+        if not raw_url:
+            return
+        self.refs.append((
+            raw_url.strip(),
+            attr.get("alt", "").strip(),
+            attr.get("title", "").strip(),
+        ))
+
+
 def extract_html_title(data: bytes) -> str | None:
     text = data[:200_000].decode("utf-8", errors="ignore")
     match = re.search(r"<title[^>]*>(.*?)</title>", text, flags=re.IGNORECASE | re.DOTALL)
@@ -629,7 +650,8 @@ def _github_image_url_from_ref(
     if parsed.scheme in {"http", "https"}:
         github_target = _parse_github_url(target)
         if github_target and github_target.kind == "blob":
-            return _github_raw_url(github_target)
+            raw_url = _github_raw_url(github_target)
+            return raw_url if _is_supported_image_url(raw_url) else None
         return target if _is_supported_image_url(target) else None
     if parsed.scheme:
         return None
@@ -638,7 +660,8 @@ def _github_image_url_from_ref(
     if not cleaned:
         return None
     if cleaned.startswith("/"):
-        rel_path = posixpath.normpath(cleaned.lstrip("/"))
+        root = source.path.strip("/") if source.kind == "tree" and source.path else ""
+        rel_path = posixpath.normpath(posixpath.join(root, cleaned.lstrip("/")))
     else:
         rel_path = posixpath.normpath(posixpath.join(posixpath.dirname(file_path), cleaned))
     if rel_path == "." or rel_path.startswith("../"):
@@ -705,10 +728,19 @@ def _github_referenced_image_sources(
                     target=match.group(1),
                 )
             )
-        html_parser = _ImageSourceParser(_github_raw_file_url(source, ref, file_path))
+        html_parser = _ImageRefParser()
         html_parser.feed(text)
-        for html_source in html_parser.sources:
-            add(html_source)
+        for target, alt, title in html_parser.refs:
+            add(
+                _github_image_source(
+                    source,
+                    ref=ref,
+                    file_path=file_path,
+                    target=target,
+                    alt=alt,
+                    title=title,
+                )
+            )
         if len(sources) >= selected:
             break
 
