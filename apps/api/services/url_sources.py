@@ -131,6 +131,12 @@ class _GitHubSourceUrl:
 
 
 @dataclass(frozen=True)
+class _GitHubArchiveSelection:
+    files: list[tuple[str, str]]
+    paths: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class FetchedUrlSource:
     requested_url: str
     final_url: str
@@ -692,11 +698,51 @@ def _github_image_source(
     return UrlImageSource(url=url, alt=alt.strip()[:500], title=title.strip()[:500])
 
 
+def _github_diagram_image_alt(path: str) -> str:
+    return re.sub(r"[_\-.]+", " ", PurePosixPath(path).stem).strip()[:500]
+
+
+def _github_paired_diagram_image_sources(
+    source: _GitHubSourceUrl,
+    *,
+    ref: str,
+    files: list[tuple[str, str]],
+    archive_paths: tuple[str, ...],
+) -> list[UrlImageSource]:
+    available_paths = set(archive_paths)
+    if not available_paths:
+        return []
+
+    sources: list[UrlImageSource] = []
+    for file_path, _ in files:
+        path = PurePosixPath(file_path)
+        if path.suffix.lower() not in _GITHUB_DIAGRAM_SUFFIXES:
+            continue
+
+        base_path = path.with_suffix("").as_posix()
+        for suffix in (".png", ".jpg", ".jpeg", ".webp"):
+            image_path = f"{base_path}{suffix}"
+            if image_path not in available_paths:
+                continue
+            candidate = _github_image_source(
+                source,
+                ref=ref,
+                file_path=file_path,
+                target=PurePosixPath(image_path).name,
+                alt=_github_diagram_image_alt(image_path),
+            )
+            if candidate is not None:
+                sources.append(candidate)
+
+    return sources
+
+
 def _github_referenced_image_sources(
     source: _GitHubSourceUrl,
     *,
     ref: str,
     files: list[tuple[str, str]],
+    archive_paths: tuple[str, ...] = (),
 ) -> list[UrlImageSource]:
     sources: list[UrlImageSource] = []
     seen: set[str] = set()
@@ -746,6 +792,14 @@ def _github_referenced_image_sources(
             )
         if len(sources) >= selected:
             break
+
+    for candidate in _github_paired_diagram_image_sources(
+        source,
+        ref=ref,
+        files=files,
+        archive_paths=archive_paths,
+    ):
+        add(candidate)
 
     return sources
 
@@ -817,9 +871,10 @@ def _github_files_from_archive(
     archive_data: bytes,
     *,
     max_bytes: int,
-) -> list[tuple[str, str]]:
+) -> _GitHubArchiveSelection:
     prefix = source.path.strip("/")
     selected: list[tuple[str, zipfile.ZipInfo]] = []
+    archive_paths: set[str] = set()
     try:
         with zipfile.ZipFile(io.BytesIO(archive_data)) as archive:
             for info in archive.infolist():
@@ -831,6 +886,7 @@ def _github_files_from_archive(
                 rel_path = PurePosixPath(*parts[1:]).as_posix()
                 if prefix and rel_path != prefix and not rel_path.startswith(f"{prefix}/"):
                     continue
+                archive_paths.add(rel_path)
                 if info.file_size > _GITHUB_MAX_FILE_BYTES:
                     continue
                 if not _github_is_useful_path(rel_path):
@@ -859,7 +915,7 @@ def _github_files_from_archive(
     if not files:
         location = f" under '{prefix}'" if prefix else ""
         raise UrlSourceError(f"no useful GitHub files found{location}")
-    return files
+    return _GitHubArchiveSelection(files=files, paths=tuple(sorted(archive_paths)))
 
 
 async def _fetch_github_archive_source(
@@ -885,7 +941,8 @@ async def _fetch_github_archive_source(
             last_404 = True
             continue
 
-        files = _github_files_from_archive(source, response.content, max_bytes=max_bytes)
+        selection = _github_files_from_archive(source, response.content, max_bytes=max_bytes)
+        files = selection.files
         data = _github_data(source, requested_url=requested_url, ref=ref, files=files)
         if len(data) > max_bytes:
             raise UrlSourceError(
@@ -899,7 +956,12 @@ async def _fetch_github_archive_source(
             filename=_github_filename(source),
             content_type="text/plain; charset=utf-8",
             data=data,
-            image_sources=_github_referenced_image_sources(source, ref=ref, files=files),
+            image_sources=_github_referenced_image_sources(
+                source,
+                ref=ref,
+                files=files,
+                archive_paths=selection.paths,
+            ),
             source_type="github",
             discovered_files=[path for path, _ in files],
         )

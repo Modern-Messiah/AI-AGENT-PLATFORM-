@@ -705,6 +705,57 @@ async def test_fetch_github_tree_keeps_more_architecture_images(monkeypatch) -> 
     )
 
 
+async def test_fetch_github_tree_collects_unreferenced_paired_diagram_images(monkeypatch) -> None:
+    archive = _zip_bytes(
+        {
+            "repo-main/docs/architecture/c4/L2_container.puml": (
+                b"@startuml\n"
+                b'Container(api, "Backend API")\n'
+                b"@enduml\n"
+            ),
+            "repo-main/docs/architecture/c4/L2_container.png": b"paired rendered diagram",
+            "repo-main/docs/architecture/c4/logo.png": b"nearby noise without diagram source",
+            "repo-main/docs/architecture/c4/random-screenshot.png": b"nearby image without matching stem",
+        }
+    )
+
+    async def fake_validate(url: str) -> str:
+        return url
+
+    class FakeAsyncClient:
+        def __init__(self, **kwargs) -> None:
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, traceback) -> None:
+            return None
+
+        async def get(self, url: str):
+            return httpx.Response(
+                200,
+                headers={"content-type": "application/zip"},
+                content=archive,
+                request=httpx.Request("GET", url),
+            )
+
+    monkeypatch.setattr(url_sources, "validate_fetch_url", fake_validate)
+    monkeypatch.setattr(url_sources.httpx, "AsyncClient", FakeAsyncClient)
+
+    fetched = await url_sources.fetch_url_source(
+        "https://github.com/acme/repo/tree/main/docs/architecture/c4"
+    )
+
+    assert fetched.image_sources == [
+        UrlImageSource(
+            url="https://raw.githubusercontent.com/acme/repo/main/docs/architecture/c4/L2_container.png",
+            alt="L2 container",
+            title="",
+        )
+    ]
+
+
 async def test_fetch_github_tree_resolves_root_relative_images_from_tree_root(monkeypatch) -> None:
     archive = _zip_bytes(
         {
