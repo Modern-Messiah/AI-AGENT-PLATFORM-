@@ -13,6 +13,7 @@ const listViewSource = readFileSync(
   resolve(__dirname, '../src/views/NotebooksView.vue'),
   'utf8',
 )
+const i18nSource = readFileSync(resolve(__dirname, '../src/i18n/index.js'), 'utf8')
 const desktopLayoutRule = viewSource.match(/\.notebook-detail\s*\{([^}]*)\}/)?.[1] || ''
 
 test('notebook source list has a dedicated scrollable layout region', () => {
@@ -100,4 +101,21 @@ test('new notebook card aligns with the notebook collection height on desktop', 
     listViewSource,
     /@media \(min-width:\s*901px\)\s*\{[^}]*\.notebook-create,\s*\.notebook-collection\s*\{[^}]*height:\s*clamp\(560px,\s*65vh,\s*760px\)/s,
   )
+})
+
+test('notebook lists can load additional document and notebook pages', () => {
+  assert.match(listViewSource, /const DOCUMENT_PICKER_PAGE_SIZE = 100/)
+  assert.match(listViewSource, /const NOTEBOOK_PAGE_SIZE = 50/)
+  assert.match(listViewSource, /documentsLoadedCount/)
+  assert.match(listViewSource, /notebooksLoadedCount/)
+  assert.match(listViewSource, /function documentListPath\(offset\)/)
+  assert.match(listViewSource, /function notebookListPath\(offset\)/)
+  assert.match(listViewSource, /`\/documents\?limit=\$\{DOCUMENT_PICKER_PAGE_SIZE \+ 1\}&offset=\$\{offset\}`/)
+  assert.match(listViewSource, /`\/notebooks\?limit=\$\{NOTEBOOK_PAGE_SIZE \+ 1\}&offset=\$\{offset\}`/)
+  assert.match(listViewSource, /async function loadMoreDocuments\(\)/)
+  assert.match(listViewSource, /async function loadMoreNotebooks\(\)/)
+  assert.match(listViewSource, /notebooks\.loadMoreDocuments/)
+  assert.match(listViewSource, /notebooks\.loadMoreNotebooks/)
+  assert.match(i18nSource, /Показать ещё документы/)
+  assert.match(i18nSource, /Load more documents/)
 })

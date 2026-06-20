@@ -154,6 +154,19 @@ test('external documents show last checked and reindex result states', () => {
   assert.match(i18nSource, /No changes found/)
 })
 
+test('knowledge base document list can load additional pages', () => {
+  assert.match(documentsViewSource, /const DOCUMENT_PAGE_SIZE = 100/)
+  assert.match(documentsViewSource, /documentsLoadedCount/)
+  assert.match(documentsViewSource, /documentsHasMore/)
+  assert.match(documentsViewSource, /function documentListPath\(offset\)/)
+  assert.match(documentsViewSource, /`\/documents\?limit=\$\{DOCUMENT_PAGE_SIZE \+ 1\}&offset=\$\{offset\}`/)
+  assert.match(documentsViewSource, /async function loadMoreDocuments\(\)/)
+  assert.match(documentsViewSource, /class="load-more-row"/)
+  assert.match(documentsViewSource, /documents\.loadMore/)
+  assert.match(i18nSource, /Показать ещё/)
+  assert.match(i18nSource, /Load more/)
+})
+
 test('document status polling refreshes immediately and clears pending final states', () => {
   assert.match(
     documentsViewSource,

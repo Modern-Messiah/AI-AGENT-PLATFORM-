@@ -157,7 +157,7 @@
                     <button
                         class="btn btn-ghost btn-sm"
                         :title="t('common.refresh')"
-                        @click="loadDocs"
+                        @click="loadDocs()"
                     >
                         <AppIcon name="refresh" :size="11" />
                     </button>
@@ -346,6 +346,20 @@
                         </tr>
                     </tbody>
                 </table>
+                <div v-if="documentsHasMore" class="load-more-row">
+                    <button
+                        class="btn btn-ghost"
+                        type="button"
+                        :disabled="documentsLoadingMore"
+                        @click="loadMoreDocuments"
+                    >
+                        {{
+                            documentsLoadingMore
+                                ? t("documents.loadingMore")
+                                : t("documents.loadMore")
+                        }}
+                    </button>
+                </div>
             </div>
         </div>
 
@@ -385,25 +399,79 @@ const urlError = ref("");
 const checkedUrl = ref("");
 const urlChecking = ref(false);
 const urlAdding = ref(false);
+const DOCUMENT_PAGE_SIZE = 100;
+const documentsLoadedCount = ref(0);
+const documentsHasMore = ref(false);
+const documentsLoadingMore = ref(false);
 
-async function loadDocs() {
+function documentListPath(offset) {
+    return `/documents?limit=${DOCUMENT_PAGE_SIZE + 1}&offset=${offset}`;
+}
+
+function normalizeDocumentPage(rows) {
+    return rows.map((doc) => normalizeDocument(doc, settings.locale));
+}
+
+function appendUniqueDocuments(existing, incoming) {
+    const seen = new Set(existing.map((doc) => doc.id));
+    return [
+        ...existing,
+        ...incoming.filter((doc) => {
+            if (seen.has(doc.id)) return false;
+            seen.add(doc.id);
+            return true;
+        }),
+    ];
+}
+
+async function loadDocs(options = {}) {
+    const append = options.append === true;
     if (!settings.isConnected) {
         docs.value = [];
+        documentsLoadedCount.value = 0;
+        documentsHasMore.value = false;
         return;
     }
     try {
-        const data = await apiFetch("/documents");
+        const offset = append ? documentsLoadedCount.value : 0;
+        const data = await apiFetch(documentListPath(offset));
+        const pageRows = data.slice(0, DOCUMENT_PAGE_SIZE);
+        const normalizedRows = normalizeDocumentPage(pageRows);
+        documentsHasMore.value = data.length > DOCUMENT_PAGE_SIZE;
+        documentsLoadedCount.value = append
+            ? documentsLoadedCount.value + pageRows.length
+            : pageRows.length;
+        if (append) {
+            docs.value = appendUniqueDocuments(docs.value, normalizedRows);
+            return;
+        }
         // merge: keep in-progress uploads that aren't in the API list yet
-        const apiIds = new Set(data.map((d) => d.id));
+        const apiIds = new Set(pageRows.map((d) => d.id));
         const pending = docs.value.filter(
             (d) => d._pending && !apiIds.has(d.id),
         );
-        docs.value = [
-            ...pending,
-            ...data.map((doc) => normalizeDocument(doc, settings.locale)),
-        ];
-    } catch {
+        docs.value = [...pending, ...normalizedRows];
+    } catch (e) {
+        if (append) {
+            toast.value = {
+                msg: t("documents.loadMoreError", { message: e.message }),
+                type: "error",
+            };
+            return;
+        }
         docs.value = [];
+        documentsLoadedCount.value = 0;
+        documentsHasMore.value = false;
+    }
+}
+
+async function loadMoreDocuments() {
+    if (documentsLoadingMore.value || !documentsHasMore.value) return;
+    documentsLoadingMore.value = true;
+    try {
+        await loadDocs({ append: true });
+    } finally {
+        documentsLoadingMore.value = false;
     }
 }
 
@@ -974,6 +1042,15 @@ function handleFileInput(e) {
 }
 .documents-table-scroll::-webkit-scrollbar-thumb:hover {
     background: color-mix(in oklch, var(--muted2) 58%, var(--border2));
+}
+.load-more-row {
+    display: flex;
+    justify-content: center;
+    padding: 12px 18px 16px;
+}
+.load-more-row .btn {
+    min-width: 160px;
+    justify-content: center;
 }
 .documents-memory-card {
     display: flex;

@@ -45,6 +45,15 @@
             <div v-if="readyDocs.length === 0" class="muted-block">
               {{ t('notebooks.noReadyDocs') }}
             </div>
+            <button
+              v-if="documentsHasMore"
+              class="btn btn-ghost load-more-inline"
+              type="button"
+              :disabled="documentsLoadingMore"
+              @click="loadMoreDocuments"
+            >
+              {{ documentsLoadingMore ? t('notebooks.loadingMoreDocuments') : t('notebooks.loadMoreDocuments') }}
+            </button>
           </div>
 
           <button
@@ -97,6 +106,16 @@
               <AppIcon name="trash" />
             </button>
           </article>
+          <div v-if="notebooksHasMore" class="load-more-row">
+            <button
+              class="btn btn-ghost"
+              type="button"
+              :disabled="notebooksLoadingMore"
+              @click="loadMoreNotebooks"
+            >
+              {{ notebooksLoadingMore ? t('notebooks.loadingMoreNotebooks') : t('notebooks.loadMoreNotebooks') }}
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -121,6 +140,8 @@ const router = useRouter()
 const settings = useSettingsStore()
 const { t } = useI18n()
 
+const DOCUMENT_PICKER_PAGE_SIZE = 100
+const NOTEBOOK_PAGE_SIZE = 50
 const docs = ref([])
 const notebooks = ref([])
 const selectedDocumentIds = ref([])
@@ -129,29 +150,103 @@ const description = ref('')
 const loading = ref(false)
 const creating = ref(false)
 const toast = ref(null)
+const documentsLoadedCount = ref(0)
+const documentsHasMore = ref(false)
+const documentsLoadingMore = ref(false)
+const notebooksLoadedCount = ref(0)
+const notebooksHasMore = ref(false)
+const notebooksLoadingMore = ref(false)
 
 const readyDocs = computed(() => docs.value.filter(doc => doc.status === 'done'))
 
 watch([() => settings.apiKey, () => settings.locale], loadData, { immediate: true })
 
+function documentListPath(offset) {
+  return `/documents?limit=${DOCUMENT_PICKER_PAGE_SIZE + 1}&offset=${offset}`
+}
+
+function notebookListPath(offset) {
+  return `/notebooks?limit=${NOTEBOOK_PAGE_SIZE + 1}&offset=${offset}`
+}
+
+function appendUniqueById(existing, incoming) {
+  const seen = new Set(existing.map(item => item.id))
+  return [
+    ...existing,
+    ...incoming.filter(item => {
+      if (seen.has(item.id)) return false
+      seen.add(item.id)
+      return true
+    }),
+  ]
+}
+
 async function loadData() {
   if (!settings.isConnected) {
     docs.value = []
     notebooks.value = []
+    documentsLoadedCount.value = 0
+    documentsHasMore.value = false
+    notebooksLoadedCount.value = 0
+    notebooksHasMore.value = false
     return
   }
   loading.value = true
   try {
     const [docRows, notebookRows] = await Promise.all([
-      apiFetch('/documents'),
-      apiFetch('/notebooks'),
+      apiFetch(documentListPath(0)),
+      apiFetch(notebookListPath(0)),
     ])
-    docs.value = docRows.map(doc => normalizeDocument(doc, settings.locale))
-    notebooks.value = notebookRows.map(notebook => normalizeNotebook(notebook, settings.locale))
+    const documentPage = docRows.slice(0, DOCUMENT_PICKER_PAGE_SIZE)
+    const notebookPage = notebookRows.slice(0, NOTEBOOK_PAGE_SIZE)
+    docs.value = documentPage.map(doc => normalizeDocument(doc, settings.locale))
+    notebooks.value = notebookPage.map(notebook => normalizeNotebook(notebook, settings.locale))
+    documentsLoadedCount.value = documentPage.length
+    documentsHasMore.value = docRows.length > DOCUMENT_PICKER_PAGE_SIZE
+    notebooksLoadedCount.value = notebookPage.length
+    notebooksHasMore.value = notebookRows.length > NOTEBOOK_PAGE_SIZE
   } catch (e) {
     toast.value = { msg: t('notebooks.loadError', { message: e.message }), type: 'error' }
   } finally {
     loading.value = false
+  }
+}
+
+async function loadMoreDocuments() {
+  if (documentsLoadingMore.value || !documentsHasMore.value) return
+  documentsLoadingMore.value = true
+  try {
+    const docRows = await apiFetch(documentListPath(documentsLoadedCount.value))
+    const documentPage = docRows.slice(0, DOCUMENT_PICKER_PAGE_SIZE)
+    docs.value = appendUniqueById(
+      docs.value,
+      documentPage.map(doc => normalizeDocument(doc, settings.locale)),
+    )
+    documentsLoadedCount.value += documentPage.length
+    documentsHasMore.value = docRows.length > DOCUMENT_PICKER_PAGE_SIZE
+  } catch (e) {
+    toast.value = { msg: t('notebooks.loadMoreDocumentsError', { message: e.message }), type: 'error' }
+  } finally {
+    documentsLoadingMore.value = false
+  }
+}
+
+async function loadMoreNotebooks() {
+  if (notebooksLoadingMore.value || !notebooksHasMore.value) return
+  notebooksLoadingMore.value = true
+  try {
+    const notebookRows = await apiFetch(notebookListPath(notebooksLoadedCount.value))
+    const notebookPage = notebookRows.slice(0, NOTEBOOK_PAGE_SIZE)
+    notebooks.value = appendUniqueById(
+      notebooks.value,
+      notebookPage.map(notebook => normalizeNotebook(notebook, settings.locale)),
+    )
+    notebooksLoadedCount.value += notebookPage.length
+    notebooksHasMore.value = notebookRows.length > NOTEBOOK_PAGE_SIZE
+  } catch (e) {
+    toast.value = { msg: t('notebooks.loadMoreNotebooksError', { message: e.message }), type: 'error' }
+  } finally {
+    notebooksLoadingMore.value = false
   }
 }
 
@@ -317,6 +412,10 @@ function openNotebook(id) {
   width: 100%;
   justify-content: center;
 }
+.load-more-inline {
+  width: 100%;
+  justify-content: center;
+}
 .notebook-list {
   display: grid;
   align-content: start;
@@ -331,6 +430,15 @@ function openNotebook(id) {
 }
 .notebook-collection .notebook-list {
   overflow-y: auto;
+}
+.load-more-row {
+  display: flex;
+  justify-content: center;
+  padding: 4px 0 2px;
+}
+.load-more-row .btn {
+  min-width: 160px;
+  justify-content: center;
 }
 .notebook-card {
   display: flex;
