@@ -1,0 +1,9 @@
+[
+  {
+    "id": "github_source_retrieval",
+    "query": "Find the GitHub source text containing {{GITHUB_EXPECTED_SUBSTRING}}.",
+    "expected_source_ids": ["github_source"],
+    "expected_substrings": ["{{GITHUB_EXPECTED_SUBSTRING}}"],
+    "forbidden_source_ids": ["linux_text", "vim_text"]
+  }
+]

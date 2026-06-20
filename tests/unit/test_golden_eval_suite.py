@@ -4,6 +4,7 @@ import fitz
 
 from evals.golden.suite import (
     EvalChunk,
+    GITHUB_DATASET_PATH,
     evaluate_case,
     generate_fixture_files,
     load_golden_cases,
@@ -205,3 +206,15 @@ def test_load_golden_cases_has_unique_required_cases() -> None:
         "url_image_router_action",
         "out_of_knowledge",
     }.issubset(case_ids)
+
+
+def test_load_golden_cases_can_include_github_dataset() -> None:
+    cases = load_golden_cases(
+        extra_paths=[GITHUB_DATASET_PATH],
+        replacements={"{{GITHUB_EXPECTED_SUBSTRING}}": "GITHUB_README_SENTINEL"},
+    )
+    github_case = next(case for case in cases if case["id"] == "github_source_retrieval")
+
+    assert github_case["expected_source_ids"] == ["github_source"]
+    assert github_case["expected_substrings"] == ["GITHUB_README_SENTINEL"]
+    assert "GITHUB_README_SENTINEL" in github_case["query"]

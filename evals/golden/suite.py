@@ -11,6 +11,7 @@ import fitz
 from PIL import Image, ImageDraw, ImageFont
 
 DATASET_PATH = Path(__file__).resolve().parents[1] / "datasets" / "golden_rag_ocr_vision.json"
+GITHUB_DATASET_PATH = Path(__file__).resolve().parents[1] / "datasets" / "golden_github.json"
 _FONT_CANDIDATES = (
     "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
     "/Library/Fonts/Arial Unicode.ttf",
@@ -55,8 +56,34 @@ class CaseResult:
         return asdict(self)
 
 
-def load_golden_cases(path: Path = DATASET_PATH) -> list[dict[str, Any]]:
-    return json.loads(path.read_text(encoding="utf-8"))
+def _replace_placeholders(value: Any, replacements: dict[str, str]) -> Any:
+    if isinstance(value, str):
+        output = value
+        for needle, replacement in replacements.items():
+            output = output.replace(needle, replacement)
+        return output
+    if isinstance(value, list):
+        return [_replace_placeholders(item, replacements) for item in value]
+    if isinstance(value, dict):
+        return {
+            key: _replace_placeholders(item, replacements)
+            for key, item in value.items()
+        }
+    return value
+
+
+def load_golden_cases(
+    path: Path = DATASET_PATH,
+    *,
+    extra_paths: list[Path] | None = None,
+    replacements: dict[str, str] | None = None,
+) -> list[dict[str, Any]]:
+    cases = json.loads(path.read_text(encoding="utf-8"))
+    for extra_path in extra_paths or []:
+        cases.extend(json.loads(extra_path.read_text(encoding="utf-8")))
+    if replacements:
+        cases = [_replace_placeholders(case, replacements) for case in cases]
+    return cases
 
 
 def resolve_eval_font_path() -> Path | None:

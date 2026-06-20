@@ -7,6 +7,13 @@ Default usage runs both prepare and retrieval eval:
 URL-image cases require API/worker containers recreated with:
 
     E2E_ALLOW_LOCAL_URL_SOURCES=true docker compose up -d api worker
+
+Optional GitHub source cases can be added with:
+
+    PYTHONPATH=$PWD python -m evals.runners.golden_eval \
+      --include-github \
+      --github-url https://github.com/user/repo/tree/main/docs \
+      --github-expected-substring SOME_TEXT_FROM_THAT_REPO
 """
 
 from __future__ import annotations
@@ -35,6 +42,7 @@ from evals.golden.suite import (
     CaseResult,
     EvalChunk,
     FixtureArtifact,
+    GITHUB_DATASET_PATH,
     evaluate_case,
     generate_fixture_files,
     load_golden_cases,
@@ -166,7 +174,12 @@ def prepare_golden_corpus(
     tenant_id: str,
     output_dir: Path,
     timeout_seconds: int,
+    include_github: bool = False,
+    github_url: str = "",
 ) -> dict[str, Any]:
+    if include_github and not github_url:
+        raise RuntimeError("--github-url is required when --include-github is used with --prepare")
+
     fixtures_dir = output_dir / "fixtures"
     artifacts = generate_fixture_files(fixtures_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -199,6 +212,25 @@ def prepare_golden_corpus(
                     "document_id": payload["id"],
                     "filename": done_payload["filename"],
                     "source_type": done_payload.get("source_type", "file"),
+                }
+            if include_github:
+                print("Preparing github_source ...", flush=True)
+                payload = _upload_url_artifact(
+                    client,
+                    headers=headers,
+                    url=github_url,
+                )
+                done_payload = _wait_document_done(
+                    client,
+                    headers=headers,
+                    document_id=payload["id"],
+                    timeout_seconds=timeout_seconds,
+                )
+                sources["github_source"] = {
+                    "document_id": payload["id"],
+                    "filename": done_payload["filename"],
+                    "source_type": done_payload.get("source_type", "github"),
+                    "source_url": done_payload.get("source_url", github_url),
                 }
 
     manifest = {
@@ -252,7 +284,12 @@ async def run_golden_retrieval_eval(
     tenant_id: str,
     output_dir: Path,
     top_k: int,
+    include_github: bool = False,
+    github_expected_substring: str = "",
 ) -> tuple[dict[str, object], list[CaseResult]]:
+    if include_github and not github_expected_substring:
+        raise RuntimeError("--github-expected-substring is required when --include-github is used")
+
     manifest = _load_manifest(output_dir)
     source_by_document_id = {
         str(payload["document_id"]): source_id
@@ -260,7 +297,14 @@ async def run_golden_retrieval_eval(
     }
     results: list[CaseResult] = []
 
-    for case in load_golden_cases():
+    extra_paths = [GITHUB_DATASET_PATH] if include_github else []
+    replacements = (
+        {"{{GITHUB_EXPECTED_SUBSTRING}}": github_expected_substring}
+        if include_github
+        else None
+    )
+
+    for case in load_golden_cases(extra_paths=extra_paths, replacements=replacements):
         chunks = await retrieve_chunks(str(case["query"]), tenant_id, k=top_k)
         eval_chunks = _eval_chunks_from_retrieved(
             chunks,
@@ -295,6 +339,13 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--top-k", type=int, default=8)
     parser.add_argument("--timeout-seconds", type=int, default=300)
     parser.add_argument("--cleanup-keys", action="store_true", help="Delete eval tenant API keys after run")
+    parser.add_argument("--include-github", action="store_true", help="Include the optional GitHub source eval case")
+    parser.add_argument("--github-url", default="", help="GitHub repo/blob/tree URL uploaded as source_id=github_source")
+    parser.add_argument(
+        "--github-expected-substring",
+        default="",
+        help="Text expected to appear in retrieved GitHub chunks",
+    )
     return parser.parse_args(argv)
 
 
@@ -309,6 +360,8 @@ async def _main_async(args: argparse.Namespace) -> int:
             tenant_id=tenant_id,
             output_dir=args.output_dir,
             timeout_seconds=args.timeout_seconds,
+            include_github=args.include_github,
+            github_url=args.github_url,
         )
     elif not args.tenant:
         manifest = _load_manifest(args.output_dir)
@@ -320,6 +373,8 @@ async def _main_async(args: argparse.Namespace) -> int:
             tenant_id=tenant_id,
             output_dir=args.output_dir,
             top_k=args.top_k,
+            include_github=args.include_github,
+            github_expected_substring=args.github_expected_substring,
         )
         exit_code = 0 if summary["failed"] == 0 else 1
 
