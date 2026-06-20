@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import html as html_lib
+import io
 import ipaddress
 import json
 import logging
 import re
 import socket
+import zipfile
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
 from pathlib import PurePosixPath
@@ -44,6 +46,33 @@ _SUPPORTED_SUFFIX_TYPES = {
     ".markdown": "text/markdown",
     ".pdf": "application/pdf",
 }
+_GITHUB_TEXT_SUFFIXES = {".md", ".markdown", ".mdx", ".rst", ".txt"}
+_GITHUB_CONFIG_SUFFIXES = {".json", ".toml", ".yaml", ".yml"}
+_GITHUB_USEFUL_FILENAMES = {
+    ".env.example",
+    "docker-compose.yml",
+    "docker-compose.yaml",
+    "package.json",
+    "pyproject.toml",
+    "requirements.txt",
+}
+_GITHUB_USEFUL_PREFIXES = ("readme", "changelog", "contributing", "license")
+_GITHUB_SKIP_DIRS = {
+    ".git",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".venv",
+    "__pycache__",
+    "build",
+    "coverage",
+    "dist",
+    "node_modules",
+    "target",
+    "vendor",
+}
+_GITHUB_MAX_FILES = 100
+_GITHUB_MAX_FILE_BYTES = 512 * 1024
 _BLOCK_TAGS = {
     "address",
     "article",
@@ -86,6 +115,15 @@ class UrlImageSource:
 
 
 @dataclass(frozen=True)
+class _GitHubSourceUrl:
+    owner: str
+    repo: str
+    kind: str
+    ref: str | None = None
+    path: str = ""
+
+
+@dataclass(frozen=True)
 class FetchedUrlSource:
     requested_url: str
     final_url: str
@@ -94,10 +132,16 @@ class FetchedUrlSource:
     content_type: str
     data: bytes
     image_sources: list[UrlImageSource] = field(default_factory=list)
+    source_type: str = "url"
+    discovered_files: list[str] = field(default_factory=list)
 
     @property
     def size_bytes(self) -> int:
         return len(self.data)
+
+    @property
+    def file_count(self) -> int:
+        return len(self.discovered_files)
 
 
 class _ReadableTextParser(HTMLParser):
@@ -307,6 +351,14 @@ def safe_url_filename(url: str, title: str | None, content_type: str) -> str:
     return f"{_safe_name(host)}{suffix}"
 
 
+def _github_filename(source: _GitHubSourceUrl) -> str:
+    return f"{_safe_name(f'GitHub_{source.owner}_{source.repo}')}.txt"
+
+
+def _github_title(source: _GitHubSourceUrl) -> str:
+    return f"GitHub: {source.owner}/{source.repo}"
+
+
 def _normalize_url(url: str) -> str:
     raw = url.strip()
     parsed = urlparse(raw)
@@ -317,6 +369,40 @@ def _normalize_url(url: str) -> str:
     if parsed.username or parsed.password:
         raise UrlSourceError("URL credentials are not allowed")
     return urlunparse(parsed._replace(scheme=parsed.scheme.lower(), fragment=""))
+
+
+def _parse_github_url(url: str) -> _GitHubSourceUrl | None:
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").rstrip(".").lower()
+    parts = [part for part in parsed.path.strip("/").split("/") if part]
+
+    if host == "github.com":
+        if len(parts) < 2:
+            return None
+        owner = parts[0]
+        repo = parts[1].removesuffix(".git")
+        if len(parts) == 2:
+            return _GitHubSourceUrl(owner=owner, repo=repo, kind="repo")
+        if len(parts) >= 5 and parts[2] in {"blob", "tree"}:
+            return _GitHubSourceUrl(
+                owner=owner,
+                repo=repo,
+                kind=parts[2],
+                ref=parts[3],
+                path="/".join(parts[4:]),
+            )
+        return None
+
+    if host == "raw.githubusercontent.com" and len(parts) >= 4:
+        return _GitHubSourceUrl(
+            owner=parts[0],
+            repo=parts[1].removesuffix(".git"),
+            kind="blob",
+            ref=parts[2],
+            path="/".join(parts[3:]),
+        )
+
+    return None
 
 
 def _allowlist_error(host: str) -> str | None:
@@ -409,6 +495,54 @@ def _supported_content_type(content_type: str, url: str) -> str:
     )
 
 
+async def _get_with_redirects(
+    client: httpx.AsyncClient,
+    url: str,
+    *,
+    max_bytes: int,
+    allowed_statuses: set[int] | None = None,
+) -> tuple[str, httpx.Response]:
+    current_url = await validate_fetch_url(url)
+    allowed_statuses = allowed_statuses or set()
+    for _ in range(_MAX_REDIRECTS + 1):
+        try:
+            response = await client.get(current_url)
+        except httpx.RequestError as exc:
+            raise UrlSourceError(f"URL request failed: {exc}") from exc
+
+        if 300 <= response.status_code < 400 and response.headers.get("location"):
+            current_url = await validate_fetch_url(urljoin(current_url, response.headers["location"]))
+            continue
+
+        if response.status_code in allowed_statuses:
+            return current_url, response
+
+        try:
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            raise UrlSourceError(
+                f"URL returned HTTP {exc.response.status_code}",
+                status_code=400,
+            ) from exc
+
+        length = response.headers.get("content-length")
+        if length and length.isdigit() and int(length) > max_bytes:
+            raise UrlSourceError(
+                f"URL content exceeds {max_bytes // (1024 * 1024)} MB limit",
+                status_code=413,
+            )
+
+        if len(response.content) > max_bytes:
+            raise UrlSourceError(
+                f"URL content exceeds {max_bytes // (1024 * 1024)} MB limit",
+                status_code=413,
+            )
+
+        return current_url, response
+
+    raise UrlSourceError("URL redirected too many times")
+
+
 def _with_source_header(text: str, *, url: str, title: str | None) -> bytes:
     lines = [f"Source URL: {url}"]
     if title:
@@ -418,9 +552,238 @@ def _with_source_header(text: str, *, url: str, title: str | None) -> bytes:
     return "\n".join(lines).encode("utf-8")
 
 
+def _github_raw_url(source: _GitHubSourceUrl) -> str:
+    if not source.ref or not source.path:
+        raise UrlSourceError("GitHub file URL must include a ref and path")
+    return f"https://raw.githubusercontent.com/{source.owner}/{source.repo}/{source.ref}/{source.path}"
+
+
+def _github_archive_url(source: _GitHubSourceUrl, ref: str) -> str:
+    return f"https://codeload.github.com/{source.owner}/{source.repo}/zip/refs/heads/{ref}"
+
+
+def _github_is_useful_path(path: str) -> bool:
+    normalized = PurePosixPath(path)
+    parts = [part.lower() for part in normalized.parts]
+    if any(part in _GITHUB_SKIP_DIRS for part in parts):
+        return False
+    name = normalized.name.lower()
+    suffix = normalized.suffix.lower()
+    if name in _GITHUB_USEFUL_FILENAMES:
+        return True
+    if any(name.startswith(prefix) for prefix in _GITHUB_USEFUL_PREFIXES):
+        return True
+    return suffix in _GITHUB_TEXT_SUFFIXES | _GITHUB_CONFIG_SUFFIXES
+
+
+def _github_file_priority(path: str) -> tuple[int, str]:
+    lower = path.lower()
+    name = PurePosixPath(lower).name
+    suffix = PurePosixPath(lower).suffix
+    if name.startswith("readme"):
+        rank = 0
+    elif lower.startswith("docs/") or "/docs/" in lower:
+        rank = 10
+    elif suffix in _GITHUB_TEXT_SUFFIXES:
+        rank = 20
+    elif name in _GITHUB_USEFUL_FILENAMES:
+        rank = 30
+    else:
+        rank = 40
+    return rank, lower
+
+
+def _decode_github_text(data: bytes, path: str) -> str:
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError:
+        text = data.decode("utf-8", errors="ignore")
+    text = text.replace("\x00", "")
+    if not text.strip():
+        raise UrlSourceError(f"GitHub file has no readable text: {path}")
+    return text.strip()
+
+
+def _github_data(
+    source: _GitHubSourceUrl,
+    *,
+    requested_url: str,
+    ref: str,
+    files: list[tuple[str, str]],
+) -> bytes:
+    lines = [
+        f"Source URL: {requested_url}",
+        f"GitHub Repository: {source.owner}/{source.repo}",
+        f"Ref: {ref}",
+        f"Files indexed: {len(files)}",
+        "",
+    ]
+    for path, text in files:
+        lines.extend([f"--- FILE: {path} ---", text, ""])
+    return "\n".join(lines).encode("utf-8")
+
+
+async def _fetch_github_blob_source(
+    client: httpx.AsyncClient,
+    source: _GitHubSourceUrl,
+    *,
+    requested_url: str,
+    max_bytes: int,
+) -> FetchedUrlSource:
+    if not source.path or not _github_is_useful_path(source.path):
+        raise UrlSourceError(
+            "unsupported GitHub file type; use Markdown, text, README, or config files"
+        )
+    raw_url = _github_raw_url(source)
+    _, response = await _get_with_redirects(client, raw_url, max_bytes=max_bytes)
+    if len(response.content) > _GITHUB_MAX_FILE_BYTES:
+        raise UrlSourceError(
+            f"GitHub file exceeds {_GITHUB_MAX_FILE_BYTES // 1024} KB limit",
+            status_code=413,
+        )
+    text = _decode_github_text(response.content, source.path)
+    data = _github_data(
+        source,
+        requested_url=requested_url,
+        ref=source.ref or "",
+        files=[(source.path, text)],
+    )
+    return FetchedUrlSource(
+        requested_url=requested_url,
+        final_url=requested_url,
+        title=_github_title(source),
+        filename=_github_filename(source),
+        content_type="text/plain; charset=utf-8",
+        data=data,
+        source_type="github",
+        discovered_files=[source.path],
+    )
+
+
+def _github_files_from_archive(
+    source: _GitHubSourceUrl,
+    archive_data: bytes,
+    *,
+    max_bytes: int,
+) -> list[tuple[str, str]]:
+    prefix = source.path.strip("/")
+    selected: list[tuple[str, zipfile.ZipInfo]] = []
+    try:
+        with zipfile.ZipFile(io.BytesIO(archive_data)) as archive:
+            for info in archive.infolist():
+                if info.is_dir():
+                    continue
+                parts = PurePosixPath(info.filename).parts
+                if len(parts) < 2:
+                    continue
+                rel_path = PurePosixPath(*parts[1:]).as_posix()
+                if prefix and rel_path != prefix and not rel_path.startswith(f"{prefix}/"):
+                    continue
+                if info.file_size > _GITHUB_MAX_FILE_BYTES:
+                    continue
+                if not _github_is_useful_path(rel_path):
+                    continue
+                selected.append((rel_path, info))
+
+            selected.sort(key=lambda item: _github_file_priority(item[0]))
+            files: list[tuple[str, str]] = []
+            total = 0
+            for rel_path, info in selected[:_GITHUB_MAX_FILES]:
+                data = archive.read(info)
+                text = _decode_github_text(data, rel_path)
+                section_size = len(text.encode("utf-8")) + len(rel_path.encode("utf-8")) + 32
+                if files and total + section_size > max_bytes:
+                    break
+                if not files and section_size > max_bytes:
+                    raise UrlSourceError(
+                        f"GitHub content exceeds {max_bytes // (1024 * 1024)} MB limit",
+                        status_code=413,
+                    )
+                files.append((rel_path, text))
+                total += section_size
+    except zipfile.BadZipFile as exc:
+        raise UrlSourceError("GitHub archive could not be read") from exc
+
+    if not files:
+        location = f" under '{prefix}'" if prefix else ""
+        raise UrlSourceError(f"no useful GitHub files found{location}")
+    return files
+
+
+async def _fetch_github_archive_source(
+    client: httpx.AsyncClient,
+    source: _GitHubSourceUrl,
+    *,
+    requested_url: str,
+    max_bytes: int,
+) -> FetchedUrlSource:
+    refs = [source.ref] if source.ref else ["main", "master"]
+    last_404 = False
+    for ref in refs:
+        if not ref:
+            continue
+        archive_url = _github_archive_url(source, ref)
+        _, response = await _get_with_redirects(
+            client,
+            archive_url,
+            max_bytes=max_bytes,
+            allowed_statuses={404},
+        )
+        if response.status_code == 404:
+            last_404 = True
+            continue
+
+        files = _github_files_from_archive(source, response.content, max_bytes=max_bytes)
+        data = _github_data(source, requested_url=requested_url, ref=ref, files=files)
+        if len(data) > max_bytes:
+            raise UrlSourceError(
+                f"GitHub content exceeds {max_bytes // (1024 * 1024)} MB limit",
+                status_code=413,
+            )
+        return FetchedUrlSource(
+            requested_url=requested_url,
+            final_url=requested_url,
+            title=_github_title(source),
+            filename=_github_filename(source),
+            content_type="text/plain; charset=utf-8",
+            data=data,
+            source_type="github",
+            discovered_files=[path for path, _ in files],
+        )
+
+    if last_404:
+        raise UrlSourceError("GitHub repository branch was not found")
+    raise UrlSourceError("GitHub repository could not be fetched")
+
+
+async def _fetch_github_source(source: _GitHubSourceUrl, requested_url: str) -> FetchedUrlSource:
+    max_bytes = settings.url_source_max_bytes
+    async with httpx.AsyncClient(
+        timeout=_TIMEOUT,
+        follow_redirects=False,
+        headers=URL_SOURCE_HEADERS,
+    ) as client:
+        if source.kind == "blob":
+            return await _fetch_github_blob_source(
+                client,
+                source,
+                requested_url=requested_url,
+                max_bytes=max_bytes,
+            )
+        return await _fetch_github_archive_source(
+            client,
+            source,
+            requested_url=requested_url,
+            max_bytes=max_bytes,
+        )
+
+
 async def fetch_url_source(url: str) -> FetchedUrlSource:
     requested_url = await validate_fetch_url(url)
-    current_url = requested_url
+    github_source = _parse_github_url(requested_url)
+    if github_source is not None:
+        return await _fetch_github_source(github_source, requested_url)
+
     max_bytes = settings.url_source_max_bytes
 
     async with httpx.AsyncClient(
@@ -428,66 +791,40 @@ async def fetch_url_source(url: str) -> FetchedUrlSource:
         follow_redirects=False,
         headers=URL_SOURCE_HEADERS,
     ) as client:
-        for _ in range(_MAX_REDIRECTS + 1):
-            try:
-                response = await client.get(current_url)
-            except httpx.RequestError as exc:
-                raise UrlSourceError(f"URL request failed: {exc}") from exc
-            if 300 <= response.status_code < 400 and response.headers.get("location"):
-                current_url = await validate_fetch_url(urljoin(current_url, response.headers["location"]))
-                continue
+        current_url, response = await _get_with_redirects(
+            client,
+            requested_url,
+            max_bytes=max_bytes,
+        )
 
-            try:
-                response.raise_for_status()
-            except httpx.HTTPStatusError as exc:
-                raise UrlSourceError(
-                    f"URL returned HTTP {exc.response.status_code}",
-                    status_code=400,
-                ) from exc
+    data = response.content
+    original_type = _supported_content_type(
+        response.headers.get("content-type", ""),
+        current_url,
+    )
+    title = extract_html_title(data) if original_type in _HTML_TYPES else None
+    image_sources: list[UrlImageSource] = []
 
-            length = response.headers.get("content-length")
-            if length and length.isdigit() and int(length) > max_bytes:
-                raise UrlSourceError(
-                    f"URL content exceeds {max_bytes // (1024 * 1024)} MB limit",
-                    status_code=413,
-                )
+    if original_type in _HTML_TYPES:
+        image_sources = extract_html_image_sources(data, current_url)
+        text = html_to_text(data)
+        if not text.strip():
+            raise UrlSourceError("HTML page has no readable text")
+        data = _with_source_header(text, url=current_url, title=title)
+        content_type = "text/plain; charset=utf-8"
+    elif original_type in _TEXT_TYPES:
+        text = data.decode("utf-8", errors="ignore")
+        data = _with_source_header(text, url=current_url, title=None)
+        content_type = response.headers.get("content-type") or "text/plain; charset=utf-8"
+    else:
+        content_type = response.headers.get("content-type") or "application/pdf"
 
-            data = response.content
-            if len(data) > max_bytes:
-                raise UrlSourceError(
-                    f"URL content exceeds {max_bytes // (1024 * 1024)} MB limit",
-                    status_code=413,
-                )
-
-            original_type = _supported_content_type(
-                response.headers.get("content-type", ""),
-                current_url,
-            )
-            title = extract_html_title(data) if original_type in _HTML_TYPES else None
-            image_sources: list[UrlImageSource] = []
-
-            if original_type in _HTML_TYPES:
-                image_sources = extract_html_image_sources(data, current_url)
-                text = html_to_text(data)
-                if not text.strip():
-                    raise UrlSourceError("HTML page has no readable text")
-                data = _with_source_header(text, url=current_url, title=title)
-                content_type = "text/plain; charset=utf-8"
-            elif original_type in _TEXT_TYPES:
-                text = data.decode("utf-8", errors="ignore")
-                data = _with_source_header(text, url=current_url, title=None)
-                content_type = response.headers.get("content-type") or "text/plain; charset=utf-8"
-            else:
-                content_type = response.headers.get("content-type") or "application/pdf"
-
-            return FetchedUrlSource(
-                requested_url=requested_url,
-                final_url=current_url,
-                title=title,
-                filename=safe_url_filename(current_url, title, original_type),
-                content_type=content_type,
-                data=data,
-                image_sources=image_sources,
-            )
-
-    raise UrlSourceError("URL redirected too many times")
+    return FetchedUrlSource(
+        requested_url=requested_url,
+        final_url=current_url,
+        title=title,
+        filename=safe_url_filename(current_url, title, original_type),
+        content_type=content_type,
+        data=data,
+        image_sources=image_sources,
+    )

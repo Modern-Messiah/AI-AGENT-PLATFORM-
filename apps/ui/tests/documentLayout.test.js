@@ -125,6 +125,14 @@ test('URL source add button keeps a themed disabled state', () => {
   assert.doesNotMatch(documentsViewSource, /\.url-add-btn:disabled\s*\{[^}]*background:\s*#[0-9a-fA-F]{3,6}/s)
 })
 
+test('GitHub URL sources reuse the URL panel and source badge', () => {
+  assert.match(documentsViewSource, /urlCheck\.source_type === "github"/)
+  assert.match(documentsViewSource, /documents\.githubReady/)
+  assert.match(documentsViewSource, /documents\.githubBadge/)
+  assert.match(documentsViewSource, /function isExternalSource\(doc\)/)
+  assert.match(i18nSource, /GitHub repository detected, found \{count\} useful files/)
+})
+
 test('document status polling refreshes immediately and clears pending final states', () => {
   assert.match(
     documentsViewSource,

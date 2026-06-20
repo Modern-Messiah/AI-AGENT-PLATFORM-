@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import io
 import logging
+import zipfile
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
@@ -45,10 +47,30 @@ def test_url_check_response_schema() -> None:
         content_type="text/html",
         title="Example Docs",
         size_bytes=1024,
+        source_type="url",
     )
 
     assert response.ok is True
     assert response.title == "Example Docs"
+    assert response.source_type == "url"
+
+
+def test_github_url_check_response_schema() -> None:
+    response = UrlCheckResponse(
+        ok=True,
+        url="https://github.com/acme/docs",
+        final_url="https://github.com/acme/docs",
+        content_type="text/plain; charset=utf-8",
+        title="GitHub: acme/docs",
+        size_bytes=2048,
+        source_type="github",
+        file_count=12,
+        preview_files=["README.md", "docs/install.md"],
+    )
+
+    assert response.source_type == "github"
+    assert response.file_count == 12
+    assert response.preview_files == ["README.md", "docs/install.md"]
 
 
 def test_document_response_includes_url_source_metadata() -> None:
@@ -286,6 +308,193 @@ async def test_fetch_url_source_sends_project_user_agent(monkeypatch) -> None:
     user_agent = (captured.get("headers") or {}).get("User-Agent", "")
     assert user_agent.startswith("AI-Agent-Platform/")
     assert "Hello from docs." in fetched.data.decode()
+
+
+async def test_fetch_github_blob_source_uses_raw_file_without_github_api(monkeypatch) -> None:
+    requested_urls: list[str] = []
+
+    async def fake_validate(url: str) -> str:
+        return url
+
+    class FakeAsyncClient:
+        def __init__(self, **kwargs) -> None:
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, traceback) -> None:
+            return None
+
+        async def get(self, url: str):
+            requested_urls.append(url)
+            return httpx.Response(
+                200,
+                headers={"content-type": "text/plain; charset=utf-8"},
+                content=b"# Project docs\n\nInstall with docker compose.",
+                request=httpx.Request("GET", url),
+            )
+
+    monkeypatch.setattr(url_sources, "validate_fetch_url", fake_validate)
+    monkeypatch.setattr(url_sources.httpx, "AsyncClient", FakeAsyncClient)
+
+    fetched = await url_sources.fetch_url_source(
+        "https://github.com/acme/docs/blob/main/README.md"
+    )
+    text = fetched.data.decode()
+
+    assert requested_urls == ["https://raw.githubusercontent.com/acme/docs/main/README.md"]
+    assert fetched.source_type == "github"
+    assert fetched.title == "GitHub: acme/docs"
+    assert fetched.filename == "GitHub_acme_docs.txt"
+    assert fetched.discovered_files == ["README.md"]
+    assert "GitHub Repository: acme/docs" in text
+    assert "--- FILE: README.md ---" in text
+    assert "Install with docker compose." in text
+    assert "api.github.com" not in "".join(requested_urls)
+
+
+def _zip_bytes(entries: dict[str, bytes]) -> bytes:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        for name, content in entries.items():
+            archive.writestr(name, content)
+    return buffer.getvalue()
+
+
+async def test_fetch_github_tree_source_filters_archive_path_and_noise(monkeypatch) -> None:
+    requested_urls: list[str] = []
+    archive = _zip_bytes(
+        {
+            "docs-main/README.md": b"# Root readme\n",
+            "docs-main/docs/install.md": b"# Install\nUse docker compose up.",
+            "docs-main/docs/assets/logo.png": b"not useful",
+            "docs-main/docs/node_modules/pkg/README.md": b"skip dependency",
+            "docs-main/src/main.py": b"print('skip source code for default docs import')",
+        }
+    )
+
+    async def fake_validate(url: str) -> str:
+        return url
+
+    class FakeAsyncClient:
+        def __init__(self, **kwargs) -> None:
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, traceback) -> None:
+            return None
+
+        async def get(self, url: str):
+            requested_urls.append(url)
+            return httpx.Response(
+                200,
+                headers={"content-type": "application/zip"},
+                content=archive,
+                request=httpx.Request("GET", url),
+            )
+
+    monkeypatch.setattr(url_sources, "validate_fetch_url", fake_validate)
+    monkeypatch.setattr(url_sources.httpx, "AsyncClient", FakeAsyncClient)
+
+    fetched = await url_sources.fetch_url_source(
+        "https://github.com/acme/docs/tree/main/docs"
+    )
+    text = fetched.data.decode()
+
+    assert requested_urls == ["https://codeload.github.com/acme/docs/zip/refs/heads/main"]
+    assert fetched.source_type == "github"
+    assert fetched.discovered_files == ["docs/install.md"]
+    assert "--- FILE: docs/install.md ---" in text
+    assert "Use docker compose up." in text
+    assert "Root readme" not in text
+    assert "skip dependency" not in text
+    assert "skip source code" not in text
+
+
+async def test_fetch_github_repo_root_tries_main_then_master(monkeypatch) -> None:
+    requested_urls: list[str] = []
+    archive = _zip_bytes(
+        {
+            "docs-master/README.md": b"# Docs\n",
+            "docs-master/docs/usage.md": b"# Usage\nAsk questions.",
+            "docs-master/package.json": b'{"scripts":{"test":"pytest"}}',
+            "docs-master/dist/README.md": b"skip built artifact",
+        }
+    )
+
+    async def fake_validate(url: str) -> str:
+        return url
+
+    class FakeAsyncClient:
+        def __init__(self, **kwargs) -> None:
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, traceback) -> None:
+            return None
+
+        async def get(self, url: str):
+            requested_urls.append(url)
+            status = 404 if url.endswith("/main") else 200
+            content = b"" if status == 404 else archive
+            return httpx.Response(
+                status,
+                headers={"content-type": "application/zip"},
+                content=content,
+                request=httpx.Request("GET", url),
+            )
+
+    monkeypatch.setattr(url_sources, "validate_fetch_url", fake_validate)
+    monkeypatch.setattr(url_sources.httpx, "AsyncClient", FakeAsyncClient)
+
+    fetched = await url_sources.fetch_url_source("https://github.com/acme/docs")
+    text = fetched.data.decode()
+
+    assert requested_urls == [
+        "https://codeload.github.com/acme/docs/zip/refs/heads/main",
+        "https://codeload.github.com/acme/docs/zip/refs/heads/master",
+    ]
+    assert fetched.source_type == "github"
+    assert fetched.discovered_files == ["README.md", "docs/usage.md", "package.json"]
+    assert "Ref: master" in text
+    assert "--- FILE: README.md ---" in text
+    assert "--- FILE: docs/usage.md ---" in text
+    assert "--- FILE: package.json ---" in text
+    assert "skip built artifact" not in text
+
+
+async def test_check_url_document_returns_github_metadata(monkeypatch) -> None:
+    fetched = FetchedUrlSource(
+        requested_url="https://github.com/acme/docs",
+        final_url="https://github.com/acme/docs",
+        title="GitHub: acme/docs",
+        filename="GitHub_acme_docs.txt",
+        content_type="text/plain; charset=utf-8",
+        data=b"GitHub Repository: acme/docs",
+        source_type="github",
+        discovered_files=["README.md", "docs/install.md", "docs/usage.md"],
+    )
+
+    async def fake_fetch(url: str) -> FetchedUrlSource:
+        assert url == "https://github.com/acme/docs"
+        return fetched
+
+    monkeypatch.setattr(documents_router, "fetch_url_source", fake_fetch)
+
+    response = await documents_router.check_url_document(
+        documents_router.UrlCheckRequest(url="https://github.com/acme/docs"),
+        "tenant-a",
+    )
+
+    assert response.ok is True
+    assert response.source_type == "github"
+    assert response.file_count == 3
+    assert response.preview_files == ["README.md", "docs/install.md", "docs/usage.md"]
 
 
 class _FakeResult:

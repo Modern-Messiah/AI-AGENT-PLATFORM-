@@ -101,13 +101,26 @@
             </div>
             <div v-if="urlCheck?.ok" class="url-source-status ok">
                 {{
-                    t("documents.urlReady", {
-                        title:
-                            urlCheck.title ||
-                            urlCheck.final_url ||
-                            urlCheck.url,
-                    })
+                    urlCheck.source_type === "github"
+                        ? t("documents.githubReady", {
+                              count: urlCheck.file_count || 0,
+                          })
+                        : t("documents.urlReady", {
+                              title:
+                                  urlCheck.title ||
+                                  urlCheck.final_url ||
+                                  urlCheck.url,
+                          })
                 }}
+                <div
+                    v-if="
+                        urlCheck.source_type === 'github' &&
+                        urlCheck.preview_files?.length
+                    "
+                    class="url-source-preview-files"
+                >
+                    {{ urlCheck.preview_files.slice(0, 5).join(" · ") }}
+                </div>
             </div>
             <div v-else-if="urlError" class="url-source-status error">
                 {{ t("documents.urlRejected", { reason: urlError }) }}
@@ -199,11 +212,11 @@
                                             {{ doc.name }}
                                         </button>
                                         <div
-                                            v-if="doc.sourceType === 'url'"
+                                            v-if="isExternalSource(doc)"
                                             class="source-url"
                                         >
                                             <span class="source-pill">{{
-                                                t("documents.urlBadge")
+                                                sourceBadge(doc)
                                             }}</span>
                                             <span class="source-url-text">{{
                                                 doc.sourceUrl
@@ -404,7 +417,17 @@ function mimeIcon(name) {
 }
 
 function sourceIcon(doc) {
-    return doc?.sourceType === "url" ? "🌐" : mimeIcon(doc?.name);
+    return isExternalSource(doc) ? "🌐" : mimeIcon(doc?.name);
+}
+
+function isExternalSource(doc) {
+    return doc?.sourceType === "url" || doc?.sourceType === "github";
+}
+
+function sourceBadge(doc) {
+    return doc?.sourceType === "github"
+        ? t("documents.githubBadge")
+        : t("documents.urlBadge");
 }
 
 function openDocument(doc) {
@@ -800,6 +823,15 @@ function handleFileInput(e) {
 }
 .url-source-status.error {
     color: var(--red);
+}
+.url-source-preview-files {
+    max-width: 100%;
+    margin-top: 3px;
+    overflow: hidden;
+    color: var(--muted);
+    font-family: var(--mono);
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 .documents-table-scroll {
     flex: 1 1 auto;

@@ -235,6 +235,9 @@ async def check_url_document(body: UrlCheckRequest, tenant_id: TenantID) -> UrlC
         content_type=fetched.content_type,
         title=fetched.title,
         size_bytes=fetched.size_bytes,
+        source_type=fetched.source_type,
+        file_count=fetched.file_count,
+        preview_files=fetched.discovered_files[:8],
     )
 
 
@@ -262,7 +265,7 @@ async def add_url_document(
             mime_type=fetched.content_type,
             object_key=object_key,
             size_bytes=fetched.size_bytes,
-            source_type="url",
+            source_type=fetched.source_type,
             source_url=fetched.final_url,
             source_title=fetched.title,
             source_checked_at=checked_at,
@@ -437,9 +440,9 @@ async def reindex_document(
         if doc.status in {DocumentStatus.pending, DocumentStatus.processing}:
             raise HTTPException(status_code=409, detail="document is already being indexed")
 
-        if getattr(doc, "source_type", "file") == "url":
+        if getattr(doc, "source_type", "file") in {"url", "github"}:
             if not doc.source_url:
-                raise HTTPException(status_code=409, detail="URL document has no source URL")
+                raise HTTPException(status_code=409, detail="external document has no source URL")
             try:
                 fetched = await fetch_url_source(doc.source_url)
             except UrlSourceError as exc:
@@ -449,6 +452,7 @@ async def reindex_document(
             doc.filename = fetched.filename
             doc.mime_type = fetched.content_type
             doc.size_bytes = fetched.size_bytes
+            doc.source_type = fetched.source_type
             doc.source_url = fetched.final_url
             doc.source_title = fetched.title
             doc.source_checked_at = datetime.now(timezone.utc)

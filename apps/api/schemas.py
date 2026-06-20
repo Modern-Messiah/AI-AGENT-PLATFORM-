@@ -89,6 +89,9 @@ class UrlCheckResponse(BaseModel):
     content_type: str | None = None
     title: str | None = None
     size_bytes: int = 0
+    source_type: str = "url"
+    file_count: int = 0
+    preview_files: list[str] = Field(default_factory=list)
     reason: str | None = None
 
 
