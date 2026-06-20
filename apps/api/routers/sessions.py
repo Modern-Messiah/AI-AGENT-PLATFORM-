@@ -122,12 +122,19 @@ async def delete_session(session_id: uuid.UUID, tenant_id: TenantID) -> None:
 
 
 @router.get("/sessions/{session_id}/messages", response_model=list[ChatMessageSchema])
-async def get_messages(session_id: uuid.UUID, tenant_id: TenantID) -> list[ChatMessageSchema]:
+async def get_messages(
+    session_id: uuid.UUID,
+    tenant_id: TenantID,
+    limit: int = Query(default=200, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+) -> list[ChatMessageSchema]:
     async with tenant_session(tenant_id) as s:
         msgs = (await s.execute(
             select(ChatMessage)
             .where(ChatMessage.session_id == session_id, ChatMessage.tenant_id == tenant_id)
             .order_by(ChatMessage.created_at)
+            .limit(limit)
+            .offset(offset)
         )).scalars().all()
     return [chat_message_response(m) for m in msgs]
 

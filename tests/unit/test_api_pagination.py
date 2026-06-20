@@ -20,6 +20,13 @@ class _Result:
     def all(self):
         return self.rows if self.rows else self.values
 
+    def scalar_one_or_none(self):
+        if not self.values:
+            return None
+        if len(self.values) > 1:
+            raise AssertionError("expected one or zero rows")
+        return self.values[0]
+
 
 class _FakeSession:
     def __init__(self, results) -> None:
@@ -102,3 +109,62 @@ async def test_list_notebooks_batches_document_loading_in_two_queries(monkeypatc
     assert len(session.statements) == 2
     assert "LIMIT" in str(session.statements[0])
     assert "OFFSET" in str(session.statements[0])
+
+
+async def test_get_messages_applies_limit_and_offset(monkeypatch) -> None:
+    session = _FakeSession([_Result([])])
+    _patch_tenant_session(monkeypatch, sessions_router, session)
+
+    rows = await sessions_router.get_messages(
+        UUID("9caa5d8d-0f6d-4f06-98cb-c49d7f991b32"),
+        "tenant-a",
+        limit=20,
+        offset=40,
+    )
+
+    assert rows == []
+    statement = str(session.statements[0])
+    assert "LIMIT" in statement
+    assert "OFFSET" in statement
+
+
+async def test_list_document_assets_applies_limit_and_offset(monkeypatch) -> None:
+    document_id = UUID("809f7e7e-1852-4ab3-b710-eec7f70ae7e6")
+    session = _FakeSession([
+        _Result([SimpleNamespace(id=document_id)]),
+        _Result([]),
+    ])
+    _patch_tenant_session(monkeypatch, documents_router, session)
+
+    rows = await documents_router.list_document_assets(
+        document_id,
+        "tenant-a",
+        limit=12,
+        offset=24,
+    )
+
+    assert rows == []
+    statement = str(session.statements[1])
+    assert "LIMIT" in statement
+    assert "OFFSET" in statement
+
+
+async def test_list_document_chunks_applies_limit_and_offset(monkeypatch) -> None:
+    document_id = UUID("809f7e7e-1852-4ab3-b710-eec7f70ae7e6")
+    session = _FakeSession([
+        _Result([SimpleNamespace(id=document_id)]),
+        _Result([]),
+    ])
+    _patch_tenant_session(monkeypatch, documents_router, session)
+
+    rows = await documents_router.list_document_chunks(
+        document_id,
+        "tenant-a",
+        limit=12,
+        offset=24,
+    )
+
+    assert rows == []
+    statement = str(session.statements[1])
+    assert "LIMIT" in statement
+    assert "OFFSET" in statement

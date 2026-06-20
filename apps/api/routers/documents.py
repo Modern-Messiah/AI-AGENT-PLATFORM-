@@ -350,6 +350,8 @@ async def get_document(document_id: uuid.UUID, tenant_id: TenantID) -> DocumentR
 async def list_document_assets(
     document_id: uuid.UUID,
     tenant_id: TenantID,
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
 ) -> list[DocumentAssetResponse]:
     async with tenant_session(tenant_id) as s:
         doc = (
@@ -370,6 +372,8 @@ async def list_document_assets(
                     DocumentAsset.tenant_id == tenant_id,
                 )
                 .order_by(DocumentAsset.page_number, DocumentAsset.created_at)
+                .limit(limit)
+                .offset(offset)
             )
         ).scalars().all()
     return [document_asset_response(asset) for asset in assets]
@@ -422,6 +426,7 @@ async def list_document_chunks(
     document_id: uuid.UUID,
     tenant_id: TenantID,
     limit: int = Query(default=25, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
 ) -> list[DocumentChunkPreview]:
     async with tenant_session(tenant_id) as s:
         doc = (
@@ -437,6 +442,7 @@ async def list_document_chunks(
                 .where(Chunk.document_id == document_id, Chunk.tenant_id == tenant_id)
                 .order_by(Chunk.chunk_idx)
                 .limit(limit)
+                .offset(offset)
             )
         ).scalars().all()
 
