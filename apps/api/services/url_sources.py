@@ -52,6 +52,7 @@ _SUPPORTED_SUFFIX_TYPES = {
     ".pdf": "application/pdf",
 }
 _GITHUB_TEXT_SUFFIXES = {".md", ".markdown", ".mdx", ".rst", ".txt"}
+_GITHUB_DIAGRAM_SUFFIXES = {".drawio", ".mmd", ".mermaid", ".plantuml", ".puml"}
 _GITHUB_CONFIG_SUFFIXES = {".json", ".toml", ".yaml", ".yml"}
 _GITHUB_USEFUL_FILENAMES = {
     ".env.example",
@@ -604,7 +605,7 @@ def _github_is_useful_path(path: str) -> bool:
         return True
     if any(name.startswith(prefix) for prefix in _GITHUB_USEFUL_PREFIXES):
         return True
-    return suffix in _GITHUB_TEXT_SUFFIXES | _GITHUB_CONFIG_SUFFIXES
+    return suffix in _GITHUB_TEXT_SUFFIXES | _GITHUB_DIAGRAM_SUFFIXES | _GITHUB_CONFIG_SUFFIXES
 
 
 def _github_file_priority(path: str) -> tuple[int, str]:
@@ -615,6 +616,8 @@ def _github_file_priority(path: str) -> tuple[int, str]:
         rank = 0
     elif lower.startswith("docs/") or "/docs/" in lower:
         rank = 10
+    elif suffix in _GITHUB_DIAGRAM_SUFFIXES:
+        rank = 11
     elif suffix in _GITHUB_TEXT_SUFFIXES:
         rank = 20
     elif name in _GITHUB_USEFUL_FILENAMES:
@@ -697,7 +700,7 @@ def _github_referenced_image_sources(
 ) -> list[UrlImageSource]:
     sources: list[UrlImageSource] = []
     seen: set[str] = set()
-    selected = max(0, settings.url_source_max_images)
+    selected = max(0, settings.github_source_max_images)
     if selected == 0:
         return []
 
@@ -775,7 +778,7 @@ async def _fetch_github_blob_source(
 ) -> FetchedUrlSource:
     if not source.path or not _github_is_useful_path(source.path):
         raise UrlSourceError(
-            "unsupported GitHub file type; use Markdown, text, README, or config files"
+            "unsupported GitHub file type; use Markdown, text, diagram source, README, or config files"
         )
     raw_url = _github_raw_url(source)
     _, response = await _get_with_redirects(client, raw_url, max_bytes=max_bytes)

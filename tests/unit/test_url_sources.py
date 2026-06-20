@@ -601,6 +601,110 @@ async def test_fetch_github_tree_collects_markdown_image_sources(monkeypatch) ->
     ]
 
 
+async def test_fetch_github_repo_indexes_architecture_diagram_sources(monkeypatch) -> None:
+    archive = _zip_bytes(
+        {
+            "repo-main/README.md": (
+                b"# Project\n\n"
+                b"Architecture docs live in docs/architecture/c4.\n"
+            ),
+            "repo-main/docs/architecture/c4/L1 - System Context/docs.md": (
+                b"# C4 docs\n\n![System context](L1_system_context.png)\n"
+            ),
+            "repo-main/docs/architecture/c4/L1 - System Context/L1_system_context.png": (
+                b"not indexed as text"
+            ),
+            "repo-main/docs/architecture/c4/L1 - System Context/L1_system_context.puml": (
+                b"@startuml\n"
+                b"!include <C4/C4_Context>\n"
+                b'Person(user, "Investor")\n'
+                b'System(api, "Crypto Sentiment Pulse API")\n'
+                b'Rel(user, api, "Reads market sentiment")\n'
+                b"@enduml\n"
+            ),
+        }
+    )
+
+    async def fake_validate(url: str) -> str:
+        return url
+
+    class FakeAsyncClient:
+        def __init__(self, **kwargs) -> None:
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, traceback) -> None:
+            return None
+
+        async def get(self, url: str):
+            return httpx.Response(
+                200,
+                headers={"content-type": "application/zip"},
+                content=archive,
+                request=httpx.Request("GET", url),
+            )
+
+    monkeypatch.setattr(url_sources, "validate_fetch_url", fake_validate)
+    monkeypatch.setattr(url_sources.httpx, "AsyncClient", FakeAsyncClient)
+
+    fetched = await url_sources.fetch_url_source("https://github.com/acme/repo")
+    text = fetched.data.decode()
+
+    assert "docs/architecture/c4/L1 - System Context/L1_system_context.puml" in fetched.discovered_files
+    assert "--- FILE: docs/architecture/c4/L1 - System Context/L1_system_context.puml ---" in text
+    assert 'System(api, "Crypto Sentiment Pulse API")' in text
+    assert 'Rel(user, api, "Reads market sentiment")' in text
+
+
+async def test_fetch_github_tree_keeps_more_architecture_images(monkeypatch) -> None:
+    archive_entries = {
+        "repo-main/docs/architecture/c4/docs.md": "\n".join(
+            f"![Diagram {idx}](diagram-{idx}.png)" for idx in range(1, 13)
+        ).encode()
+    }
+    archive_entries.update(
+        {f"repo-main/docs/architecture/c4/diagram-{idx}.png": b"image" for idx in range(1, 13)}
+    )
+    archive = _zip_bytes(archive_entries)
+
+    async def fake_validate(url: str) -> str:
+        return url
+
+    class FakeAsyncClient:
+        def __init__(self, **kwargs) -> None:
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, traceback) -> None:
+            return None
+
+        async def get(self, url: str):
+            return httpx.Response(
+                200,
+                headers={"content-type": "application/zip"},
+                content=archive,
+                request=httpx.Request("GET", url),
+            )
+
+    monkeypatch.setattr(url_sources, "validate_fetch_url", fake_validate)
+    monkeypatch.setattr(url_sources.httpx, "AsyncClient", FakeAsyncClient)
+
+    fetched = await url_sources.fetch_url_source(
+        "https://github.com/acme/repo/tree/main/docs/architecture/c4"
+    )
+
+    assert len(fetched.image_sources) == 12
+    assert fetched.image_sources[-1] == UrlImageSource(
+        url="https://raw.githubusercontent.com/acme/repo/main/docs/architecture/c4/diagram-12.png",
+        alt="Diagram 12",
+        title="",
+    )
+
+
 async def test_fetch_github_tree_resolves_root_relative_images_from_tree_root(monkeypatch) -> None:
     archive = _zip_bytes(
         {
