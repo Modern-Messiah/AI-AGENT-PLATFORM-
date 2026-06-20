@@ -58,6 +58,18 @@ test('knowledge base file table surfaces document warnings', () => {
   assert.match(documentsViewSource, /class="document-warning"/)
 })
 
+test('knowledge base document deletion requires confirmation modal', () => {
+  assert.match(documentsViewSource, /import ConfirmModal from ['"]@\/components\/ConfirmModal\.vue['"]/)
+  assert.match(documentsViewSource, /const deleteConfirmDoc = ref\(null\)/)
+  assert.match(documentsViewSource, /function askDeleteDoc\(doc\)/)
+  assert.match(documentsViewSource, /async function confirmDeleteDoc\(\)/)
+  assert.match(documentsViewSource, /<ConfirmModal\s+v-if="deleteConfirmDoc"/)
+  assert.match(documentsViewSource, /@confirm="confirmDeleteDoc"/)
+  assert.match(documentsViewSource, /@cancel="cancelDeleteDoc"/)
+  assert.match(documentsViewSource, /@click="askDeleteDoc\(doc\)"/)
+  assert.doesNotMatch(documentsViewSource, /@click="removeDoc\(doc\.id\)"/)
+})
+
 test('knowledge base file table scrolls inside its card', () => {
   assert.match(documentsViewSource, /class="card documents-memory-card"/)
   assert.match(documentsViewSource, /class="documents-table-scroll"/)

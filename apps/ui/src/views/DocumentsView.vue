@@ -337,7 +337,7 @@
                                     <button
                                         class="btn btn-ghost btn-sm"
                                         :title="t('common.delete')"
-                                        @click="removeDoc(doc.id)"
+                                        @click="askDeleteDoc(doc)"
                                     >
                                         <AppIcon name="trash" />
                                     </button>
@@ -363,6 +363,15 @@
             </div>
         </div>
 
+        <ConfirmModal
+            v-if="deleteConfirmDoc"
+            :heading="t('documents.deleteConfirmTitle')"
+            :title="deleteConfirmDoc.name"
+            :warning="t('documents.deleteConfirmWarning')"
+            @confirm="confirmDeleteDoc"
+            @cancel="cancelDeleteDoc"
+        />
+
         <AppToast v-if="toast" v-bind="toast" @done="toast = null" />
     </div>
 </template>
@@ -375,6 +384,7 @@ import { useSettingsStore } from "@/stores/settings";
 import { useI18n } from "@/composables/useI18n";
 import AppIcon from "@/components/AppIcon.vue";
 import AppToast from "@/components/AppToast.vue";
+import ConfirmModal from "@/components/ConfirmModal.vue";
 import StatusBadge from "@/components/StatusBadge.vue";
 import {
     buildDocumentRoute,
@@ -399,6 +409,7 @@ const urlError = ref("");
 const checkedUrl = ref("");
 const urlChecking = ref(false);
 const urlAdding = ref(false);
+const deleteConfirmDoc = ref(null);
 const DOCUMENT_PAGE_SIZE = 100;
 const documentsLoadedCount = ref(0);
 const documentsHasMore = ref(false);
@@ -530,6 +541,25 @@ function sourceBadge(doc) {
 function openDocument(doc) {
     if (doc?._pending) return;
     router.push(buildDocumentRoute(doc.id));
+}
+
+function askDeleteDoc(doc) {
+    if (doc?._pending) {
+        removeDoc(doc.id);
+        return;
+    }
+    deleteConfirmDoc.value = doc;
+}
+
+function cancelDeleteDoc() {
+    deleteConfirmDoc.value = null;
+}
+
+async function confirmDeleteDoc() {
+    const doc = deleteConfirmDoc.value;
+    deleteConfirmDoc.value = null;
+    if (!doc) return;
+    await removeDoc(doc.id);
 }
 
 async function removeDoc(id) {

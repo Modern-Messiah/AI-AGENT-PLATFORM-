@@ -13,7 +13,7 @@
         <div class="confirm-session-name">{{ title }}</div>
 
         <div class="confirm-warning">
-          {{ t('chat.deleteWarning') }}
+          {{ warning || t('chat.deleteWarning') }}
         </div>
 
         <div class="confirm-actions">
@@ -34,6 +34,7 @@ import { useI18n } from '@/composables/useI18n'
 const props = defineProps({
   title:   { type: String, required: true },
   heading: { type: String, default: '' },
+  warning: { type: String, default: '' },
 })
 const emit = defineEmits(['confirm', 'cancel'])
 
