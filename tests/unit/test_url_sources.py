@@ -354,6 +354,54 @@ async def test_fetch_github_blob_source_uses_raw_file_without_github_api(monkeyp
     assert "api.github.com" not in "".join(requested_urls)
 
 
+async def test_fetch_github_blob_collects_markdown_image_sources(monkeypatch) -> None:
+    async def fake_validate(url: str) -> str:
+        return url
+
+    class FakeAsyncClient:
+        def __init__(self, **kwargs) -> None:
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, traceback) -> None:
+            return None
+
+        async def get(self, url: str):
+            return httpx.Response(
+                200,
+                headers={"content-type": "text/plain; charset=utf-8"},
+                content=(
+                    b"# Project docs\n\n"
+                    b"![Payment flow](docs/payment-flow.png)\n"
+                    b"![Build badge](https://img.shields.io/badge/build-passing.svg)\n"
+                    b'<img src="assets/table.webp" alt="Tariff table" title="Table">'
+                ),
+                request=httpx.Request("GET", url),
+            )
+
+    monkeypatch.setattr(url_sources, "validate_fetch_url", fake_validate)
+    monkeypatch.setattr(url_sources.httpx, "AsyncClient", FakeAsyncClient)
+
+    fetched = await url_sources.fetch_url_source(
+        "https://github.com/acme/docs/blob/main/README.md"
+    )
+
+    assert fetched.image_sources == [
+        UrlImageSource(
+            url="https://raw.githubusercontent.com/acme/docs/main/docs/payment-flow.png",
+            alt="Payment flow",
+            title="",
+        ),
+        UrlImageSource(
+            url="https://raw.githubusercontent.com/acme/docs/main/assets/table.webp",
+            alt="Tariff table",
+            title="Table",
+        ),
+    ]
+
+
 def _zip_bytes(entries: dict[str, bytes]) -> bytes:
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w") as archive:
@@ -412,6 +460,62 @@ async def test_fetch_github_tree_source_filters_archive_path_and_noise(monkeypat
     assert "Root readme" not in text
     assert "skip dependency" not in text
     assert "skip source code" not in text
+
+
+async def test_fetch_github_tree_collects_markdown_image_sources(monkeypatch) -> None:
+    archive = _zip_bytes(
+        {
+            "docs-main/docs/install.md": (
+                b"# Install\n"
+                b"![Network diagram](../assets/network.png \"Topology\")\n"
+                b".. image:: ../assets/rst-flow.jpg\n"
+            ),
+            "docs-main/assets/network.png": b"not indexed as text",
+            "docs-main/assets/rst-flow.jpg": b"not indexed as text",
+            "docs-main/dist/README.md": b"![Noise](../assets/noise.png)",
+        }
+    )
+
+    async def fake_validate(url: str) -> str:
+        return url
+
+    class FakeAsyncClient:
+        def __init__(self, **kwargs) -> None:
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, traceback) -> None:
+            return None
+
+        async def get(self, url: str):
+            return httpx.Response(
+                200,
+                headers={"content-type": "application/zip"},
+                content=archive,
+                request=httpx.Request("GET", url),
+            )
+
+    monkeypatch.setattr(url_sources, "validate_fetch_url", fake_validate)
+    monkeypatch.setattr(url_sources.httpx, "AsyncClient", FakeAsyncClient)
+
+    fetched = await url_sources.fetch_url_source(
+        "https://github.com/acme/docs/tree/main/docs"
+    )
+
+    assert fetched.image_sources == [
+        UrlImageSource(
+            url="https://raw.githubusercontent.com/acme/docs/main/assets/network.png",
+            alt="Network diagram",
+            title="Topology",
+        ),
+        UrlImageSource(
+            url="https://raw.githubusercontent.com/acme/docs/main/assets/rst-flow.jpg",
+            alt="",
+            title="",
+        ),
+    ]
 
 
 async def test_fetch_github_repo_root_tries_main_then_master(monkeypatch) -> None:

@@ -6,6 +6,7 @@ import io
 import ipaddress
 import json
 import logging
+import posixpath
 import re
 import socket
 import zipfile
@@ -38,6 +39,10 @@ _NOISE_IMAGE_RE = re.compile(
     r"(avatar|badge|button|captcha|favicon|icon|logo|pixel|sprite|tracking)",
     re.IGNORECASE,
 )
+_MARKDOWN_IMAGE_RE = re.compile(
+    r"!\[([^\]]*)\]\(\s*([^)\s]+)(?:\s+['\"]([^'\"]*)['\"])?\s*\)"
+)
+_RST_IMAGE_RE = re.compile(r"(?im)^\s*\.\.\s+(?:image|figure)::\s+(\S+)\s*$")
 _SUPPORTED_SUFFIX_TYPES = {
     ".html": "text/html",
     ".htm": "text/html",
@@ -559,6 +564,10 @@ def _github_raw_url(source: _GitHubSourceUrl) -> str:
     return f"https://raw.githubusercontent.com/{source.owner}/{source.repo}/{source.ref}/{source.path}"
 
 
+def _github_raw_file_url(source: _GitHubSourceUrl, ref: str, path: str) -> str:
+    return f"https://raw.githubusercontent.com/{source.owner}/{source.repo}/{ref}/{path}"
+
+
 def _github_archive_url(source: _GitHubSourceUrl, ref: str) -> str:
     return f"https://codeload.github.com/{source.owner}/{source.repo}/zip/refs/heads/{ref}"
 
@@ -605,6 +614,107 @@ def _decode_github_text(data: bytes, path: str) -> str:
     return text.strip()
 
 
+def _github_image_url_from_ref(
+    source: _GitHubSourceUrl,
+    *,
+    ref: str,
+    file_path: str,
+    target: str,
+) -> str | None:
+    target = target.strip().strip("<>")
+    if not target or target.startswith("#") or target.lower().startswith("data:"):
+        return None
+
+    parsed = urlparse(target)
+    if parsed.scheme in {"http", "https"}:
+        github_target = _parse_github_url(target)
+        if github_target and github_target.kind == "blob":
+            return _github_raw_url(github_target)
+        return target if _is_supported_image_url(target) else None
+    if parsed.scheme:
+        return None
+
+    cleaned = target.split("#", 1)[0].split("?", 1)[0].replace("\\", "/")
+    if not cleaned:
+        return None
+    if cleaned.startswith("/"):
+        rel_path = posixpath.normpath(cleaned.lstrip("/"))
+    else:
+        rel_path = posixpath.normpath(posixpath.join(posixpath.dirname(file_path), cleaned))
+    if rel_path == "." or rel_path.startswith("../"):
+        return None
+
+    url = _github_raw_file_url(source, ref, rel_path)
+    return url if _is_supported_image_url(url) else None
+
+
+def _github_image_source(
+    source: _GitHubSourceUrl,
+    *,
+    ref: str,
+    file_path: str,
+    target: str,
+    alt: str = "",
+    title: str = "",
+) -> UrlImageSource | None:
+    url = _github_image_url_from_ref(source, ref=ref, file_path=file_path, target=target)
+    if not url:
+        return None
+    descriptor = " ".join(value for value in (url, alt, title) if value)
+    if _NOISE_IMAGE_RE.search(descriptor):
+        return None
+    return UrlImageSource(url=url, alt=alt.strip()[:500], title=title.strip()[:500])
+
+
+def _github_referenced_image_sources(
+    source: _GitHubSourceUrl,
+    *,
+    ref: str,
+    files: list[tuple[str, str]],
+) -> list[UrlImageSource]:
+    sources: list[UrlImageSource] = []
+    seen: set[str] = set()
+    selected = max(0, settings.url_source_max_images)
+    if selected == 0:
+        return []
+
+    def add(candidate: UrlImageSource | None) -> None:
+        if candidate is None or candidate.url in seen or len(sources) >= selected:
+            return
+        seen.add(candidate.url)
+        sources.append(candidate)
+
+    for file_path, text in files:
+        for match in _MARKDOWN_IMAGE_RE.finditer(text):
+            add(
+                _github_image_source(
+                    source,
+                    ref=ref,
+                    file_path=file_path,
+                    target=match.group(2),
+                    alt=match.group(1) or "",
+                    title=match.group(3) or "",
+                )
+            )
+        for match in _RST_IMAGE_RE.finditer(text):
+            add(
+                _github_image_source(
+                    source,
+                    ref=ref,
+                    file_path=file_path,
+                    target=match.group(1),
+                )
+            )
+        html_parser = _ImageSourceParser(_github_raw_file_url(source, ref, file_path))
+        html_parser.feed(text)
+        for html_source in html_parser.sources:
+            add(html_source)
+        if len(sources) >= selected:
+            break
+
+    return sources
+
+
 def _github_data(
     source: _GitHubSourceUrl,
     *,
@@ -643,11 +753,12 @@ async def _fetch_github_blob_source(
             status_code=413,
         )
     text = _decode_github_text(response.content, source.path)
+    files = [(source.path, text)]
     data = _github_data(
         source,
         requested_url=requested_url,
         ref=source.ref or "",
-        files=[(source.path, text)],
+        files=files,
     )
     return FetchedUrlSource(
         requested_url=requested_url,
@@ -656,6 +767,11 @@ async def _fetch_github_blob_source(
         filename=_github_filename(source),
         content_type="text/plain; charset=utf-8",
         data=data,
+        image_sources=_github_referenced_image_sources(
+            source,
+            ref=source.ref or "",
+            files=files,
+        ),
         source_type="github",
         discovered_files=[source.path],
     )
@@ -748,6 +864,7 @@ async def _fetch_github_archive_source(
             filename=_github_filename(source),
             content_type="text/plain; charset=utf-8",
             data=data,
+            image_sources=_github_referenced_image_sources(source, ref=ref, files=files),
             source_type="github",
             discovered_files=[path for path, _ in files],
         )
