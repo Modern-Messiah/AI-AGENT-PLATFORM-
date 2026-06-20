@@ -390,6 +390,35 @@ For a private deployment, run this drill at least monthly or before any major up
 If a restore drill fails, treat that as a production bug. A backup procedure is not
 complete until restore works.
 
+## Restore Drill Record Template
+
+Copy this block into your ops notes after each drill:
+
+```text
+Restore drill date:
+Operator:
+Source deployment:
+Source Git commit:
+Backup ID / archive path:
+Backup created at:
+Restore target machine/directory:
+
+Restore duration:
+Postgres restore result:
+MinIO restore result:
+Compose health result:
+API health result:
+UI document list result:
+Document detail result:
+Scoped chat/citation result:
+Reindex verification result:
+
+Manual fixes needed:
+Data gaps found:
+Follow-up issues:
+Decision: PASS / FAIL
+```
+
 ## Known Gaps
 
 - `scripts/backup.py` backs up only the `app` Postgres database into MinIO. It is useful
