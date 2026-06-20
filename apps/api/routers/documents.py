@@ -237,6 +237,7 @@ async def check_url_document(body: UrlCheckRequest, tenant_id: TenantID) -> UrlC
         size_bytes=fetched.size_bytes,
         source_type=fetched.source_type,
         file_count=fetched.file_count,
+        image_count=len(fetched.image_sources),
         preview_files=fetched.discovered_files[:8],
     )
 

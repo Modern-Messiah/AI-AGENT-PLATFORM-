@@ -103,7 +103,8 @@
                 {{
                     urlCheck.source_type === "github"
                         ? t("documents.githubReady", {
-                              count: urlCheck.file_count || 0,
+                              files: urlCheck.file_count || 0,
+                              images: urlCheck.image_count || 0,
                           })
                         : t("documents.urlReady", {
                               title:

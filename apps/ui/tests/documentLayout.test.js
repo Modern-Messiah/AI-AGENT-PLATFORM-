@@ -130,7 +130,9 @@ test('GitHub URL sources reuse the URL panel and source badge', () => {
   assert.match(documentsViewSource, /documents\.githubReady/)
   assert.match(documentsViewSource, /documents\.githubBadge/)
   assert.match(documentsViewSource, /function isExternalSource\(doc\)/)
-  assert.match(i18nSource, /GitHub repository detected, found \{count\} useful files/)
+  assert.match(documentsViewSource, /files:\s*urlCheck\.file_count/)
+  assert.match(documentsViewSource, /images:\s*urlCheck\.image_count/)
+  assert.match(i18nSource, /GitHub source detected: found \{files\} useful files, \{images\} images/)
 })
 
 test('document status polling refreshes immediately and clears pending final states', () => {

@@ -756,6 +756,10 @@ async def test_check_url_document_returns_github_metadata(monkeypatch) -> None:
         filename="GitHub_acme_docs.txt",
         content_type="text/plain; charset=utf-8",
         data=b"GitHub Repository: acme/docs",
+        image_sources=[
+            UrlImageSource(url="https://raw.githubusercontent.com/acme/docs/main/diagram.png"),
+            UrlImageSource(url="https://raw.githubusercontent.com/acme/docs/main/screenshot.webp"),
+        ],
         source_type="github",
         discovered_files=["README.md", "docs/install.md", "docs/usage.md"],
     )
@@ -774,6 +778,7 @@ async def test_check_url_document_returns_github_metadata(monkeypatch) -> None:
     assert response.ok is True
     assert response.source_type == "github"
     assert response.file_count == 3
+    assert response.image_count == 2
     assert response.preview_files == ["README.md", "docs/install.md", "docs/usage.md"]
 
 
