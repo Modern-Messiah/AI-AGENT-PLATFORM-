@@ -52,6 +52,12 @@ test('knowledge base file table does not render document insights inline', () =>
   assert.doesNotMatch(documentsViewSource, /class="doc-questions"/)
 })
 
+test('knowledge base file table surfaces document warnings', () => {
+  assert.match(documentsViewSource, /doc\.warnings\?\.length/)
+  assert.match(documentsViewSource, /v-for="warning in doc\.warnings"/)
+  assert.match(documentsViewSource, /class="document-warning"/)
+})
+
 test('knowledge base file table scrolls inside its card', () => {
   assert.match(documentsViewSource, /class="card documents-memory-card"/)
   assert.match(documentsViewSource, /class="documents-table-scroll"/)

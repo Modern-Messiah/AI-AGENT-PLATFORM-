@@ -234,6 +234,18 @@
                                             {{ doc.error }}
                                         </div>
                                         <div
+                                            v-if="doc.warnings?.length"
+                                            class="document-warnings"
+                                        >
+                                            <div
+                                                v-for="warning in doc.warnings"
+                                                :key="warning"
+                                                class="document-warning"
+                                            >
+                                                {{ warning }}
+                                            </div>
+                                        </div>
+                                        <div
                                             style="
                                                 font-size: 10px;
                                                 color: var(--muted);
@@ -965,6 +977,21 @@ function handleFileInput(e) {
     min-width: 0;
     max-width: 100%;
     overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.document-warnings {
+    display: grid;
+    gap: 3px;
+    margin-top: 4px;
+}
+.document-warning {
+    max-width: 100%;
+    overflow: hidden;
+    color: var(--yellow);
+    font-family: var(--mono);
+    font-size: 10px;
+    line-height: 1.35;
     text-overflow: ellipsis;
     white-space: nowrap;
 }

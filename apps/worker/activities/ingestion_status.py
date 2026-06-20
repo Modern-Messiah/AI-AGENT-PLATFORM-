@@ -26,6 +26,7 @@ async def mark_document_processing(input: IngestionInput) -> None:
                 status=DocumentStatus.processing,
                 processing_stage="preparing",
                 error=None,
+                warnings=[],
             )
         )
 

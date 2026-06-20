@@ -41,6 +41,7 @@ async def test_store_chunk_batch_deletes_existing_chunks_before_insert(monkeypat
         metadata=[{"source_url": "https://example.com/one.png"}, {"page": 2}],
         summary="Fresh summary",
         suggested_questions=["Fresh question?"],
+        warnings=["1 URL image processed, 1 skipped"],
     )
 
     monkeypatch.setattr(
@@ -55,6 +56,7 @@ async def test_store_chunk_batch_deletes_existing_chunks_before_insert(monkeypat
     assert len(session.statements) == 2
     assert "DELETE FROM chunks" in str(session.statements[0])
     assert "UPDATE documents" in str(session.statements[1])
+    assert "warnings" in str(session.statements[1])
     assert [row.chunk_idx for row in session.rows] == [0, 1]
     assert [row.content for row in session.rows] == ["fresh chunk one", "fresh chunk two"]
     assert session.rows[0].chunk_metadata == {

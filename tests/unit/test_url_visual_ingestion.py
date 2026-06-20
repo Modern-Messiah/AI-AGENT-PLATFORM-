@@ -263,9 +263,10 @@ async def test_url_visual_ingestion_logs_summary_counters(monkeypatch, caplog) -
     monkeypatch.setattr("apps.worker.activities.url_visuals.object_store.put", lambda *args: None)
 
     with caplog.at_level(logging.INFO, logger="apps.worker.activities.url_visuals"):
-        segments = await append_url_visual_segments(input, [])
+        result = await append_url_visual_segments(input, [])
 
-    assert len(segments) == 1
+    assert len(result.segments) == 1
+    assert result.warnings == ["1 URL image processed, 1 skipped"]
     summary = [
         record.message
         for record in caplog.records

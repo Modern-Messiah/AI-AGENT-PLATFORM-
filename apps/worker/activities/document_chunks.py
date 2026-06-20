@@ -16,7 +16,8 @@ from apps.worker.activities.url_visuals import append_url_visual_segments
 async def parse_original_document(input: IngestionInput) -> ParsedDoc:
     data = object_store.get(input.object_key)
     segments = await parse_to_segments(data, input.filename)
-    segments = await append_url_visual_segments(input, segments)
+    url_visuals = await append_url_visual_segments(input, segments)
+    segments = url_visuals.segments
     insights = build_document_insights(segments, filename=input.filename)
     return ParsedDoc(
         segments=[
@@ -28,6 +29,7 @@ async def parse_original_document(input: IngestionInput) -> ParsedDoc:
         ],
         summary=insights.summary,
         suggested_questions=insights.suggested_questions,
+        warnings=url_visuals.warnings,
     )
 
 
@@ -73,6 +75,7 @@ async def build_chunk_batch(
         ],
         summary=parsed.summary,
         suggested_questions=parsed.suggested_questions,
+        warnings=parsed.warnings,
     )
 
 
@@ -96,6 +99,7 @@ async def store_chunk_batch(input: IngestionInput, batch: ChunkBatch) -> int:
             .values(
                 summary=batch.summary or None,
                 suggested_questions=batch.suggested_questions,
+                warnings=batch.warnings,
             )
         )
         s.add_all(

@@ -19,6 +19,7 @@ class ParsedDoc:
     text: str = ""
     summary: str = ""
     suggested_questions: list = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -28,6 +29,7 @@ class ChunkBatch:
     metadata: list[dict] = field(default_factory=list)
     summary: str = ""
     suggested_questions: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)

@@ -4,7 +4,7 @@ import asyncio
 import json
 import logging
 import uuid
-from dataclasses import replace
+from dataclasses import dataclass, field, replace
 from pathlib import PurePosixPath
 from urllib.parse import urljoin, urlparse
 
@@ -39,6 +39,28 @@ _IMAGE_TYPES = {
 }
 
 
+@dataclass(frozen=True)
+class UrlVisualSegmentsResult:
+    segments: list[ParsedSegment]
+    warnings: list[str] = field(default_factory=list)
+
+    def __iter__(self):
+        return iter(self.segments)
+
+    def __len__(self) -> int:
+        return len(self.segments)
+
+    def __getitem__(self, index):
+        return self.segments[index]
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, list):
+            return self.segments == other
+        if isinstance(other, UrlVisualSegmentsResult):
+            return self.segments == other.segments and self.warnings == other.warnings
+        return NotImplemented
+
+
 def _heartbeat(details: dict[str, object]) -> None:
     try:
         activity.heartbeat(details)
@@ -60,6 +82,17 @@ def _safe_image_filename(url: str, content_type: str) -> str:
     if name and PurePosixPath(name).suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}:
         return name
     return f"url-image{suffix or '.png'}"
+
+
+def _plural(value: int, singular: str, plural: str) -> str:
+    return singular if value == 1 else plural
+
+
+def _url_image_summary_warning(processed: int, failed: int) -> str | None:
+    if failed <= 0:
+        return None
+    processed_label = _plural(processed, "image", "images")
+    return f"{processed} URL {processed_label} processed, {failed} skipped"
 
 
 def _load_url_image_sources(object_key: str) -> list[UrlImageSource] | None:
@@ -187,10 +220,10 @@ async def _upsert_url_image_asset(
 async def append_url_visual_segments(
     input: IngestionInput,
     segments: list[ParsedSegment],
-) -> list[ParsedSegment]:
+) -> UrlVisualSegmentsResult:
     sources = _load_url_image_sources(input.object_key)
     if sources is None:
-        return segments
+        return UrlVisualSegmentsResult(segments=list(segments))
 
     await _clear_url_image_assets(input)
     if not sources:
@@ -199,7 +232,7 @@ async def append_url_visual_segments(
             input.tenant_id,
             input.document_id,
         )
-        return segments
+        return UrlVisualSegmentsResult(segments=list(segments))
 
     enriched = list(segments)
     processed = 0
@@ -280,4 +313,8 @@ async def append_url_visual_segments(
         failed,
         segment_count,
     )
-    return enriched
+    warnings = []
+    summary_warning = _url_image_summary_warning(processed, failed)
+    if summary_warning:
+        warnings.append(summary_warning)
+    return UrlVisualSegmentsResult(segments=enriched, warnings=warnings)

@@ -263,6 +263,7 @@ async def finalize_visual_document(
         ],
         summary=insights.summary,
         suggested_questions=insights.suggested_questions,
+        warnings=warnings,
     ))
     written = await store_chunks(input, batch)
 
