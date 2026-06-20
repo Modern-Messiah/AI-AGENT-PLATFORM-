@@ -58,34 +58,58 @@ class SemanticCache:
             pipe.get(self._entry_key(tenant_id, eid))
         raw_values = await pipe.execute()
 
-        query_vec = np.array((await embed_texts([query]))[0], dtype=np.float32)
-        query_norm = np.linalg.norm(query_vec)
-
-        best_sim = _THRESHOLD
-        best_result: AgentRunOutput | None = None
+        candidates: list[tuple[str, np.ndarray, float, AgentRunOutput]] = []
         expired: list[str] = []
 
         for eid, raw in zip(entry_ids, raw_values, strict=True):
             if raw is None:
                 expired.append(eid)
                 continue
-            data = json.loads(raw)
+            try:
+                data = json.loads(raw)
+            except (TypeError, json.JSONDecodeError):
+                expired.append(eid)
+                continue
+            if not isinstance(data, dict):
+                expired.append(eid)
+                continue
             result_data = data.get("result") or {}
             answer = result_data.get("answer")
             if not isinstance(answer, str) or not answer.strip():
                 expired.append(eid)
                 continue
-            cached_vec = np.array(data["vec"], dtype=np.float32)
-            sim = float(
-                np.dot(query_vec, cached_vec) / (query_norm * np.linalg.norm(cached_vec) + 1e-8)
-            )
-            if sim > best_sim:
-                best_sim = sim
-                best_result = AgentRunOutput(**result_data)
+            try:
+                result = AgentRunOutput(**result_data)
+                cached_vec = np.array(data["vec"], dtype=np.float32)
+                cached_norm = float(np.linalg.norm(cached_vec))
+            except (TypeError, ValueError, KeyError):
+                expired.append(eid)
+                continue
+            if cached_vec.ndim != 1 or not np.isfinite(cached_vec).all() or cached_norm <= 0:
+                expired.append(eid)
+                continue
+            candidates.append((eid, cached_vec, cached_norm, result))
 
         # Clean up expired ids from the index (fire-and-forget).
         if expired:
             await r.zrem(idx_key, *expired)
+
+        if not candidates:
+            return None
+
+        query_vec = np.array((await embed_texts([query]))[0], dtype=np.float32)
+        query_norm = float(np.linalg.norm(query_vec))
+
+        best_sim = _THRESHOLD
+        best_result: AgentRunOutput | None = None
+
+        for _eid, cached_vec, cached_norm, result in candidates:
+            sim = float(
+                np.dot(query_vec, cached_vec) / (query_norm * cached_norm + 1e-8)
+            )
+            if sim > best_sim:
+                best_sim = sim
+                best_result = result
 
         if best_result is not None:
             log.info("semantic cache hit | tenant=%s sim=%.4f", tenant_id, best_sim)
