@@ -73,6 +73,7 @@ _GITHUB_SKIP_DIRS = {
 }
 _GITHUB_MAX_FILES = 100
 _GITHUB_MAX_FILE_BYTES = 512 * 1024
+_GITHUB_MAX_ARCHIVE_BYTES = 75 * 1024 * 1024
 _BLOCK_TAGS = {
     "address",
     "article",
@@ -726,7 +727,7 @@ async def _fetch_github_archive_source(
         _, response = await _get_with_redirects(
             client,
             archive_url,
-            max_bytes=max_bytes,
+            max_bytes=_GITHUB_MAX_ARCHIVE_BYTES,
             allowed_statuses={404},
         )
         if response.status_code == 404:

@@ -468,6 +468,52 @@ async def test_fetch_github_repo_root_tries_main_then_master(monkeypatch) -> Non
     assert "skip built artifact" not in text
 
 
+async def test_fetch_github_tree_allows_large_archive_when_filtered_text_is_small(monkeypatch) -> None:
+    requested_urls: list[str] = []
+    archive = _zip_bytes(
+        {
+            "repo-main/docs/guide.md": b"# Guide\nSmall useful docs.",
+            "repo-main/dist/large-build.txt": b"x" * 2048,
+        }
+    )
+
+    async def fake_validate(url: str) -> str:
+        return url
+
+    class FakeAsyncClient:
+        def __init__(self, **kwargs) -> None:
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, traceback) -> None:
+            return None
+
+        async def get(self, url: str):
+            requested_urls.append(url)
+            return httpx.Response(
+                200,
+                headers={"content-type": "application/zip"},
+                content=archive,
+                request=httpx.Request("GET", url),
+            )
+
+    monkeypatch.setattr(url_sources.settings, "url_source_max_bytes", 512)
+    monkeypatch.setattr(url_sources, "validate_fetch_url", fake_validate)
+    monkeypatch.setattr(url_sources.httpx, "AsyncClient", FakeAsyncClient)
+
+    fetched = await url_sources.fetch_url_source(
+        "https://github.com/example/repo/tree/main/docs"
+    )
+    text = fetched.data.decode()
+
+    assert requested_urls == ["https://codeload.github.com/example/repo/zip/refs/heads/main"]
+    assert fetched.discovered_files == ["docs/guide.md"]
+    assert "Small useful docs." in text
+    assert "large-build" not in text
+
+
 async def test_check_url_document_returns_github_metadata(monkeypatch) -> None:
     fetched = FetchedUrlSource(
         requested_url="https://github.com/acme/docs",
@@ -498,7 +544,7 @@ async def test_check_url_document_returns_github_metadata(monkeypatch) -> None:
 
 
 class _FakeResult:
-    def __init__(self, session: "_FakeSession") -> None:
+    def __init__(self, session: _FakeSession) -> None:
         self.session = session
 
     def scalar_one(self):
