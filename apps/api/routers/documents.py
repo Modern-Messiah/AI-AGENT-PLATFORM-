@@ -18,6 +18,7 @@ from apps.api.schemas import (
     AddUrlDocumentRequest,
     DocumentAssetResponse,
     DocumentChunkPreview,
+    DocumentReindexResponse,
     DocumentResponse,
     UrlCheckRequest,
     UrlCheckResponse,
@@ -50,6 +51,32 @@ def _store_url_source_objects(object_key: str, fetched: FetchedUrlSource) -> Non
         url_image_sidecar_payload(fetched.image_sources),
         content_type="application/json",
     )
+
+
+def _object_bytes_or_none(object_key: str) -> bytes | None:
+    try:
+        return object_store.get(object_key)
+    except Exception as exc:
+        log.debug("source object comparison skipped | key=%s error=%s", object_key, exc)
+        return None
+
+
+def _url_source_objects_changed(object_key: str, fetched: FetchedUrlSource) -> bool:
+    return (
+        _object_bytes_or_none(object_key) != fetched.data
+        or _object_bytes_or_none(url_image_sidecar_key(object_key))
+        != url_image_sidecar_payload(fetched.image_sources)
+    )
+
+
+def _apply_url_source_metadata(doc: Document, fetched: FetchedUrlSource) -> None:
+    doc.filename = fetched.filename
+    doc.mime_type = fetched.content_type
+    doc.size_bytes = fetched.size_bytes
+    doc.source_type = fetched.source_type
+    doc.source_url = fetched.final_url
+    doc.source_title = fetched.title
+    doc.source_checked_at = datetime.now(timezone.utc)
 
 
 @router.get("/documents", response_model=list[DocumentResponse])
@@ -424,12 +451,12 @@ async def list_document_chunks(
     ]
 
 
-@router.post("/documents/{document_id}/reindex", response_model=DocumentResponse, status_code=202)
+@router.post("/documents/{document_id}/reindex", response_model=DocumentReindexResponse, status_code=202)
 async def reindex_document(
     document_id: uuid.UUID,
     tenant_id: TenantID,
     request: Request,
-) -> DocumentResponse:
+) -> DocumentReindexResponse:
     async with tenant_session(tenant_id) as s:
         doc = (
             await s.execute(
@@ -449,14 +476,16 @@ async def reindex_document(
             except UrlSourceError as exc:
                 raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
 
+            changed = _url_source_objects_changed(doc.object_key, fetched)
+            _apply_url_source_metadata(doc, fetched)
+            if not changed and doc.status == DocumentStatus.done:
+                await s.flush()
+                return DocumentReindexResponse(
+                    document=document_response(doc),
+                    changed=False,
+                    workflow_started=False,
+                )
             _store_url_source_objects(doc.object_key, fetched)
-            doc.filename = fetched.filename
-            doc.mime_type = fetched.content_type
-            doc.size_bytes = fetched.size_bytes
-            doc.source_type = fetched.source_type
-            doc.source_url = fetched.final_url
-            doc.source_title = fetched.title
-            doc.source_checked_at = datetime.now(timezone.utc)
 
         doc.status = DocumentStatus.pending
         doc.processing_stage = "queued"
@@ -492,7 +521,7 @@ async def reindex_document(
             )
         raise HTTPException(status_code=503, detail="ingestion service unavailable") from e
 
-    return response
+    return DocumentReindexResponse(document=response, changed=True, workflow_started=True)
 
 
 @router.delete("/documents/{document_id}", status_code=204)

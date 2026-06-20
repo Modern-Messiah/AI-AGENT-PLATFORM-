@@ -74,6 +74,12 @@ class DocumentResponse(BaseModel):
     created_at: str | None = None
 
 
+class DocumentReindexResponse(BaseModel):
+    document: DocumentResponse
+    changed: bool = True
+    workflow_started: bool = True
+
+
 class UrlCheckRequest(BaseModel):
     url: str = Field(min_length=1, max_length=4096)
 

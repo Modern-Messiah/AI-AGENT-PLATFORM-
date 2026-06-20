@@ -141,6 +141,19 @@ test('GitHub URL sources reuse the URL panel and source badge', () => {
   assert.match(i18nSource, /GitHub source detected: found \{files\} useful files, \{images\} images/)
 })
 
+test('external documents show last checked and reindex result states', () => {
+  assert.match(documentsViewSource, /doc\.sourceCheckedLabel/)
+  assert.match(documentsViewSource, /documents\.sourceCheckedAt/)
+  assert.match(documentsViewSource, /doc\._reindexing/)
+  assert.match(documentsViewSource, /documents\.reindexUpdating/)
+  assert.match(documentsViewSource, /documents\.reindexUpdated/)
+  assert.match(documentsViewSource, /documents\.reindexNoChanges/)
+  assert.match(documentsViewSource, /workflow_started/)
+  assert.match(documentsViewSource, /changed/)
+  assert.match(i18nSource, /Изменений не найдено/)
+  assert.match(i18nSource, /No changes found/)
+})
+
 test('document status polling refreshes immediately and clears pending final states', () => {
   assert.match(
     documentsViewSource,
@@ -154,7 +167,7 @@ test('document status polling refreshes immediately and clears pending final sta
   const doneIndex = documentsViewSource.search(/if\s*\(\s*data\.status\s*===\s*['"]done['"]\s*\)/)
   const failedIndex = documentsViewSource.search(/if\s*\(\s*data\.status\s*===\s*['"]failed['"]\s*\)/)
   const pendingIndex = documentsViewSource.search(
-    /updateDoc\s*\(\s*docId\s*,\s*\{\s*\.\.\.normalized,\s*_pending:\s*true\s*\}\s*\)/,
+    /updateDoc\s*\(\s*docId\s*,\s*\{\s*\.\.\.normalized,\s*_pending:\s*true,\s*_reindexing:\s*Boolean\(options\.reindex\),\s*\}\s*\)/,
   )
 
   assert.notEqual(doneIndex, -1)

@@ -224,6 +224,19 @@
                                             }}</span>
                                         </div>
                                         <div
+                                            v-if="
+                                                isExternalSource(doc) &&
+                                                doc.sourceCheckedLabel
+                                            "
+                                            class="source-checked"
+                                        >
+                                            {{
+                                                t("documents.sourceCheckedAt", {
+                                                    date: doc.sourceCheckedLabel,
+                                                })
+                                            }}
+                                        </div>
+                                        <div
                                             v-if="doc.error"
                                             style="
                                                 font-size: 11px;
@@ -295,6 +308,9 @@
                                                 }"
                                             ></div>
                                         </div>
+                                    </div>
+                                    <div v-if="doc._reindexing" class="reindex-note">
+                                        {{ t("documents.reindexUpdating") }}
                                     </div>
                                 </div>
                             </td>
@@ -467,19 +483,41 @@ async function removeDoc(id) {
 
 async function reindexDoc(doc) {
     if (!canReindexDocument(doc)) return;
-    updateDoc(doc.id, { status: "pending", error: null, _pending: true });
+    updateDoc(doc.id, {
+        status: "pending",
+        error: null,
+        _pending: true,
+        _reindexing: true,
+    });
     toast.value = {
         msg: t("documents.reindexing", { name: doc.name }),
         type: "info",
     };
     try {
-        await apiFetch(`/documents/${doc.id}/reindex`, { method: "POST" });
-        pollStatus(doc.id);
+        const data = await apiFetch(`/documents/${doc.id}/reindex`, { method: "POST" });
+        const payload = data.document || data;
+        const normalized = normalizeDocument(payload, settings.locale);
+        const workflowStarted = data.workflow_started !== false;
+        const changed = data.changed !== false;
+        updateDoc(doc.id, {
+            ...normalized,
+            _pending: workflowStarted,
+            _reindexing: workflowStarted,
+        });
+        if (!workflowStarted) {
+            toast.value = {
+                msg: t("documents.reindexNoChanges", { name: normalized.name }),
+                type: "info",
+            };
+            return;
+        }
+        pollStatus(doc.id, { reindex: true, changed });
     } catch (e) {
         updateDoc(doc.id, {
             status: "failed",
             error: e.message,
             _pending: false,
+            _reindexing: false,
         });
         toast.value = {
             msg: t("documents.reindexError", { message: e.message }),
@@ -515,7 +553,7 @@ function updateDoc(id, patch) {
     docs.value = docs.value.map((d) => (d.id === id ? { ...d, ...patch } : d));
 }
 
-async function pollStatus(docId) {
+async function pollStatus(docId, options = {}) {
     // Poll for up to 10 minutes (120 × 5s). Check immediately, then wait between attempts.
     for (let i = 0; i < 120; i++) {
         if (i > 0) await new Promise((r) => setTimeout(r, 5000));
@@ -523,7 +561,22 @@ async function pollStatus(docId) {
             const data = await apiFetch(`/documents/${docId}`);
             const normalized = normalizeDocument(data, settings.locale);
             if (data.status === "done") {
-                updateDoc(docId, { ...normalized, _pending: false });
+                updateDoc(docId, {
+                    ...normalized,
+                    _pending: false,
+                    _reindexing: false,
+                });
+                if (options.reindex) {
+                    toast.value = {
+                        msg: t(
+                            options.changed === false
+                                ? "documents.reindexNoChanges"
+                                : "documents.reindexUpdated",
+                            { name: normalized.name },
+                        ),
+                        type: "info",
+                    };
+                }
                 return;
             }
             if (data.status === "failed") {
@@ -531,14 +584,24 @@ async function pollStatus(docId) {
                     ...normalized,
                     error: data.error || "Failed",
                     _pending: false,
+                    _reindexing: false,
                 });
                 return;
             }
-            updateDoc(docId, { ...normalized, _pending: true });
+            updateDoc(docId, {
+                ...normalized,
+                _pending: true,
+                _reindexing: Boolean(options.reindex),
+            });
         } catch {}
     }
     // After 10 min show 'processing' (not 'failed') — Temporal may still be running
-    updateDoc(docId, { status: "processing", error: null, _pending: false });
+    updateDoc(docId, {
+        status: "processing",
+        error: null,
+        _pending: false,
+        _reindexing: false,
+    });
 }
 
 async function uploadFile(file) {
@@ -952,6 +1015,15 @@ function handleFileInput(e) {
     gap: 8px;
     min-width: 0;
 }
+.reindex-note {
+    overflow: hidden;
+    color: var(--accent);
+    font-family: var(--mono);
+    font-size: 9px;
+    line-height: 1.25;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
 .page-progress {
     display: grid;
     gap: 4px;
@@ -978,6 +1050,14 @@ function handleFileInput(e) {
     max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.source-checked {
+    margin-top: 2px;
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 10px;
+    line-height: 1.35;
     white-space: nowrap;
 }
 .document-warnings {

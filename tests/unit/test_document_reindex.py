@@ -7,7 +7,12 @@ from types import SimpleNamespace
 from apps.api import main as api
 from apps.api.main import app
 from apps.api.routers import documents as document_routes
-from apps.api.services.url_sources import FetchedUrlSource, UrlImageSource, url_image_sidecar_key
+from apps.api.services.url_sources import (
+    FetchedUrlSource,
+    UrlImageSource,
+    url_image_sidecar_key,
+    url_image_sidecar_payload,
+)
 from fastapi.routing import APIRoute
 from packages.storage import DocumentStatus
 
@@ -94,8 +99,10 @@ async def test_reindex_document_starts_new_ingestion_workflow(monkeypatch) -> No
     response = await document_routes.reindex_document(document_id, "tenant-a", request)
 
     assert fake_session.session.flushed is True
-    assert response.status == DocumentStatus.pending
-    assert response.error is None
+    assert response.document.status == DocumentStatus.pending
+    assert response.document.error is None
+    assert response.changed is True
+    assert response.workflow_started is True
     assert cleared == [("tenant-a", f"document-reindex:{document_id}")]
 
     [(args, kwargs)] = fake_temporal.calls
@@ -150,9 +157,17 @@ async def test_reindex_url_document_refetches_source(monkeypatch) -> None:
     def fake_put(object_key: str, data: bytes, content_type: str | None = None) -> None:
         stored.append((object_key, data, content_type))
 
+    def fake_get(object_key: str) -> bytes:
+        if object_key == "tenant-url/source.txt":
+            return b"old url body"
+        if object_key == url_image_sidecar_key("tenant-url/source.txt"):
+            return b'{"images":[]}'
+        raise FileNotFoundError(object_key)
+
     monkeypatch.setattr(document_routes, "tenant_session", lambda tenant_id: fake_session)
     monkeypatch.setattr(api.app.state, "temporal", fake_temporal, raising=False)
     monkeypatch.setattr(document_routes, "fetch_url_source", fake_fetch_url_source)
+    monkeypatch.setattr(document_routes.object_store, "get", fake_get)
     monkeypatch.setattr(document_routes.object_store, "put", fake_put)
 
     async def fake_invalidate(tenant_id: str, reason: str) -> None:
@@ -178,8 +193,10 @@ async def test_reindex_url_document_refetches_source(monkeypatch) -> None:
     assert document.source_url == "https://example.com/new"
     assert document.source_title == "New title"
     assert document.source_checked_at != checked_at
-    assert response.filename == "new-title.txt"
-    assert response.source_url == "https://example.com/new"
+    assert response.document.filename == "new-title.txt"
+    assert response.document.source_url == "https://example.com/new"
+    assert response.changed is True
+    assert response.workflow_started is True
 
     [(args, _kwargs)] = fake_temporal.calls
     ingestion_input = args[1]
@@ -238,9 +255,17 @@ async def test_reindex_github_document_rewrites_image_sidecar(monkeypatch) -> No
     def fake_put(object_key: str, data: bytes, content_type: str | None = None) -> None:
         stored.append((object_key, data, content_type))
 
+    def fake_get(object_key: str) -> bytes:
+        if object_key == "tenant-github/source.txt":
+            return b"old github body"
+        if object_key == url_image_sidecar_key("tenant-github/source.txt"):
+            return b'{"images":[]}'
+        raise FileNotFoundError(object_key)
+
     monkeypatch.setattr(document_routes, "tenant_session", lambda tenant_id: fake_session)
     monkeypatch.setattr(api.app.state, "temporal", fake_temporal, raising=False)
     monkeypatch.setattr(document_routes, "fetch_url_source", fake_fetch_url_source)
+    monkeypatch.setattr(document_routes.object_store, "get", fake_get)
     monkeypatch.setattr(document_routes.object_store, "put", fake_put)
 
     async def fake_invalidate(tenant_id: str, reason: str) -> None:
@@ -269,10 +294,97 @@ async def test_reindex_github_document_rewrites_image_sidecar(monkeypatch) -> No
     assert document.filename == "GitHub_acme_docs.txt"
     assert document.source_type == "github"
     assert document.source_checked_at != checked_at
-    assert response.status == DocumentStatus.pending
+    assert response.document.status == DocumentStatus.pending
+    assert response.changed is True
+    assert response.workflow_started is True
 
     [(args, kwargs)] = fake_temporal.calls
     ingestion_input = args[1]
     assert ingestion_input.object_key == "tenant-github/source.txt"
     assert ingestion_input.filename == "GitHub_acme_docs.txt"
     assert kwargs["id"].startswith(f"reindex-tenant-github-{document_id}-")
+
+
+async def test_reindex_github_document_reports_no_changes_without_workflow(monkeypatch) -> None:
+    document_id = uuid.UUID("59f40866-02e3-42f8-9944-d422353242ff")
+    checked_at = datetime(2026, 6, 7, tzinfo=UTC)
+    image_sources = [
+        UrlImageSource(
+            url="https://raw.githubusercontent.com/acme/docs/main/docs/flow.png",
+            alt="Flow",
+            title="Payment flow",
+        )
+    ]
+    document = SimpleNamespace(
+        id=document_id,
+        tenant_id="tenant-github",
+        filename="GitHub_acme_docs.txt",
+        mime_type="text/plain",
+        object_key="tenant-github/source.txt",
+        size_bytes=len(b"same github body"),
+        source_type="github",
+        source_url="https://github.com/acme/docs/tree/main/docs",
+        source_title="GitHub: acme/docs",
+        source_checked_at=checked_at,
+        summary="Old summary.",
+        suggested_questions=["Old question?"],
+        status=DocumentStatus.done,
+        processing_stage="done",
+        processed_pages=1,
+        total_pages=1,
+        warnings=["old warning"],
+        error=None,
+        created_at=checked_at,
+    )
+    fake_session = _FakeTenantSession(document)
+    fake_temporal = _FakeTemporal()
+    stored: list[tuple[str, bytes, str | None]] = []
+    cleared: list[tuple[str, str]] = []
+
+    async def fake_fetch_url_source(url: str) -> FetchedUrlSource:
+        assert url == "https://github.com/acme/docs/tree/main/docs"
+        return FetchedUrlSource(
+            requested_url=url,
+            final_url=url,
+            title="GitHub: acme/docs",
+            filename="GitHub_acme_docs.txt",
+            content_type="text/plain",
+            data=b"same github body",
+            image_sources=image_sources,
+            source_type="github",
+            discovered_files=["docs/README.md"],
+        )
+
+    def fake_get(object_key: str) -> bytes:
+        if object_key == "tenant-github/source.txt":
+            return b"same github body"
+        if object_key == url_image_sidecar_key("tenant-github/source.txt"):
+            return url_image_sidecar_payload(image_sources)
+        raise FileNotFoundError(object_key)
+
+    def fake_put(object_key: str, data: bytes, content_type: str | None = None) -> None:
+        stored.append((object_key, data, content_type))
+
+    async def fake_invalidate(tenant_id: str, reason: str) -> None:
+        cleared.append((tenant_id, reason))
+
+    monkeypatch.setattr(document_routes, "tenant_session", lambda tenant_id: fake_session)
+    monkeypatch.setattr(api.app.state, "temporal", fake_temporal, raising=False)
+    monkeypatch.setattr(document_routes, "fetch_url_source", fake_fetch_url_source)
+    monkeypatch.setattr(document_routes.object_store, "get", fake_get)
+    monkeypatch.setattr(document_routes.object_store, "put", fake_put)
+    monkeypatch.setattr(document_routes, "invalidate_semantic_cache", fake_invalidate)
+
+    request = SimpleNamespace(app=api.app)
+    response = await document_routes.reindex_document(document_id, "tenant-github", request)
+
+    assert stored == []
+    assert cleared == []
+    assert fake_temporal.calls == []
+    assert document.status == DocumentStatus.done
+    assert document.source_checked_at != checked_at
+    assert document.warnings == ["old warning"]
+    assert response.document.status == DocumentStatus.done
+    assert response.document.source_checked_at == document.source_checked_at.isoformat()
+    assert response.changed is False
+    assert response.workflow_started is False
