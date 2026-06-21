@@ -5,6 +5,7 @@ import {
   buildDocumentChatRoute,
   buildDocumentRoute,
   buildQuestionRoute,
+  canOpenDocumentChat,
   canReindexDocument,
   knowledgeBaseStats,
   normalizeDocument,
@@ -74,6 +75,16 @@ test('allows reindexing only stable server-side documents', () => {
   assert.equal(canReindexDocument({ status: 'processing' }), false)
   assert.equal(canReindexDocument({ status: 'pending' }), false)
   assert.equal(canReindexDocument({ status: 'done', _pending: true }), false)
+})
+
+
+test('allows document chat only for indexed documents', () => {
+  assert.equal(canOpenDocumentChat({ status: 'done' }), true)
+  assert.equal(canOpenDocumentChat({ status: 'pending' }), false)
+  assert.equal(canOpenDocumentChat({ status: 'processing' }), false)
+  assert.equal(canOpenDocumentChat({ status: 'failed' }), false)
+  assert.equal(canOpenDocumentChat({ status: 'done', _pending: true }), false)
+  assert.equal(canOpenDocumentChat(null), false)
 })
 
 

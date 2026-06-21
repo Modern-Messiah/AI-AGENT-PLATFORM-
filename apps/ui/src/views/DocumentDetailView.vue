@@ -176,7 +176,12 @@ import { useApi } from '@/composables/useApi'
 import { useSettingsStore } from '@/stores/settings'
 import { useI18n } from '@/composables/useI18n'
 import StatusBadge from '@/components/StatusBadge.vue'
-import { buildDocumentChatRoute, buildQuestionRoute, normalizeDocument } from '@/utils/documents'
+import {
+  buildDocumentChatRoute,
+  buildQuestionRoute,
+  canOpenDocumentChat as canOpenDocumentChatForDocument,
+  normalizeDocument,
+} from '@/utils/documents'
 
 const route = useRoute()
 const router = useRouter()
@@ -193,7 +198,7 @@ const documentId = computed(() => String(route.params.id || ''))
 const normalized = computed(() => (
   document.value ? normalizeDocument(document.value, settings.locale) : null
 ))
-const canOpenDocumentChat = computed(() => normalized.value?.status === 'done')
+const canOpenDocumentChat = computed(() => canOpenDocumentChatForDocument(normalized.value))
 const targetChunkId = computed(() => (
   typeof route.query.chunk === 'string' ? route.query.chunk : ''
 ))

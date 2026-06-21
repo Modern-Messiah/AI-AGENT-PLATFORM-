@@ -62,6 +62,10 @@ export function canReindexDocument(doc) {
   )
 }
 
+export function canOpenDocumentChat(doc) {
+  return Boolean(doc && !doc._pending && doc.status === 'done')
+}
+
 function documentChatTitle(title, locale = 'ru') {
   const label = translate(locale, 'chat.documentBadge')
   const fallback = translate(locale, 'documentDetail.fallbackTitle')
