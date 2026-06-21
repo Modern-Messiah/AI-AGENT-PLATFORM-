@@ -23,3 +23,7 @@ def test_worker_registers_visual_ingestion_activities() -> None:
         "finalize_visual_document",
     ):
         assert activity_name in WORKER
+
+
+def test_worker_registers_inline_text_ingestion_activity() -> None:
+    assert "ingest_text_document" in WORKER

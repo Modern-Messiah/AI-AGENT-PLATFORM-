@@ -225,6 +225,17 @@ async def chunk_and_embed(parsed: ParsedDoc) -> ChunkBatch:
 
 
 @activity.defn
+async def ingest_text_document(input: IngestionInput) -> int:
+    parsed = await parse_original_document(input)
+    batch = await build_chunk_batch(
+        parsed,
+        embedding_model=settings.embedding_model,
+        embedder=embed_texts,
+    )
+    return await store_chunk_batch(input, batch)
+
+
+@activity.defn
 async def store_chunks(input: IngestionInput, batch: ChunkBatch) -> int:
     return await store_chunk_batch(input, batch)
 

@@ -19,6 +19,7 @@ with workflow.unsafe.imports_passed_through():
         VisualBatchInput,
         chunk_and_embed,
         finalize_visual_document,
+        ingest_text_document,
         mark_done,
         mark_failed,
         mark_processing,
@@ -111,6 +112,23 @@ class IngestionWorkflow:
                         retry_policy=retry,
                     )
                     return written
+
+            if workflow.patched("text-ingestion-inline-store-v1"):
+                written = await workflow.execute_activity(
+                    ingest_text_document,
+                    payload,
+                    # Keep parsed text and embeddings inside one activity so Temporal
+                    # history stores only the small integer result, not MB-scale chunks.
+                    start_to_close_timeout=timedelta(minutes=30),
+                    retry_policy=retry,
+                )
+                await workflow.execute_activity(
+                    mark_done,
+                    payload,
+                    start_to_close_timeout=timedelta(seconds=30),
+                    retry_policy=retry,
+                )
+                return written
 
             parsed = await workflow.execute_activity(
                 parse_document,

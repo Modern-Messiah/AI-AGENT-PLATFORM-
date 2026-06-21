@@ -16,6 +16,7 @@ from apps.worker.activities.ingestion import (
     _await_with_heartbeat,
     analyze_visual_page,
     chunk_and_embed,
+    ingest_text_document,
     mark_done,
     mark_failed,
 )
@@ -201,6 +202,59 @@ async def test_chunk_and_embed_preserves_segment_metadata(monkeypatch) -> None:
     )
     assert batch.summary == "Page four evidence summary."
     assert batch.suggested_questions == ["Что есть на странице 4?"]
+
+
+async def test_ingest_text_document_keeps_large_batches_inside_activity(monkeypatch) -> None:
+    calls: list[tuple[str, object]] = []
+    parsed = ParsedDoc(
+        segments=[
+            {
+                "text": "Long GitHub repository content. " * 200,
+                "metadata": {"source": "github"},
+            }
+        ],
+        summary="Repository summary.",
+        suggested_questions=["What is inside?"],
+    )
+
+    async def fake_parse_original_document(input: IngestionInput) -> ParsedDoc:
+        calls.append(("parse", input.document_id))
+        return parsed
+
+    async def fake_build_chunk_batch(parsed_doc: ParsedDoc, **kwargs):
+        calls.append(("build", parsed_doc.summary))
+        return SimpleNamespace(
+            contents=["chunk-a", "chunk-b"],
+            embeddings=[[0.1], [0.2]],
+            metadata=[{"source": "github"}, {"source": "github"}],
+            summary=parsed_doc.summary,
+            suggested_questions=parsed_doc.suggested_questions,
+            warnings=parsed_doc.warnings,
+        )
+
+    async def fake_store_chunk_batch(input: IngestionInput, batch) -> int:
+        calls.append(("store", len(batch.contents)))
+        return len(batch.contents)
+
+    monkeypatch.setattr(ingestion, "parse_original_document", fake_parse_original_document)
+    monkeypatch.setattr(ingestion, "build_chunk_batch", fake_build_chunk_batch)
+    monkeypatch.setattr(ingestion, "store_chunk_batch", fake_store_chunk_batch)
+
+    written = await ingest_text_document(
+        IngestionInput(
+            document_id="5ef2d843-ddaf-4ae3-a73d-d25f27fb8621",
+            tenant_id="tenant-a",
+            object_key="tenant-a/github.txt",
+            filename="github.txt",
+        )
+    )
+
+    assert written == 2
+    assert calls == [
+        ("parse", "5ef2d843-ddaf-4ae3-a73d-d25f27fb8621"),
+        ("build", "Repository summary."),
+        ("store", 2),
+    ]
 
 
 class _FakeSession:

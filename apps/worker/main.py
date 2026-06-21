@@ -18,6 +18,7 @@ from temporalio.worker import Worker
 from apps.worker.activities import (
     chunk_and_embed,
     finalize_visual_document,
+    ingest_text_document,
     mark_done,
     mark_failed,
     mark_processing,
@@ -62,6 +63,7 @@ async def main() -> None:
             prepare_visual_document,
             process_visual_batch,
             chunk_and_embed,
+            ingest_text_document,
             store_chunks,
             finalize_visual_document,
             mark_done,

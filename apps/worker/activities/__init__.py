@@ -3,6 +3,7 @@ from apps.worker.activities.human_approval import request_human_approval
 from apps.worker.activities.ingestion import (
     chunk_and_embed,
     finalize_visual_document,
+    ingest_text_document,
     mark_done,
     mark_failed,
     mark_processing,
@@ -15,6 +16,7 @@ from apps.worker.activities.ingestion import (
 __all__ = [
     "chunk_and_embed",
     "finalize_visual_document",
+    "ingest_text_document",
     "mark_done",
     "mark_failed",
     "mark_processing",
