@@ -13,7 +13,7 @@ import zipfile
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
 from pathlib import PurePosixPath
-from urllib.parse import urljoin, urlparse, urlunparse
+from urllib.parse import unquote, urljoin, urlparse, urlunparse
 
 import httpx
 from packages.core import settings
@@ -702,6 +702,25 @@ def _github_diagram_image_alt(path: str) -> str:
     return re.sub(r"[_\-.]+", " ", PurePosixPath(path).stem).strip()[:500]
 
 
+def _github_raw_image_path(source: _GitHubSourceUrl, *, ref: str, url: str) -> str | None:
+    prefix = f"https://raw.githubusercontent.com/{source.owner}/{source.repo}/{ref}/"
+    if not url.startswith(prefix):
+        return None
+    path = unquote(url[len(prefix):]).split("#", 1)[0].split("?", 1)[0]
+    return path.strip("/") or None
+
+
+def _github_has_diagram_source_for_image(image_path: str, archive_paths: tuple[str, ...]) -> bool:
+    if not archive_paths:
+        return False
+    path = PurePosixPath(image_path)
+    if path.suffix.lower() not in _IMAGE_SUFFIXES:
+        return False
+    base_path = path.with_suffix("").as_posix()
+    available_paths = set(archive_paths)
+    return any(f"{base_path}{suffix}" in available_paths for suffix in _GITHUB_DIAGRAM_SUFFIXES)
+
+
 def _github_paired_diagram_image_sources(
     source: _GitHubSourceUrl,
     *,
@@ -752,6 +771,9 @@ def _github_referenced_image_sources(
 
     def add(candidate: UrlImageSource | None) -> None:
         if candidate is None or candidate.url in seen or len(sources) >= selected:
+            return
+        image_path = _github_raw_image_path(source, ref=ref, url=candidate.url)
+        if image_path and _github_has_diagram_source_for_image(image_path, archive_paths):
             return
         seen.add(candidate.url)
         sources.append(candidate)

@@ -27,14 +27,14 @@ test('translates keys and interpolates named parameters', () => {
 })
 
 
-test('describes GitHub URL checks with file and image counts', () => {
+test('describes GitHub URL checks without technical file counts', () => {
   assert.equal(
     translate('ru', 'documents.githubReady', { files: 100, images: 8 }),
-    'GitHub-источник найден: 100 полезных файлов, 8 изображений',
+    'Источник подходит',
   )
   assert.equal(
     translate('en', 'documents.githubReady', { files: 100, images: 8 }),
-    'GitHub source detected: found 100 useful files, 8 images',
+    'Source is ready',
   )
 })
 

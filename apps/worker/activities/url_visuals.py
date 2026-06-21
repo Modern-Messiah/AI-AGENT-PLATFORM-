@@ -89,7 +89,7 @@ def _plural(value: int, singular: str, plural: str) -> str:
 
 
 def _url_image_summary_warning(processed: int, failed: int) -> str | None:
-    if failed <= 0:
+    if failed <= 0 or processed <= 0:
         return None
     processed_label = _plural(processed, "image", "images")
     return f"{processed} URL {processed_label} processed, {failed} skipped"

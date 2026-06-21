@@ -61,9 +61,16 @@ test('knowledge base file table does not render document insights inline', () =>
 })
 
 test('knowledge base file table surfaces document warnings', () => {
-  assert.match(documentsViewSource, /doc\.warnings\?\.length/)
-  assert.match(documentsViewSource, /v-for="warning in doc\.warnings"/)
+  assert.match(documentsViewSource, /visibleDocumentWarnings\(doc\)\.length/)
+  assert.match(documentsViewSource, /v-for="warning in visibleDocumentWarnings\(doc\)"/)
   assert.match(documentsViewSource, /class="document-warning"/)
+})
+
+test('knowledge base hides stale zero-processed URL image warnings', () => {
+  assert.match(documentsViewSource, /function isZeroProcessedUrlImageWarning\(warning\)/)
+  assert.match(documentsViewSource, /0\\s\+URL\\s\+images\\s\+processed/)
+  assert.match(documentsViewSource, /function visibleDocumentWarnings\(doc\)/)
+  assert.match(documentsViewSource, /filter\(\(warning\) => !isZeroProcessedUrlImageWarning\(warning\)\)/)
 })
 
 test('knowledge base document deletion requires confirmation modal', () => {
@@ -156,9 +163,14 @@ test('GitHub URL sources reuse the URL panel and source badge', () => {
   assert.match(documentsViewSource, /documents\.githubReady/)
   assert.match(documentsViewSource, /documents\.githubBadge/)
   assert.match(documentsViewSource, /function isExternalSource\(doc\)/)
-  assert.match(documentsViewSource, /files:\s*urlCheck\.file_count/)
-  assert.match(documentsViewSource, /images:\s*urlCheck\.image_count/)
-  assert.match(i18nSource, /GitHub source detected: found \{files\} useful files, \{images\} images/)
+  assert.doesNotMatch(documentsViewSource, /files:\s*urlCheck\.file_count/)
+  assert.doesNotMatch(documentsViewSource, /images:\s*urlCheck\.image_count/)
+  assert.doesNotMatch(documentsViewSource, /url-source-preview-files/)
+  assert.doesNotMatch(documentsViewSource, /preview_files/)
+  assert.doesNotMatch(i18nSource, /GitHub source detected: found \{files\} useful files, \{images\} images/)
+  assert.doesNotMatch(i18nSource, /GitHub-источник найден: \{files\} полезных файлов/)
+  assert.match(i18nSource, /githubReady: 'Источник подходит'/)
+  assert.match(i18nSource, /githubReady: 'Source is ready'/)
 })
 
 test('external documents show last checked and reindex result states', () => {
@@ -208,6 +220,32 @@ test('document status polling refreshes immediately and clears pending final sta
   assert.notEqual(pendingIndex, -1)
   assert.ok(doneIndex < pendingIndex)
   assert.ok(failedIndex < pendingIndex)
+})
+
+test('knowledge base polls processing documents loaded from the server', () => {
+  assert.match(documentsViewSource, /const activeStatusPolls = new Set\(\)/)
+  assert.match(documentsViewSource, /function shouldPollDocument\(doc\)/)
+  assert.match(documentsViewSource, /doc\.status === "processing"/)
+  assert.match(documentsViewSource, /doc\.status === "pending"/)
+  assert.match(documentsViewSource, /function startStatusPolling\(docId, options = \{\}\)/)
+  assert.match(documentsViewSource, /activeStatusPolls\.has\(docId\)/)
+  assert.match(documentsViewSource, /pollStatus\(docId, options\)\.finally/)
+  assert.match(documentsViewSource, /function pollVisibleProcessingDocuments\(\)/)
+  assert.match(documentsViewSource, /pollVisibleProcessingDocuments\(\)/)
+  assert.match(documentsViewSource, /startStatusPolling\(data\.id\)/)
+  assert.match(documentsViewSource, /startStatusPolling\(doc\.id, \{ reindex: true, changed \}\)/)
+})
+
+test('document detail refreshes processing status without a full page reload', () => {
+  assert.match(viewSource, /onBeforeUnmount/)
+  assert.match(viewSource, /let documentPollTimer = null/)
+  assert.match(viewSource, /function isIndexingDocument\(doc\)/)
+  assert.match(viewSource, /doc\?\.status === ['"]processing['"]/)
+  assert.match(viewSource, /doc\?\.status === ['"]pending['"]/)
+  assert.match(viewSource, /function scheduleDocumentRefresh\(doc\)/)
+  assert.match(viewSource, /setTimeout\(\(\) => loadDocument\(\{ background: true \}\), 5000\)/)
+  assert.match(viewSource, /loadDocument\(options = \{\}\)/)
+  assert.match(viewSource, /const background = options\.background === true/)
 })
 
 test('knowledge base accepts image sources and shows page progress', () => {

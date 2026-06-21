@@ -170,7 +170,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useApi } from '@/composables/useApi'
 import { useSettingsStore } from '@/stores/settings'
@@ -193,6 +193,7 @@ const document = ref(null)
 const chunks = ref([])
 const loading = ref(false)
 const error = ref('')
+let documentPollTimer = null
 
 const documentId = computed(() => String(route.params.id || ''))
 const normalized = computed(() => (
@@ -203,11 +204,30 @@ const targetChunkId = computed(() => (
   typeof route.query.chunk === 'string' ? route.query.chunk : ''
 ))
 
-watch([() => settings.apiKey, documentId], loadDocument, { immediate: true })
+watch([() => settings.apiKey, documentId], () => loadDocument(), { immediate: true })
 watch(targetChunkId, () => scrollToTargetChunk())
+onBeforeUnmount(clearDocumentRefresh)
 
-async function loadDocument() {
+function isIndexingDocument(doc) {
+  return doc?.status === 'processing' || doc?.status === 'pending'
+}
+
+function clearDocumentRefresh() {
+  if (!documentPollTimer) return
+  clearTimeout(documentPollTimer)
+  documentPollTimer = null
+}
+
+function scheduleDocumentRefresh(doc) {
+  clearDocumentRefresh()
+  if (!settings.isConnected || !documentId.value || !isIndexingDocument(doc)) return
+  documentPollTimer = setTimeout(() => loadDocument({ background: true }), 5000)
+}
+
+async function loadDocument(options = {}) {
+  const background = options.background === true
   if (!settings.isConnected || !documentId.value) {
+    clearDocumentRefresh()
     document.value = null
     chunks.value = []
     error.value = settings.isConnected
@@ -216,7 +236,7 @@ async function loadDocument() {
     return
   }
 
-  loading.value = true
+  if (!background) loading.value = true
   error.value = ''
   try {
     const [doc, chunkRows] = await Promise.all([
@@ -225,14 +245,16 @@ async function loadDocument() {
     ])
     document.value = doc
     chunks.value = chunkRows
+    scheduleDocumentRefresh(doc)
     await nextTick()
     scrollToTargetChunk()
   } catch (e) {
+    clearDocumentRefresh()
     document.value = null
     chunks.value = []
     error.value = e.message
   } finally {
-    loading.value = false
+    if (!background) loading.value = false
   }
 }
 

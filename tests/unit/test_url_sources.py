@@ -656,6 +656,7 @@ async def test_fetch_github_repo_indexes_architecture_diagram_sources(monkeypatc
     assert "--- FILE: docs/architecture/c4/L1 - System Context/L1_system_context.puml ---" in text
     assert 'System(api, "Crypto Sentiment Pulse API")' in text
     assert 'Rel(user, api, "Reads market sentiment")' in text
+    assert fetched.image_sources == []
 
 
 async def test_fetch_github_tree_keeps_more_architecture_images(monkeypatch) -> None:
@@ -705,7 +706,7 @@ async def test_fetch_github_tree_keeps_more_architecture_images(monkeypatch) -> 
     )
 
 
-async def test_fetch_github_tree_collects_unreferenced_paired_diagram_images(monkeypatch) -> None:
+async def test_fetch_github_tree_skips_paired_diagram_images_when_source_is_indexed(monkeypatch) -> None:
     archive = _zip_bytes(
         {
             "repo-main/docs/architecture/c4/L2_container.puml": (
@@ -747,13 +748,7 @@ async def test_fetch_github_tree_collects_unreferenced_paired_diagram_images(mon
         "https://github.com/acme/repo/tree/main/docs/architecture/c4"
     )
 
-    assert fetched.image_sources == [
-        UrlImageSource(
-            url="https://raw.githubusercontent.com/acme/repo/main/docs/architecture/c4/L2_container.png",
-            alt="L2 container",
-            title="",
-        )
-    ]
+    assert fetched.image_sources == []
 
 
 async def test_fetch_github_tree_resolves_root_relative_images_from_tree_root(monkeypatch) -> None:

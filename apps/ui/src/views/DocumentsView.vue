@@ -102,10 +102,7 @@
             <div v-if="urlCheck?.ok" class="url-source-status ok">
                 {{
                     urlCheck.source_type === "github"
-                        ? t("documents.githubReady", {
-                              files: urlCheck.file_count || 0,
-                              images: urlCheck.image_count || 0,
-                          })
+                        ? t("documents.githubReady")
                         : t("documents.urlReady", {
                               title:
                                   urlCheck.title ||
@@ -113,15 +110,6 @@
                                   urlCheck.url,
                           })
                 }}
-                <div
-                    v-if="
-                        urlCheck.source_type === 'github' &&
-                        urlCheck.preview_files?.length
-                    "
-                    class="url-source-preview-files"
-                >
-                    {{ urlCheck.preview_files.slice(0, 5).join(" · ") }}
-                </div>
             </div>
             <div v-else-if="urlError" class="url-source-status error">
                 {{ t("documents.urlRejected", { reason: urlError }) }}
@@ -247,11 +235,11 @@
                                             {{ doc.error }}
                                         </div>
                                         <div
-                                            v-if="doc.warnings?.length"
+                                            v-if="visibleDocumentWarnings(doc).length"
                                             class="document-warnings"
                                         >
                                             <div
-                                                v-for="warning in doc.warnings"
+                                                v-for="warning in visibleDocumentWarnings(doc)"
                                                 :key="warning"
                                                 class="document-warning"
                                             >
@@ -414,6 +402,7 @@ const DOCUMENT_PAGE_SIZE = 100;
 const documentsLoadedCount = ref(0);
 const documentsHasMore = ref(false);
 const documentsLoadingMore = ref(false);
+const activeStatusPolls = new Set();
 
 function documentListPath(offset) {
     return `/documents?limit=${DOCUMENT_PAGE_SIZE + 1}&offset=${offset}`;
@@ -435,6 +424,36 @@ function appendUniqueDocuments(existing, incoming) {
     ];
 }
 
+function shouldPollDocument(doc) {
+    return Boolean(
+        doc?.id &&
+            !String(doc.id).startsWith("upload-") &&
+            (doc._pending ||
+                doc.status === "processing" ||
+                doc.status === "pending"),
+    );
+}
+
+function startStatusPolling(docId, options = {}) {
+    if (!docId || activeStatusPolls.has(docId)) return;
+    activeStatusPolls.add(docId);
+    pollStatus(docId, options).finally(() => activeStatusPolls.delete(docId));
+}
+
+function pollVisibleProcessingDocuments() {
+    docs.value.forEach((doc) => {
+        if (shouldPollDocument(doc)) startStatusPolling(doc.id);
+    });
+}
+
+function isZeroProcessedUrlImageWarning(warning) {
+    return /0\s+URL\s+images\s+processed/i.test(String(warning || ""));
+}
+
+function visibleDocumentWarnings(doc) {
+    return (doc?.warnings || []).filter((warning) => !isZeroProcessedUrlImageWarning(warning));
+}
+
 async function loadDocs(options = {}) {
     const append = options.append === true;
     if (!settings.isConnected) {
@@ -454,6 +473,7 @@ async function loadDocs(options = {}) {
             : pageRows.length;
         if (append) {
             docs.value = appendUniqueDocuments(docs.value, normalizedRows);
+            pollVisibleProcessingDocuments();
             return;
         }
         // merge: keep in-progress uploads that aren't in the API list yet
@@ -462,6 +482,7 @@ async function loadDocs(options = {}) {
             (d) => d._pending && !apiIds.has(d.id),
         );
         docs.value = [...pending, ...normalizedRows];
+        pollVisibleProcessingDocuments();
     } catch (e) {
         if (append) {
             toast.value = {
@@ -609,7 +630,7 @@ async function reindexDoc(doc) {
             };
             return;
         }
-        pollStatus(doc.id, { reindex: true, changed });
+        startStatusPolling(doc.id, { reindex: true, changed });
     } catch (e) {
         updateDoc(doc.id, {
             status: "failed",
@@ -738,7 +759,7 @@ async function uploadFile(file) {
         docs.value = docs.value.map((d) =>
             d.id === tempId ? { ...d, id: data.id, _pending: true } : d,
         );
-        pollStatus(data.id);
+        startStatusPolling(data.id);
     } catch (e) {
         updateDoc(tempId, { status: "failed", error: e.message });
         toast.value = {
@@ -804,7 +825,7 @@ async function addUrlSource() {
         urlCheck.value = null;
         urlError.value = "";
         checkedUrl.value = "";
-        pollStatus(data.id);
+        startStatusPolling(data.id);
     } catch (e) {
         urlError.value = e.message;
         toast.value = {
@@ -997,15 +1018,6 @@ function handleFileInput(e) {
 }
 .url-source-status.error {
     color: var(--red);
-}
-.url-source-preview-files {
-    max-width: 100%;
-    margin-top: 3px;
-    overflow: hidden;
-    color: var(--muted);
-    font-family: var(--mono);
-    text-overflow: ellipsis;
-    white-space: nowrap;
 }
 .documents-table-scroll {
     flex: 1 1 auto;

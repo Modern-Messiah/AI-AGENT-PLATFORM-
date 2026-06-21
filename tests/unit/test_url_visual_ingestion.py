@@ -8,7 +8,7 @@ from types import SimpleNamespace
 from apps.api.services.url_sources import UrlImageSource, url_image_sidecar_payload
 from apps.worker.activities import url_visuals
 from apps.worker.activities.ingestion_types import IngestionInput, VisualPageAnalysis
-from apps.worker.activities.url_visuals import append_url_visual_segments
+from apps.worker.activities.url_visuals import _url_image_summary_warning, append_url_visual_segments
 from packages.rag.parser import ParsedSegment
 from packages.rag.visual import VisualPage
 
@@ -279,6 +279,14 @@ async def test_url_visual_ingestion_logs_summary_counters(monkeypatch, caplog) -
             "found=2 processed=1 failed=1 segments=1"
         )
     ]
+
+
+def test_url_image_summary_warning_hides_all_skipped_images() -> None:
+    assert _url_image_summary_warning(processed=0, failed=14) is None
+
+
+def test_url_image_summary_warning_keeps_partial_skip_summary() -> None:
+    assert _url_image_summary_warning(processed=7, failed=1) == "7 URL images processed, 1 skipped"
 
 
 def test_url_image_sidecar_payload_fixture_matches_worker_contract() -> None:
