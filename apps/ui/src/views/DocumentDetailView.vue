@@ -77,9 +77,17 @@
                 {{ question }}
               </button>
             </div>
-            <button class="btn btn-primary ask-main" type="button" @click="openDocumentChat">
+            <button
+              class="btn btn-primary ask-main"
+              type="button"
+              :disabled="!canOpenDocumentChat"
+              @click="openDocumentChat"
+            >
               {{ t('documentDetail.openChat') }}
             </button>
+            <div v-if="normalized && !canOpenDocumentChat" class="ask-disabled-note">
+              {{ t('documentDetail.chatPending') }}
+            </div>
           </div>
         </div>
       </div>
@@ -185,6 +193,7 @@ const documentId = computed(() => String(route.params.id || ''))
 const normalized = computed(() => (
   document.value ? normalizeDocument(document.value, settings.locale) : null
 ))
+const canOpenDocumentChat = computed(() => normalized.value?.status === 'done')
 const targetChunkId = computed(() => (
   typeof route.query.chunk === 'string' ? route.query.chunk : ''
 ))
@@ -246,6 +255,7 @@ function askQuestion(question) {
 }
 
 function openDocumentChat() {
+  if (!canOpenDocumentChat.value) return
   router.push(buildDocumentChatRoute(
     documentId.value,
     normalized.value?.name || '',
@@ -374,6 +384,13 @@ function openDocumentChat() {
 .ask-main {
   width: 100%;
   justify-content: center;
+}
+.ask-disabled-note {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+  text-align: center;
 }
 .warnings-card ul {
   display: grid;

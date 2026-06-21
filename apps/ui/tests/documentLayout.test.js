@@ -46,6 +46,14 @@ test('document chunks card matches the notebook sources height', () => {
   )
 })
 
+test('document scoped chat is disabled until indexing finishes', () => {
+  assert.match(viewSource, /const canOpenDocumentChat = computed\(\(\) =>/)
+  assert.match(viewSource, /normalized\.value\?\.status === ['"]done['"]/)
+  assert.match(viewSource, /:disabled="!canOpenDocumentChat"/)
+  assert.match(viewSource, /documentDetail\.chatPending/)
+  assert.match(viewSource, /if \(!canOpenDocumentChat\.value\) return/)
+})
+
 test('knowledge base file table does not render document insights inline', () => {
   assert.doesNotMatch(documentsViewSource, /doc-insights-row/)
   assert.doesNotMatch(documentsViewSource, /class="doc-summary"/)

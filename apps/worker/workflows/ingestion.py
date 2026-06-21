@@ -115,7 +115,10 @@ class IngestionWorkflow:
             parsed = await workflow.execute_activity(
                 parse_document,
                 payload,
-                start_to_close_timeout=timedelta(minutes=5),
+                # URL/GitHub text sources may also process referenced diagrams and
+                # images, so the parse step can legitimately run longer than a
+                # plain text extraction.
+                start_to_close_timeout=timedelta(minutes=30),
                 retry_policy=retry,
             )
             batch = await workflow.execute_activity(
