@@ -121,6 +121,7 @@ class IngestionWorkflow:
                     # Keep parsed text and embeddings inside one activity so Temporal
                     # history stores only the small integer result, not MB-scale chunks.
                     start_to_close_timeout=timedelta(minutes=42),
+                    heartbeat_timeout=timedelta(minutes=2),
                     retry_policy=retry,
                 )
                 await workflow.execute_activity(

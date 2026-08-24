@@ -24,6 +24,7 @@ def test_text_ingestion_uses_single_activity_to_keep_temporal_payloads_small() -
     assert "chunk_and_embed" not in block
     assert "store_chunks" not in block
     assert "start_to_close_timeout=timedelta(minutes=42)" in block
+    assert "heartbeat_timeout=timedelta(minutes=2)" in block
 
 
 def test_legacy_parse_document_path_stays_for_existing_workflow_histories() -> None:

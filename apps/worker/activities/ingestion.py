@@ -211,6 +211,16 @@ async def process_visual_batch(batch: VisualBatchInput) -> VisualBatchRef:
     )
 
 
+def _heartbeat(details: dict[str, object] | None = None) -> None:
+    try:
+        if details is not None:
+            activity.heartbeat(details)
+        else:
+            activity.heartbeat()
+    except RuntimeError:
+        return
+
+
 @activity.defn
 async def parse_document(input: IngestionInput) -> ParsedDoc:
     return await parse_original_document(input)
@@ -227,9 +237,14 @@ async def chunk_and_embed(parsed: ParsedDoc) -> ChunkBatch:
 
 @activity.defn
 async def ingest_text_document(input: IngestionInput) -> int:
+    _heartbeat({"document_id": input.document_id, "stage": "parse-start"})
     parsed = await parse_original_document(input)
+    _heartbeat({"document_id": input.document_id, "stage": "parse-complete"})
     batch = await chunk_and_embed(parsed)
-    return await store_chunk_batch(input, batch)
+    _heartbeat({"document_id": input.document_id, "stage": "embed-complete"})
+    written = await store_chunk_batch(input, batch)
+    _heartbeat({"document_id": input.document_id, "stage": "store-complete"})
+    return written
 
 
 @activity.defn

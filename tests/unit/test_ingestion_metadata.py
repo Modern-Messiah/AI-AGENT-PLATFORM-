@@ -8,6 +8,7 @@ from apps.worker.activities import ingestion
 from apps.worker.activities import ingestion_types
 from apps.worker.activities import ingestion_status
 from apps.worker.activities import visual_analysis
+from apps.worker.activities.document_chunks import build_chunk_batch
 from apps.worker.activities.ingestion import (
     IngestionInput,
     ParsedDoc,
@@ -255,6 +256,45 @@ async def test_ingest_text_document_keeps_large_batches_inside_activity(monkeypa
         ("build", "Repository summary."),
         ("store", 2),
     ]
+
+
+async def test_build_chunk_batch_batches_embeddings_and_heartbeats(monkeypatch) -> None:
+    heartbeats: list[dict[str, object]] = []
+
+    def fake_heartbeat(details: dict[str, object] | None = None) -> None:
+        if details:
+            heartbeats.append(details)
+
+    monkeypatch.setattr("apps.worker.activities.document_chunks._heartbeat", fake_heartbeat)
+
+    embedder_calls: list[int] = []
+
+    async def fake_embedder(texts: list[str]) -> list[list[float]]:
+        embedder_calls.append(len(texts))
+        return [[0.1] for _ in texts]
+
+    parsed = ParsedDoc(
+        segments=[
+            {"text": f"Segment text content block {i} " * 20, "metadata": {}}
+            for i in range(70)
+        ],
+        summary="Test summary",
+        suggested_questions=[],
+    )
+
+    batch = await build_chunk_batch(
+        parsed,
+        embedding_model="test-model",
+        embedder=fake_embedder,
+        batch_size=32,
+    )
+
+    assert len(batch.contents) == 70
+    assert embedder_calls == [32, 32, 6]
+    assert heartbeats[0] == {"stage": "embedding-start", "total_chunks": 70}
+    assert heartbeats[1] == {"stage": "embedding", "embedded_chunks": 32, "total_chunks": 70}
+    assert heartbeats[2] == {"stage": "embedding", "embedded_chunks": 64, "total_chunks": 70}
+    assert heartbeats[3] == {"stage": "embedding", "embedded_chunks": 70, "total_chunks": 70}
 
 
 class _FakeSession:
