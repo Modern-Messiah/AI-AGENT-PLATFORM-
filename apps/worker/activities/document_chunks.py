@@ -9,20 +9,9 @@ from packages.storage import Chunk, Document, object_store
 from packages.storage.db import tenant_session
 from sqlalchemy import update
 
-from temporalio import activity
-
+from apps.worker.activities.heartbeat import heartbeat_safe
 from apps.worker.activities.ingestion_types import ChunkBatch, IngestionInput, ParsedDoc
 from apps.worker.activities.url_visuals import append_url_visual_segments
-
-
-def _heartbeat(details: dict[str, object] | None = None) -> None:
-    try:
-        if details is not None:
-            activity.heartbeat(details)
-        else:
-            activity.heartbeat()
-    except RuntimeError:
-        return
 
 
 async def parse_original_document(input: IngestionInput) -> ParsedDoc:
@@ -76,13 +65,13 @@ async def build_chunk_batch(
         raise ValueError("document contains no extractable text")
     contents = [chunk.content for chunk in chunks]
 
-    _heartbeat({"stage": "embedding-start", "total_chunks": len(contents)})
+    heartbeat_safe({"stage": "embedding-start", "total_chunks": len(contents)})
     embeddings: list[list[float]] = []
     for i in range(0, len(contents), batch_size):
         batch_contents = contents[i : i + batch_size]
         batch_embeddings = await embedder(batch_contents)
         embeddings.extend(batch_embeddings)
-        _heartbeat({
+        heartbeat_safe({
             "stage": "embedding",
             "embedded_chunks": len(embeddings),
             "total_chunks": len(contents),

@@ -1700,7 +1700,7 @@ MinIO в compose использует root credentials как app credentials. �
 - exponential/backoff до 30 секунд;
 - maximum attempts 3.
 
-Visual batch имеет timeout 30 минут и heartbeat timeout 2 минуты. Text ingestion — timeout 30 минут. Если retries исчерпаны, workflow извлекает наиболее содержательную root cause из цепочки `ActivityError`, обрезает её до 2000 символов и вызывает `mark_failed` без retry.
+Visual batch имеет timeout 30 минут и heartbeat timeout 2 минуты. Text ingestion — start-to-close timeout 42 минуты и heartbeat timeout 2 минуты. Если retries исчерпаны, workflow извлекает наиболее содержательную root cause из цепочки `ActivityError`, обрезает её до 2000 символов и вызывает `mark_failed` без retry.
 
 ### Agent workflow retries
 

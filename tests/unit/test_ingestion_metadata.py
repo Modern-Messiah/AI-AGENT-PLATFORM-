@@ -265,7 +265,7 @@ async def test_build_chunk_batch_batches_embeddings_and_heartbeats(monkeypatch) 
         if details:
             heartbeats.append(details)
 
-    monkeypatch.setattr("apps.worker.activities.document_chunks._heartbeat", fake_heartbeat)
+    monkeypatch.setattr("apps.worker.activities.document_chunks.heartbeat_safe", fake_heartbeat)
 
     embedder_calls: list[int] = []
 

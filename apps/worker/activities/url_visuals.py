@@ -15,7 +15,6 @@ from packages.rag.visual import VisualPage, render_visual_pages, split_visual_se
 from packages.storage import DocumentAsset, DocumentAssetStatus, object_store
 from packages.storage.db import tenant_session
 from sqlalchemy import delete, select
-from temporalio import activity
 
 from apps.api.services.url_sources import (
     URL_SOURCE_HEADERS,
@@ -24,6 +23,7 @@ from apps.api.services.url_sources import (
     url_image_sidecar_key,
     validate_fetch_url,
 )
+from apps.worker.activities.heartbeat import heartbeat_safe
 from apps.worker.activities.ingestion_types import IngestionInput, VisualPageAnalysis
 from apps.worker.activities.visual_analysis import analyze_visual_page
 from apps.worker.activities.visual_storage import upsert_document_asset
@@ -59,14 +59,6 @@ class UrlVisualSegmentsResult:
         if isinstance(other, UrlVisualSegmentsResult):
             return self.segments == other.segments and self.warnings == other.warnings
         return NotImplemented
-
-
-def _heartbeat(details: dict[str, object]) -> None:
-    try:
-        activity.heartbeat(details)
-    except RuntimeError:
-        # Unit tests and direct local calls have no Temporal activity context.
-        return
 
 
 def _content_type_header(value: str | None) -> str:
@@ -239,7 +231,7 @@ async def append_url_visual_segments(
     failed = 0
     segment_count = 0
     for index, source in enumerate(sources, start=1):
-        _heartbeat({
+        heartbeat_safe({
             "document_id": input.document_id,
             "stage": "url-image-start",
             "image_index": index,
@@ -299,7 +291,7 @@ async def append_url_visual_segments(
                 source.url,
                 exc,
             )
-        _heartbeat({
+        heartbeat_safe({
             "document_id": input.document_id,
             "stage": "url-image-complete",
             "image_index": index,

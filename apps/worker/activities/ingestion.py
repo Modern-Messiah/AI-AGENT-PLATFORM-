@@ -25,6 +25,7 @@ from packages.storage import (
 )
 from temporalio import activity
 
+from apps.worker.activities.heartbeat import heartbeat_safe
 from apps.worker.activities.ingestion_types import (
     ChunkBatch,
     IngestionInput,
@@ -211,16 +212,6 @@ async def process_visual_batch(batch: VisualBatchInput) -> VisualBatchRef:
     )
 
 
-def _heartbeat(details: dict[str, object] | None = None) -> None:
-    try:
-        if details is not None:
-            activity.heartbeat(details)
-        else:
-            activity.heartbeat()
-    except RuntimeError:
-        return
-
-
 @activity.defn
 async def parse_document(input: IngestionInput) -> ParsedDoc:
     return await parse_original_document(input)
@@ -237,13 +228,13 @@ async def chunk_and_embed(parsed: ParsedDoc) -> ChunkBatch:
 
 @activity.defn
 async def ingest_text_document(input: IngestionInput) -> int:
-    _heartbeat({"document_id": input.document_id, "stage": "parse-start"})
+    heartbeat_safe({"document_id": input.document_id, "stage": "parse-start"})
     parsed = await parse_original_document(input)
-    _heartbeat({"document_id": input.document_id, "stage": "parse-complete"})
+    heartbeat_safe({"document_id": input.document_id, "stage": "parse-complete"})
     batch = await chunk_and_embed(parsed)
-    _heartbeat({"document_id": input.document_id, "stage": "embed-complete"})
+    heartbeat_safe({"document_id": input.document_id, "stage": "embed-complete"})
     written = await store_chunk_batch(input, batch)
-    _heartbeat({"document_id": input.document_id, "stage": "store-complete"})
+    heartbeat_safe({"document_id": input.document_id, "stage": "store-complete"})
     return written
 
 
