@@ -84,6 +84,7 @@ async def test_url_visual_segments_are_hidden_from_ui_but_searchable(monkeypatch
     monkeypatch.setattr("apps.worker.activities.url_visuals.render_visual_pages", fake_render)
     monkeypatch.setattr("apps.worker.activities.url_visuals.analyze_visual_page", fake_analyze)
     monkeypatch.setattr("apps.worker.activities.url_visuals._upsert_url_image_asset", fake_upsert_asset)
+    monkeypatch.setattr("apps.worker.activities.url_visuals.object_store.put", lambda *args, **kwargs: None)
 
     segments = await append_url_visual_segments(
         input,

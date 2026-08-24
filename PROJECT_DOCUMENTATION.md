@@ -14,6 +14,14 @@
 10. 💸 Стоимость и лимиты
 11. 🧩 Ключевые решения — почему так, а не иначе
 12. ❓ FAQ для новичка в AI
+13. 🗃️ Модель данных и где что хранится
+14. 🧭 UI, API и жизненный цикл приложения
+15. 👤 Пользовательские сценарии от начала до конца
+16. 🛡️ Tenant isolation, авторизация и безопасность
+17. 🚨 Ошибки, повторы и деградация сервисов
+18. 🧪 Тесты, evals и проверка качества
+19. ⚠️ Реальные ограничения текущей версии
+20. 📌 Краткая карта: куда идти за изменением поведения
 
 ---
 
@@ -511,14 +519,16 @@ flowchart TD
     API --> MinIO["Сохранить bytes в MinIO"]
     API --> DocRow["Создать documents status=pending"]
     API --> Temporal["Start IngestionWorkflow"]
-    Temporal --> Parse["parse_document"]
-    Parse --> Text["Plain text"]
-    Text --> Chunk["chunk_text"]
-    Chunk --> Embed["FastEmbed"]
-    Embed --> Vectors["list[384 floats]"]
-    Vectors --> Store["store_chunks"]
+    Temporal --> Kind{"Visual document?"}
+    Kind -->|"No"| TextDoc["ingest_text_document"]
+    Kind -->|"PDF/image"| Visual["process_visual_batch"]
+    TextDoc --> Parse["parse_original_document"]
+    Parse --> ChunkEmbed["build_chunk_batch (chunk + embed)"]
+    ChunkEmbed --> Store["store_chunk_batch"]
+    Visual --> Finalize["finalize_visual_document"]
     Store --> PG["PostgreSQL chunks + pgvector"]
-    Store --> Done["documents status=done"]
+    Finalize --> PG
+    PG --> Done["documents status=done"]
 ```
 
 Ingestion pipeline:
@@ -528,11 +538,13 @@ Ingestion pipeline:
 3. В `documents` создаётся строка со статусом `pending`.
 4. API запускает `IngestionWorkflow`.
 5. Worker ставит статус `processing`.
-6. `parse_document` извлекает текст: PDF через PyMuPDF, остальные форматы через MarkItDown.
-7. `chunk_text` режет текст на куски по `CHUNK_SIZE` и `CHUNK_OVERLAP`.
-8. `embed_texts` считает embedding каждого chunk.
-9. `store_chunks` пишет chunks и vectors в PostgreSQL.
-10. Статус документа становится `done`.
+6. Для обычного текста `ingest_text_document` внутри одной activity парсит файл, строит chunks и embeddings. Большие промежуточные данные поэтому не попадают в Temporal history.
+7. Для PDF и изображений workflow сначала строит visual manifest, затем обрабатывает страницы батчами с concurrency `2`: рендерит WebP preview, запускает OCR и при необходимости Vision-анализ.
+8. URL и GitHub-источники сначала скачиваются API, нормализуются в сохранённый объект, а найденные схемы/изображения описываются отдельным visual-проходом.
+9. `RecursiveCharacterTextSplitter` режет parsed segments по `CHUNK_SIZE=2000` и `CHUNK_OVERLAP=200`, сохраняя metadata страницы/asset.
+10. `embed_texts` считает embedding каждого chunk.
+11. `store_chunk_batch` атомарно заменяет chunks документа, записывает vectors, summary, suggested questions и warnings.
+12. Статус документа становится `done`; при исчерпании activity retries — `failed` с корневой причиной.
 
 ### Что такое embeddings
 
@@ -576,7 +588,9 @@ Embedding — это массив чисел, который кодирует с
 ai-agent-platform/
 ├── apps/
 │   ├── api/
-│   │   └── main.py                 # FastAPI endpoints, auth dependency, SSE stream, sessions, docs
+│   │   ├── main.py                 # FastAPI lifecycle, CORS, router registration
+│   │   ├── routers/                # agent, documents, notebooks, sessions, workflows, analytics
+│   │   └── services/               # URL sources, notebook queries, cache invalidation, limits
 │   ├── ui/
 │   │   ├── Dockerfile              # Сборка Vue UI в nginx/static container
 │   │   ├── package.json            # Vue/Pinia/Router/Vite зависимости
@@ -587,14 +601,18 @@ ai-agent-platform/
 │   │       │   ├── chat.js          # Chat state, sessions, SSE parsing, HITL pending
 │   │       │   └── settings.js      # API key/base URL в localStorage
 │   │       ├── router/
-│   │       │   └── index.js         # /chat, /documents, /analytics, /workflows redirect
-│   │       ├── views/               # ChatView, DocumentsView, AnalyticsView, Settings
+│   │       │   └── index.js         # /chat, /documents/:id, /notebooks/:id, /analytics
+│   │       ├── views/               # Chat, Documents, DocumentDetail, Notebooks, Analytics
 │   │       └── components/          # UI-компоненты чата, документов, layout
 │   └── worker/
 │       ├── main.py                  # Temporal worker entrypoint
 │       ├── activities/
 │       │   ├── agent_step.py        # PydanticAI agent activity + semantic cache + usage
-│       │   ├── ingestion.py         # parse/chunk/embed/store document activities
+│       │   ├── ingestion.py         # facade visual/text ingestion activities
+│       │   ├── document_chunks.py   # parse, chunk, embed, replace chunks
+│       │   ├── visual_analysis.py   # OCR + Vision page analysis
+│       │   ├── visual_storage.py    # assets/previews/progress
+│       │   ├── url_visuals.py       # diagrams/images referenced by URL/GitHub
 │       │   └── human_approval.py    # activity для HITL approval notification
 │       └── workflows/
 │           ├── agent_run.py         # AgentRunWorkflow с optional approve/reject
@@ -648,7 +666,7 @@ ai-agent-platform/
 ├── Makefile                         # up/down/logs/test/lint/migrate
 ├── pyproject.toml                   # Python dependencies/tooling
 ├── .env.example                     # Env template
-└── README.md                        # Older high-level project readme
+└── README.md                        # High-level overview and operations
 ```
 
 AI-специфичные файлы, которые стоит читать первыми:
@@ -657,7 +675,7 @@ AI-специфичные файлы, которые стоит читать п�
 - `packages/agents/base.py` — где собирается PydanticAI agent;
 - `packages/agents/tools/*.py` — какие tools доступны модели;
 - `packages/rag/retriever.py` — как работает semantic search;
-- `apps/api/main.py` — быстрый `/agent/stream` path;
+- `apps/api/routers/agent.py` — быстрый `/agent/stream` path и запуск agent workflows;
 - `apps/worker/activities/agent_step.py` — durable PydanticAI path;
 - `packages/llm/client.py` — provider quirks Kimi/DeepSeek.
 
@@ -687,9 +705,9 @@ sequenceDiagram
         Redis-->>API: AgentRunOutput
         API-->>UI: SSE token + done
     else Cache miss
-        API->>VDB: retrieve_chunks(query, tenant_id, k=FAST_RAG_TOP_K)
+        API->>VDB: retrieve_chunks(query, tenant_id, k=FAST_RAG_CANDIDATE_K)
         VDB-->>API: chunks + filename + score
-        API->>API: build_fast_rag_messages(query, chunks)
+        API->>API: select_diverse_chunks + build_grounded_messages
         API->>LLM: stream_chat_text(model, messages)
         loop Каждый токен
             LLM-->>API: token
@@ -712,8 +730,8 @@ sequenceDiagram
 4. Backend получает `tenant_id` из ключа.
 5. Rate limit хранится в Redis ключом вида `rl:{tenant_id}:agent:{minute}`.
 6. Semantic cache ищет похожий прошлый вопрос. Для этого новый вопрос тоже превращается в embedding.
-7. Если cache miss, backend ищет chunks через pgvector.
-8. Backend строит prompt: system instruction + текущий вопрос + найденные chunks.
+7. Если cache miss, backend получает до `FAST_RAG_CANDIDATE_K` кандидатов через pgvector, отбрасывает всё дальше `RETRIEVAL_MAX_DISTANCE`, затем выбирает до `FAST_RAG_TOP_K` разнообразных chunks. В глобальном режиме действует лимит `FAST_RAG_PER_DOCUMENT_K`, чтобы один файл не вытеснил остальные.
+8. Backend строит grounded prompt: system instruction + текущий вопрос + пронумерованные источники. Общий объём контекста ограничен `FAST_RAG_CONTEXT_MAX_CHARS`.
 9. LLM начинает генерировать ответ. Backend не ждёт весь ответ, а сразу отправляет token events в UI.
 10. После завершения backend пишет usage в ClickHouse и сохраняет ответ в semantic cache.
 
@@ -788,7 +806,10 @@ sequenceDiagram
 | `AGENT_RATE_LIMIT_PER_MINUTE` | Лимит agent-запросов на tenant в минуту. | Число, default `20`. | Нет. |
 | `LLM_TIMEOUT_SECONDS` | Таймаут LLM request. | Число секунд, default `60`. | Нет. |
 | `RETRIEVAL_MAX_DISTANCE` | Порог релевантности chunks. | Float, default `0.75`. | Нет. |
-| `FAST_RAG_TOP_K` | Сколько chunks брать в fast stream. | Integer, default `3`. | Нет. |
+| `FAST_RAG_CANDIDATE_K` | Сколько ближайших chunks получить до reranking/diversification. | Integer, default `12`. | Нет. |
+| `SCOPED_RAG_CANDIDATE_K` | Расширенный пул кандидатов для document/notebook scope. | Integer, default `32`. | Нет. |
+| `FAST_RAG_TOP_K` | Сколько chunks оставить в fast stream после отбора. | Integer, default `6`. | Нет. |
+| `FAST_RAG_PER_DOCUMENT_K` | Максимум chunks одного документа в глобальном ответе. | Integer, default `2`. | Нет. |
 | `FAST_RAG_CONTEXT_MAX_CHARS` | Максимум символов RAG-контекста. | Integer, default `8000`. | Нет. |
 | `TEMPORAL_ADDRESS` | Адрес Temporal server. | Локально `localhost:7233`, в Docker `temporal:7233`. | Да для workflows. |
 | `TEMPORAL_NAMESPACE` | Namespace Temporal. | Обычно `default`. | Да. |
@@ -1111,3 +1132,788 @@ Fast RAG path фильтрует chunks по `RETRIEVAL_MAX_DISTANCE`. Если 
 ### Есть ли MCP?
 
 Нет. MCP в этом проекте не подключён. Tools реализованы напрямую в Python через PydanticAI.
+
+---
+
+## 13. 🗃️ Модель данных и где что хранится
+
+У проекта не одно «хранилище», а четыре хранилища с разными задачами. PostgreSQL — источник истины для прикладных сущностей и vectors. MinIO хранит bytes исходных файлов и previews. Redis хранит короткоживущий semantic cache и rate-limit counters. ClickHouse хранит события использования LLM, по которым строится аналитика.
+
+```mermaid
+erDiagram
+    API_KEYS {
+        uuid id PK
+        string tenant_id
+        string key_hash UK
+        boolean is_active
+        datetime last_used_at
+    }
+
+    DOCUMENTS {
+        uuid id PK
+        string tenant_id
+        string filename
+        string source_type
+        string source_url
+        string object_key
+        enum status
+        string processing_stage
+        text summary
+        json suggested_questions
+        json warnings
+    }
+
+    DOCUMENT_ASSETS {
+        uuid id PK
+        string tenant_id
+        uuid document_id FK
+        int page_number
+        string asset_kind
+        string preview_object_key
+        text ocr_text
+        text vision_description
+        enum status
+    }
+
+    CHUNKS {
+        uuid id PK
+        string tenant_id
+        uuid document_id FK
+        int chunk_idx
+        text content
+        vector embedding
+        json metadata
+    }
+
+    NOTEBOOKS {
+        uuid id PK
+        string tenant_id
+        string title
+        text description
+        text summary
+        json suggested_questions
+        json key_topics
+    }
+
+    NOTEBOOK_DOCUMENTS {
+        uuid notebook_id PK_FK
+        uuid document_id PK_FK
+        string tenant_id
+    }
+
+    CHAT_SESSIONS {
+        uuid id PK
+        string tenant_id
+        string title
+        string model
+        string scope_type
+        uuid document_id FK
+        uuid notebook_id FK
+    }
+
+    CHAT_MESSAGES {
+        uuid id PK
+        uuid session_id FK
+        string tenant_id
+        string role
+        text content
+        json sources
+        boolean cached
+    }
+
+    DOCUMENTS ||--o{ CHUNKS : contains
+    DOCUMENTS ||--o{ DOCUMENT_ASSETS : contains
+    NOTEBOOKS ||--o{ NOTEBOOK_DOCUMENTS : groups
+    DOCUMENTS ||--o{ NOTEBOOK_DOCUMENTS : belongs_to
+    CHAT_SESSIONS ||--o{ CHAT_MESSAGES : contains
+    DOCUMENTS o|--o{ CHAT_SESSIONS : scopes
+    NOTEBOOKS o|--o{ CHAT_SESSIONS : scopes
+```
+
+### `documents`
+
+Одна строка соответствует одному источнику знаний. Источник может быть:
+
+- `file` — загруженный файл;
+- `url` — обычная web-страница, text или PDF по URL;
+- `github` — GitHub repository, tree или отдельный blob/raw file.
+
+`object_key` указывает на исходный объект в MinIO. Поля `status` и `processing_stage` отвечают на разные вопросы:
+
+- `status`: общий итог `pending`, `processing`, `done`, `failed`;
+- `processing_stage`: более точный этап вроде queued, OCR/Vision, embedding;
+- `processed_pages` / `total_pages`: прогресс visual-документа;
+- `warnings`: частичные проблемы, при которых документ всё же может быть полезен;
+- `error`: причина полной ошибки.
+
+`summary` и `suggested_questions` строятся при ingestion. Это не RAG chunks и не генерируются при каждом открытии страницы.
+
+### `document_assets`
+
+Asset — отдельная визуальная единица: страница PDF, загруженное изображение или найденная в URL/GitHub схема. Для неё сохраняются OCR text, confidence, Vision description, размеры, статус и ключ preview.
+
+Preview отдаётся через защищённый API endpoint, а не прямой публичный URL MinIO. Исключение в текущей реализации: asset типа `url_image` не отдаётся через content endpoint, то есть он участвует в извлечении знаний, но не обязательно доступен как UI preview.
+
+### `chunks`
+
+Chunk — поисковая единица RAG. Он содержит:
+
+- исходный текст фрагмента;
+- embedding фиксированной размерности `384`;
+- порядковый номер;
+- `document_id` и `tenant_id`;
+- metadata, например page, asset id и тип визуального источника.
+
+При reindex старые chunks заменяются новой версией. Ответ не читает исходный файл целиком: runtime retrieval работает именно по `chunks`.
+
+### `notebooks` и `notebook_documents`
+
+Notebook — коллекция документов, а не копия данных. Связующая таблица хранит membership. Поэтому один документ может входить в несколько notebooks.
+
+Notebook insights содержат общий summary, suggested questions и key topics. При изменении состава документов insights сбрасываются. При завершении reindex/ingestion связанного документа они тоже инвалидируются, потому что старое резюме уже может не соответствовать источникам.
+
+### `chat_sessions` и `chat_messages`
+
+Session хранит заголовок, выбранную модель и необязательный scope:
+
+- scope отсутствует — глобальный поиск по knowledge base tenant’а;
+- `document` — поиск только внутри одного документа;
+- `notebook` — поиск только по документам одной коллекции.
+
+Ограничение БД запрещает одновременно привязать session и к document, и к notebook. При удалении scoped сущности FK становится `NULL`; сами сообщения не удаляются.
+
+Messages хранят роль, текст, citations и флаг semantic-cache hit. Важно: это история для UI и аудита, а не conversation memory модели. Текущий `/agent/stream` передаёт LLM только новый вопрос и найденные chunks.
+
+### `api_keys`
+
+В таблице лежит SHA-256 hash, tenant, имя, активность и время последнего использования. Raw key возвращается только при создании. Проверка ключа кэшируется в памяти конкретного API-процесса на 30 секунд.
+
+### MinIO
+
+Ключи объектов имеют tenant/document prefix:
+
+```text
+{tenant_id}/{document_id}/{filename}
+{tenant_id}/{document_id}/assets/page-1.webp
+{tenant_id}/{document_id}/visual-batches/1-10.json
+```
+
+Временные visual batch JSON удаляются после успешной финализации. Оригинал и previews живут до удаления документа. Для URL дополнительно хранится sidecar со списком найденных изображений.
+
+### Redis
+
+Semantic cache не требует Redis Vector Search. Для каждого tenant хранится ZSET последних entry ids и отдельные JSON strings с embedding вопроса и `AgentRunOutput`.
+
+Параметры зафиксированы в коде:
+
+- TTL — 1 час;
+- hit threshold — cosine similarity строго выше `0.92`;
+- scan — до 500 последних entries;
+- hard cap — 1000 entries на tenant.
+
+Scoped document/notebook chat cache пропускает, потому что одинаковый вопрос в разных scopes имеет разный смысл. При upload, reindex и delete кэш tenant’а очищается.
+
+### ClickHouse
+
+`analytics.llm_usage_events` содержит model/provider, prompt/completion/total tokens, рассчитанную стоимость, latency, status, workflow id и run id. `/analytics/usage` группирует данные по модели и по дням в пределах tenant.
+
+---
+
+## 14. 🧭 UI, API и жизненный цикл приложения
+
+### Запуск backend
+
+При старте FastAPI:
+
+1. включается tracing для сервиса `aap-api`;
+2. embedding model прогревается тестовой строкой; ошибка warmup не останавливает API;
+3. создаётся Temporal client и сохраняется в `app.state.temporal`;
+4. регистрируются routers;
+5. CORS берётся из `ALLOWED_ORIGINS`, а в local режиме без настройки разрешается `*`.
+
+`GET /health` возвращает только `{"status":"ok"}`. Это liveness endpoint процесса, а не полноценная проверка Postgres, Redis, MinIO, Temporal, ClickHouse и LLM provider.
+
+### Запуск worker
+
+Worker — отдельный процесс. Он тоже прогревает embeddings, подключается к Temporal и слушает одну task queue. Зарегистрированы три workflows:
+
+- `IngestionWorkflow`;
+- `AgentRunWorkflow`;
+- `MultiStepResearchWorkflow`.
+
+Невоспроизводимые операции — сеть, БД, MinIO, OCR, embeddings, LLM — находятся в activities. Workflow code хранит только порядок, timers, signals и retry policy. Поэтому Temporal может replay workflow после рестарта.
+
+### Навигация UI
+
+Основные маршруты:
+
+| Route | Что показывает |
+|---|---|
+| `/chat` | чат, session history, model selector, HITL toggle, scope banner |
+| `/documents` | upload/drop zone, URL/GitHub input, список и статусы документов |
+| `/documents/:id` | summary, questions, progress, warnings, chunks, visual assets |
+| `/notebooks` | список и создание коллекций |
+| `/notebooks/:id` | состав, upload, insights, scoped chat |
+| `/analytics` | стоимость, tokens, latency и вызовы по моделям/дням |
+| `/settings` | redirect, открывающий settings UI |
+| `/workflows` | redirect обратно в chat |
+
+`WorkflowsView.vue` есть в репозитории, но текущий router его не использует, и sidebar не содержит отдельного раздела workflows. Human approval живёт прямо в chat cards.
+
+### Настройки браузера
+
+UI хранит API base URL, язык и тему в `localStorage`. Если API key не внедрён через build-time environment, он тоже хранится в `localStorage` как plain text. `useApi()` добавляет `X-API-Key` ко всем запросам.
+
+Статус ключа не проверяется отдельным запросом при вводе. Он становится `valid` после первого успешного API response и `invalid` после HTTP 401.
+
+### Сессии чата
+
+При открытии UI загружает `/sessions` и автоматически выбирает последнюю обновлённую/первую возвращённую session. При выборе session отдельно загружаются messages.
+
+Если пользователь отправляет первый вопрос без session, UI сначала создаёт её, используя первые 40 символов вопроса как title. Если session называлась «Новый чат», title обновляется асинхронно после отправки.
+
+Сохранение сообщения не объединено с LLM-запросом в одну backend-транзакцию:
+
+1. UI fire-and-forget сохраняет user message;
+2. отдельно запускает `/agent/stream` или `/agent/run`;
+3. после `done` UI fire-and-forget сохраняет assistant message.
+
+Следствие: при сетевом сбое возможна session только с user message, отсутствующий assistant message или показанный в браузере, но не сохранённый ответ.
+
+### SSE protocol
+
+`POST /agent/stream` отвечает `text/event-stream`. UI ожидает JSON events:
+
+```json
+{"type":"token","content":"часть ответа"}
+{"type":"done","answer":"полный ответ","sources":[],"confidence":0.85,"cached":false}
+{"type":"error","message":"описание ошибки"}
+```
+
+До первого token UI показывает loading indicator. После первого token создаёт streaming message и дописывает текст. `done` заменяет накопленный текст каноническим полным ответом и добавляет citations.
+
+При переключении/сбросе state активный `AbortController` отменяет stream. Частичный ответ можно оставить без streaming cursor или удалить — это UI state, он не считается завершённым серверным сообщением.
+
+### Citations
+
+Backend формирует `CitationSource` из выбранных chunks: document id, chunk id, filename, content/excerpt и порядковый source id. После генерации `select_answer_sources` пытается оставить только те источники, на которые реально ссылается ответ. UI показывает sources у assistant message и умеет вести на document detail с конкретным chunk.
+
+Confidence в fast path не является вероятностью, рассчитанной моделью:
+
+- `0.85`, если есть ответ и выбранные sources;
+- `0.2`, если текст есть, но sources не подтверждены;
+- `0.0`, если модель не дала ответ;
+- `0.2`, если retrieval ничего не нашёл.
+
+В structured agent path confidence возвращает сама LLM внутри валидируемой схемы.
+
+### Полный API
+
+Кроме `/health` и `/auth/keys`, endpoints используют tenant из `X-API-Key`.
+
+| Method | Endpoint | Результат |
+|---|---|---|
+| `POST` | `/auth/keys` | создать tenant API key по admin secret |
+| `POST` | `/agent/stream` | быстрый SSE RAG |
+| `POST` | `/agent/run` | Temporal agent run, optional HITL |
+| `POST` | `/agent/research` | parallel sub-research + synthesis |
+| `GET` | `/workflows/{id}/result` | получить результат или pending |
+| `POST` | `/workflows/{id}/approve` | послать approve signal |
+| `POST` | `/workflows/{id}/reject` | послать reject signal |
+| `GET/POST` | `/sessions` | список / создание sessions |
+| `GET/PATCH/DELETE` | `/sessions/{id}` | чтение/переименование/удаление session |
+| `GET/POST` | `/sessions/{id}/messages` | история / добавление message |
+| `GET/POST` | `/documents` | список / upload файла |
+| `POST` | `/documents/bulk` | до 20 файлов после общей валидации |
+| `POST` | `/documents/url/check` | проверить внешний источник без создания document |
+| `POST` | `/documents/url` | сохранить URL/GitHub source и начать ingestion |
+| `GET` | `/documents/{id}` | состояние и metadata |
+| `GET` | `/documents/{id}/chunks` | paginated chunk previews |
+| `GET` | `/documents/{id}/assets` | paginated visual assets |
+| `GET` | `/documents/{id}/assets/{asset}/content` | защищённый WebP preview |
+| `POST` | `/documents/{id}/reindex` | обновить источник и/или пересобрать index |
+| `DELETE` | `/documents/{id}` | удалить DB rows и MinIO objects |
+| `GET/POST` | `/notebooks` | список / создать collection |
+| `GET/DELETE` | `/notebooks/{id}` | detail / удалить collection |
+| `PUT` | `/notebooks/{id}/documents` | полностью заменить membership |
+| `POST` | `/notebooks/{id}/documents/upload` | загрузить и сразу прикрепить документ |
+| `POST` | `/notebooks/{id}/insights` | пересобрать overview/topics/questions |
+| `GET` | `/analytics/usage?days=N` | tenant usage за 1–365 дней |
+
+---
+
+## 15. 👤 Пользовательские сценарии от начала до конца
+
+### Сценарий 1. Первый вход и подключение
+
+Предусловие: администратор уже создал raw API key через `/auth/keys`.
+
+1. Пользователь открывает UI.
+2. Без ключа навигация видна, но chat input и операции с документами заблокированы.
+3. В settings пользователь вводит key и при необходимости API base URL.
+4. UI сохраняет конфигурацию и начинает загружать sessions/documents.
+5. Первый успешный request меняет индикатор на connected; 401 отмечает key как invalid.
+
+Backend по ключу находит `api_keys.key_hash`, проверяет `is_active`, возвращает `tenant_id` dependency и обновляет `last_used_at`. После этого все запросы пользователя автоматически ограничены этим tenant.
+
+### Сценарий 2. Загрузка обычного текстового документа
+
+1. Пользователь перетаскивает файл на `/documents`.
+2. UI отправляет multipart `POST /documents`.
+3. API проверяет грубый `Content-Length`, затем читает файл с точным лимитом 50 MB.
+4. Bytes пишутся в MinIO.
+5. В PostgreSQL создаётся `Document(status=pending, processing_stage=queued)`.
+6. Semantic cache tenant’а очищается.
+7. API запускает `IngestionWorkflow` с уникальным id и возвращает HTTP 202.
+8. UI показывает pending и периодически обновляет список/detail.
+9. Worker переводит документ в processing.
+10. В text activity файл парсится, chunks создаются и embedятся внутри одной activity.
+11. В одной tenant transaction старые chunks заменяются, сохраняются summary/questions/warnings.
+12. Workflow ставит status `done`.
+13. После этого документ доступен для global, document и notebook RAG.
+
+Если Temporal workflow не удалось даже запустить, API ставит `failed` и возвращает 503. Если activity падает после retries, workflow вызывает `mark_failed`.
+
+### Сценарий 3. Сканированный PDF или изображение
+
+1. Начало такое же: MinIO, DB row, Temporal.
+2. Worker определяет visual document и считает страницы.
+3. Страницы делятся на batches; одновременно выполняются максимум два batch.
+4. Для каждой страницы создаётся ограниченный по размеру render и WebP preview.
+5. PaddleOCR извлекает текст и confidence.
+6. Если OCR недостаточен или странице нужен смысловой разбор, вызывается Vision model.
+7. OCR text и Vision description разделяются на sections.
+8. Для страницы upsertится `DocumentAsset`; metadata asset попадает в будущие chunks.
+9. Progress обновляется после каждой страницы, activity посылает heartbeat.
+10. Batch сохраняет небольшой JSON в MinIO, а не большой payload в Temporal history.
+11. Finalize activity объединяет batches, строит insights, chunks и embeddings.
+12. Временные batch objects удаляются.
+
+Отдельная плохая страница может дать warning и failed asset, но не обязана провалить весь документ. Документ падает полностью, если после всех страниц нет ни одного извлекаемого segment.
+
+### Сценарий 4. Добавление web URL или GitHub
+
+1. Пользователь вводит URL и сначала вызывает check.
+2. API нормализует URL и проверяет scheme/host.
+3. В production без `HTTP_FETCH_ALLOWED_DOMAINS` URL ingestion закрыт.
+4. Redirect обрабатывается вручную, и каждая новая цель снова проверяется.
+5. Для HTML извлекаются title, readable text и ссылки на полезные изображения.
+6. Для text source добавляется заголовок с source URL.
+7. PDF сохраняется как binary и дальше идёт visual pipeline.
+8. GitHub распознаёт:
+   - repository URL;
+   - `tree/{ref}/{path}`;
+   - `blob/{ref}/{path}`;
+   - `raw.githubusercontent.com/{owner}/{repo}/{ref}/{path}`.
+9. GitHub repository/tree собирается из archive, фильтруя полезные Markdown/text/config/diagram source files; blob получает один raw file.
+10. Нормализованный source и image sidecar сохраняются в MinIO, затем запускается обычный ingestion.
+11. Из найденных схем/изображений worker извлекает дополнительный OCR/Vision text, который участвует в RAG.
+
+URL source имеет лимит 10 MB. Число найденных изображений ограничено отдельно: 8 для обычного URL и 24 для GitHub; одно изображение — до 5 MB.
+
+### Сценарий 5. Глобальный вопрос в чате
+
+1. Пользователь создаёт session или UI создаёт её автоматически.
+2. User message сразу появляется в UI и асинхронно сохраняется.
+3. UI вызывает `/agent/stream` без scope.
+4. API проверяет длину вопроса и minute rate limit.
+5. Semantic cache ищет похожий вопрос только внутри tenant.
+6. При hit готовый ответ отправляется одним token event и затем done.
+7. При miss вопрос embedится, pgvector возвращает кандидатов.
+8. Backend ограничивает distance, разнообразит документы и строит grounded context.
+9. LLM получает только этот вопрос и этот context.
+10. Tokens сразу уходят через SSE.
+11. После завершения backend выбирает citations, пишет usage в ClickHouse и ответ в Redis.
+12. UI сохраняет assistant message.
+
+Если relevant chunks нет, LLM вообще не вызывается. Backend возвращает контролируемое «не нашёл релевантной информации».
+
+### Сценарий 6. Вопрос по одному документу
+
+Пользователь открывает document detail и нажимает chat или один из suggested questions.
+
+1. UI создаёт новую session с `scope_type=document`.
+2. URL `/chat` несёт `document` и optional `ask` query parameters.
+3. Backend проверяет, что документ принадлежит tenant и имеет status `done`.
+4. Retrieval получает `document_id` filter.
+5. Semantic cache полностью пропускается.
+6. Diversity limit «не больше N chunks на документ» не нужен: все chunks уже из одного файла.
+7. В chat показывается scope banner; session history помечается как document-scoped.
+
+Переключатель human approval для scoped запроса фактически отключается: UI принудительно отправляет fast stream. Это не ошибка интерфейса, а текущее ограничение реализации.
+
+### Сценарий 7. Notebook и вопрос по коллекции
+
+1. Пользователь создаёт notebook с title/description и списком existing document ids.
+2. Можно позже полностью заменить membership или загрузить новый файл прямо в notebook.
+3. Uploaded file становится обычным Document и одновременно получает NotebookDocument link.
+4. До окончания ingestion он виден в collection, но не участвует в scoped RAG.
+5. `POST /notebooks/{id}/insights` берёт только документы со status `done`.
+6. Система строит общий summary, questions и key topics.
+7. Перед записью backend повторно проверяет набор ready document ids. Если membership изменился во время LLM call, возвращается 409 вместо сохранения устаревшего overview.
+8. При открытии notebook chat создаётся `scope_type=notebook`.
+9. `/agent/stream` разворачивает notebook в список ready document ids и фильтрует retrieval.
+10. Кэш пропускается, HITL отключён.
+
+Удаление notebook удаляет только collection и links. Сами документы остаются в knowledge base.
+
+### Сценарий 8. Human-in-the-loop
+
+HITL работает только для глобального chat.
+
+1. Пользователь включает «Human approval» и отправляет вопрос.
+2. UI сохраняет user message и вызывает `/agent/run` с `require_approval=true`.
+3. API запускает `AgentRunWorkflow` асинхронно и возвращает workflow id.
+4. Worker выполняет настоящий PydanticAI agent loop.
+5. Готовый ответ пока не возвращается пользователю как обычный assistant message.
+6. Workflow выполняет approval notification activity и ждёт signal до 24 часов.
+7. UI сохраняет pending workflow id в `localStorage` и показывает HITL card.
+8. После approve UI посылает signal и polls `/result` с exponential backoff до 5 минут.
+9. Workflow завершается исходным ответом; UI заменяет card ответом и сохраняет его в session.
+10. После reject workflow завершает ответ с префиксом `[REJECTED by reviewer]`, но текущий UI просто удаляет pending card и не polls rejected result.
+11. Если signal не пришёл за 24 часа, workflow возвращает ответ с `[APPROVAL TIMED OUT]`.
+
+Здесь есть два разных timeout: Temporal ждёт решение 24 часа, но браузер после approve polls только 5 минут. Pending state до approve хранится только в browser localStorage, не в PostgreSQL.
+
+### Сценарий 9. Multi-step research
+
+Этот режим доступен через API, но не имеет активного отдельного UI.
+
+1. Клиент отправляет main query и заранее подготовленный список sub-queries.
+2. API валидирует длину каждого вопроса и запускает `MultiStepResearchWorkflow`.
+3. Workflow запускает отдельный `AgentRunWorkflow` для каждого sub-query.
+4. Child workflows идут параллельно.
+5. После fan-in ответы собираются в synthesis prompt.
+6. Ещё одна `run_agent_step` activity строит финальный ответ.
+7. Citation sources child results дедуплицируются по `(document_id, chunk_id)` и добавляются к final sources.
+
+Это не autonomous planner: sub-queries не придумываются автоматически. Это также не разговор нескольких персонажей-агентов. Это параллельная orchestration одного типа агента.
+
+### Сценарий 10. Reindex
+
+Для upload-файла reindex повторно использует оригинал из MinIO. Для URL/GitHub backend сначала заново скачивает источник.
+
+1. Reindex запрещён, пока status pending/processing.
+2. URL/GitHub source сравнивается с сохранёнными объектами.
+3. Если внешний источник не изменился и документ уже `done`, API возвращает `changed=false`, workflow не стартует.
+4. Если изменился, object/metadata обновляются, status сбрасывается в pending.
+5. Semantic cache очищается.
+6. Новый workflow заменяет chunks/assets/insights.
+
+### Сценарий 11. Удаление документа
+
+1. Backend проверяет tenant ownership.
+2. Удаляет Document; FK cascade удаляет chunks, assets и notebook links.
+3. Собирает object keys оригинала, URL sidecar и previews.
+4. После DB transaction пытается удалить каждый MinIO object.
+5. Ошибка удаления object логируется, но API не откатывает уже совершённое удаление DB.
+6. Semantic cache очищается.
+
+Это означает, что при сбое MinIO возможен orphan object, но не видимый пользователю «полуживой» документ.
+
+### Сценарий 12. Просмотр аналитики
+
+1. UI запрашивает `/analytics/usage?days=30`.
+2. ClickHouse агрегирует calls, tokens, cost и average latency по model/provider.
+3. Второй query строит daily series.
+4. Ответ строго фильтруется по tenant.
+
+Если ClickHouse недоступен во время ответа агента, запись usage обычно является best effort и основной ответ продолжает работать. Но сам analytics endpoint при ошибке ClickHouse возвращает 500.
+
+---
+
+## 16. 🛡️ Tenant isolation, авторизация и безопасность
+
+### Граница tenant
+
+Tenant определяется только проверенным API key, а не полем request body. В `/agent/run`, `/agent/research`, upload и остальных маршрутах backend перезаписывает/добавляет tenant id после auth.
+
+Защита двухуровневая:
+
+1. application queries явно фильтруют `tenant_id`;
+2. `tenant_session()` выполняет `set_config('app.tenant_id', tenant_id, true)`, после чего PostgreSQL RLS применяет tenant policies.
+
+Workflow ids содержат tenant, а signal/result routes дополнительно проверяют, что id относится к текущему tenant.
+
+### API keys
+
+- raw key генерируется через `secrets.token_urlsafe(32)`;
+- в БД сохраняется только SHA-256 hash;
+- создание ключа защищено `X-Admin-Secret`;
+- inactive key не принимается;
+- positive auth result кэшируется на 30 секунд;
+- в non-local окружении default admin secret запрещает запуск settings validation.
+
+SHA-256 здесь не password hashing. Это допустимо для случайного ключа с высокой энтропией, но не было бы хорошей схемой для пользовательского пароля.
+
+### SQL tool
+
+Агент не получает произвольный DB connection. Tool:
+
+- требует literal placeholder `{tenant_id}`;
+- разрешает только `SELECT`;
+- запрещает locking clauses;
+- проверяет FROM/JOIN tables по allowlist;
+- запрещает comma joins как обход простого parser;
+- не разрешает `api_keys`, catalogs и arbitrary tables;
+- ставит transaction read-only и timeout 5 секунд;
+- ограничивает результат 500 строк.
+
+Это существенная защита, но parser основан на regular expressions, а не полном SQL AST. Для высокорискового production лучше заменить свободный SQL на заранее определённые query tools.
+
+### HTTP и URL ingestion
+
+В production внешний fetch fail-closed без domain allowlist. Проверяются private, loopback, link-local, reserved, multicast и unspecified addresses. Redirects не следуются автоматически: каждая target URL валидируется заново.
+
+В local режиме fallback с DNS resolution снижает риск SSRF, но сам код честно признаёт риск DNS rebinding. Production должен использовать `HTTP_FETCH_ALLOWED_DOMAINS`.
+
+### Code execution
+
+`code_exec` выключен по умолчанию. При включении он запускает subprocess:
+
+- без credentials/environment;
+- с `-S` и `-E`;
+- без third-party packages;
+- с timeout 10 секунд.
+
+Это ограничение, но не полноценный security sandbox: нет container/VM boundary, syscall filter, filesystem isolation или resource quotas кроме wall-clock timeout. На недоверенных пользователях `ENABLE_CODE_EXEC` лучше оставлять false.
+
+### Browser storage
+
+Если key не внедрён через environment, UI хранит его plain text в localStorage. Это удобно для local/self-hosted режима, но XSS в origin сможет прочитать ключ. Для публичного deployment лучше перейти на серверную session/cookie модель или изолированный reverse proxy.
+
+### CORS и secrets
+
+В local режиме пустой `ALLOWED_ORIGINS` превращается в wildcard. В non-local settings требуют непустой список и запрещают `*`. Это предотвращает случайный production launch с полностью открытым CORS.
+
+MinIO в compose использует root credentials как app credentials. Для production правильнее создать отдельного пользователя и policy только на нужный bucket/prefix.
+
+---
+
+## 17. 🚨 Ошибки, повторы и деградация сервисов
+
+### Ingestion retries
+
+Большинство ingestion activities выполняются максимум три раза:
+
+- initial interval 1 секунда;
+- exponential/backoff до 30 секунд;
+- maximum attempts 3.
+
+Visual batch имеет timeout 30 минут и heartbeat timeout 2 минуты. Text ingestion — timeout 30 минут. Если retries исчерпаны, workflow извлекает наиболее содержательную root cause из цепочки `ActivityError`, обрезает её до 2000 символов и вызывает `mark_failed` без retry.
+
+### Agent workflow retries
+
+`run_agent_step` имеет максимум две попытки, initial 2 секунды и maximum 30 секунд. `ValueError` и `ApplicationError` объявлены non-retryable.
+
+Semantic cache в worker path не обёрнут в best-effort `try/except`, поэтому недоступный Redis способен провалить agent activity. В fast streaming path Redis cache get/set, ClickHouse usage и часть side effects деградируют мягко.
+
+### Fast stream errors
+
+Ошибки после открытия SSE не могут превратиться в обычный HTTP 500. Generator отправляет event `type=error`, UI заменяет partial message ошибкой. Ошибки scope validation происходят до открытия stream и возвращают 404/409 как обычный HTTP response.
+
+### Частичные сбои
+
+- warmup embeddings failed: сервис стартует и повторит при первом use;
+- ClickHouse usage insert failed: ответ пользователю сохраняется;
+- Redis cache failed в fast path: выполняется обычный retrieval/LLM;
+- одна visual page failed: warning/failed asset, остальные страницы продолжаются;
+- MinIO cleanup failed после DB delete/finalize: warning и возможный orphan object;
+- notebook sources изменились во время insights: 409 и просьба retry;
+- Temporal start failed после upload: Document переводится в failed;
+- LLM вернул пустой stream: controlled answer «Не удалось получить ответ от модели».
+
+### Что наблюдать
+
+Для чата важны timestamps:
+
+- cache lookup latency;
+- retrieval latency и matched filenames/scores;
+- first-token latency;
+- total latency;
+- prompt/completion tokens.
+
+Для visual ingestion:
+
+- pages range;
+- OCR latency;
+- Vision calls/latency;
+- unrecognized pages;
+- warning count;
+- activity heartbeat и processing progress.
+
+Temporal UI показывает workflow history и retries. Langfuse подключается опционально для traces/prompts. ClickHouse отвечает за агрегированную стоимость, но не заменяет operational logs.
+
+---
+
+## 18. 🧪 Тесты, evals и проверка качества
+
+### Unit tests backend
+
+Тесты покрывают:
+
+- schemas и pagination;
+- tenant isolation;
+- API-key auth cache;
+- agent rate limit;
+- SQL tool restrictions;
+- semantic cache;
+- LLM client provider behavior;
+- RAG citations и reranking/diversity;
+- object storage wrapper;
+- document assets, chunk storage, metadata и summaries;
+- visual/OCR workflow behavior;
+- URL/GitHub sources и URL images;
+- reindex;
+- notebook mode, insights и summaries;
+- chat session scope;
+- settings security и compose environment.
+
+### Frontend tests
+
+Node tests проверяют чистые UI utilities и layout contracts:
+
+- API config;
+- i18n и theme;
+- citations;
+- document/notebook normalization;
+- chat scope;
+- analytics transforms;
+- settings route;
+- pane/sidebar state;
+- ожидаемые элементы document/notebook layouts.
+
+Это не browser E2E: Vue components не проходят полный click-through в реальном браузере в этих tests.
+
+### E2E
+
+E2E требуют live Docker services, Temporal worker и иногда provider access. Есть smoke flow, URL image ingestion и полный URL/GitHub lifecycle.
+
+### Golden evals
+
+`evals/golden/suite.py` и datasets проверяют retrieval/answer quality на заранее ожидаемых случаях, включая OCR/Vision и GitHub. `retrieval_eval.py` оценивает retrieval отдельно, `golden_eval.py` — end-to-end expectations.
+
+Важно различать:
+
+- unit test доказывает локальный контракт кода;
+- integration/E2E доказывает связность сервисов;
+- golden eval измеряет качество AI-результата, которое не сводится к `pass/fail` обычной функции.
+
+Рекомендуемый baseline перед изменением RAG или ingestion:
+
+```bash
+pytest -q
+cd apps/ui && npm test
+npm run build
+```
+
+После изменения prompts, embedding model, chunk size, retrieval threshold или OCR/Vision нужно дополнительно запускать golden evals. Обычные unit tests не покажут, что ответы стали менее релевантными.
+
+---
+
+## 19. ⚠️ Реальные ограничения текущей версии
+
+Это рабочая self-hosted платформа для небольшой команды, но не законченный public SaaS. Ниже не «будущие идеи», а границы текущего кода.
+
+### Нет разговорной памяти модели
+
+История видна пользователю и лежит в PostgreSQL, но в prompt не передаётся. Вопрос «а что ты имел в виду в прошлом ответе?» не имеет контекста прошлого ответа, если он не повторён в новом сообщении или не содержится в документах.
+
+### Два режима дают разное поведение
+
+Fast chat не вызывает tools и имеет heuristic confidence. `/agent/run` вызывает tools и получает structured confidence от LLM. Один и тот же вопрос может получить отличающийся ответ, citations и cache behavior.
+
+### HITL — review после генерации, а не до внешнего действия
+
+Агентские tools в основном read-only, поэтому это разумно. Но approval не блокирует каждый tool call и не предоставляет reviewer’у diff/план действий. Он просто удерживает уже сгенерированный ответ.
+
+### Reject UX неполный
+
+Temporal workflow после reject формирует результат с `[REJECTED by reviewer]`, но UI удаляет card и не сохраняет rejected result. Серверная семантика и browser UX расходятся.
+
+### Pending HITL хранится в одном браузере
+
+Workflow durable в Temporal, но список ожидающих cards — localStorage. Другой браузер, очищенный storage или другой пользователь tenant’а не увидит pending approvals автоматически.
+
+### Research требует готовых sub-queries
+
+Система не разбивает main query самостоятельно и не корректирует план на основе промежуточных результатов. API client должен подготовить sub-queries заранее.
+
+### URL fetching зависит от allowlist
+
+Правильный production setup безопаснее, но ограничивает произвольный web research. Allowlist нужно поддерживать явно.
+
+### Semantic cache не учитывает версию prompt/model/documents в key
+
+Upload/reindex/delete очищают tenant cache, а TTL короткий. Но смена model, prompt или некоторых settings сама по себе не инвалидирует existing entries. Кроме того, глобальный cache key семантически зависит только от query и tenant, не от выбранной model.
+
+### Health check поверхностный
+
+`/health` не обнаружит отвалившийся Temporal, Postgres, Redis, MinIO, ClickHouse или provider. Compose healthchecks частично закрывают инфраструктуру, но внешнему orchestrator нужен отдельный readiness endpoint.
+
+### Нет полноценного background job UI
+
+Документы показывают status/progress, HITL встроен в chat, Temporal имеет отдельную техническую UI. Единого пользовательского центра jobs/workflows нет; существующий `WorkflowsView.vue` не подключён к router.
+
+### Отдельные операции не атомарны между системами
+
+PostgreSQL, MinIO, Redis, Temporal и ClickHouse не участвуют в общей distributed transaction. Код выбирает практичные compensations и best-effort cleanup, поэтому возможны orphan objects, несохранённые chat messages или пропущенные usage events.
+
+### Code exec не является hardened sandbox
+
+Пустое окружение и timeout полезны, но subprocess всё ещё работает на host/container worker. Для hostile multi-user среды нужен отдельный execution service.
+
+### Масштаб
+
+README прямо позиционирует проект для private/local deployment и порядка 1–20 пользователей. Semantic cache делает линейный scan до 500 vectors в application process; pgvector index strategy и worker concurrency не выглядят настроенными под большой публичный traffic.
+
+---
+
+## 20. 📌 Краткая карта: куда идти за изменением поведения
+
+| Нужно изменить | Главные файлы |
+|---|---|
+| Fast chat retrieval/streaming | `apps/api/routers/agent.py`, `packages/rag/retriever.py`, `packages/rag/citations.py`, `packages/llm/client.py` |
+| Agent tools и structured loop | `packages/agents/base.py`, `packages/agents/prompts.py`, `packages/agents/tools/`, `apps/worker/activities/agent_step.py` |
+| HITL | `apps/worker/workflows/agent_run.py`, `apps/api/routers/workflows.py`, `apps/ui/src/stores/chat.js` |
+| Parallel research | `apps/worker/workflows/multi_step.py`, `apps/api/routers/agent.py` |
+| Upload/reindex/delete | `apps/api/routers/documents.py` |
+| URL/GitHub import | `apps/api/services/url_sources.py`, `apps/worker/activities/url_visuals.py` |
+| Text ingestion | `apps/worker/activities/document_chunks.py`, `packages/rag/parser.py`, `packages/rag/chunker.py`, `packages/rag/embedder.py` |
+| OCR/Vision ingestion | `apps/worker/workflows/ingestion.py`, `apps/worker/activities/visual_analysis.py`, `visual_storage.py`, `packages/rag/visual.py` |
+| Notebook behavior | `apps/api/routers/notebooks.py`, `apps/api/services/notebooks.py`, `apps/ui/src/views/NotebookDetailView.vue` |
+| Sessions/scopes | `apps/api/routers/sessions.py`, `packages/storage/models.py`, `apps/ui/src/stores/chat.js`, `apps/ui/src/utils/chatScope.js` |
+| Tenant security/RLS | `packages/auth/api_keys.py`, `packages/storage/db.py`, migrations `0002`, `0005`, `0011` |
+| Limits/configuration | `packages/core/settings.py`, `docker-compose.yml`, `.env.example` |
+| Cost analytics | `packages/analytics/events.py`, `pricing.py`, `clickhouse.py`, `apps/api/routers/analytics.py` |
+| UI routes/layout | `apps/ui/src/router/index.js`, `App.vue`, `AppSidebar.vue`, views/components |
+
+Если читать проект впервые, рациональный порядок такой:
+
+1. `apps/api/routers/agent.py` — увидеть два runtime paths;
+2. `apps/ui/src/stores/chat.js` — понять, что реально делает пользователь;
+3. `apps/worker/workflows/ingestion.py` — увидеть durable document pipeline;
+4. `apps/worker/activities/ingestion.py` и `document_chunks.py` — увидеть I/O;
+5. `packages/storage/models.py` — связать всё с данными;
+6. `packages/rag/retriever.py` и `citations.py` — понять grounding;
+7. `packages/agents/base.py` и tools — понять настоящий agent loop;
+8. `docker-compose.yml` — увидеть все runtime services и их зависимости.
+
+Итоговая ментальная модель проекта:
+
+```text
+Пользователь
+  → Vue UI
+  → tenant-authenticated FastAPI
+     → быстрый RAG + SSE для обычного диалога
+     → Temporal для долгих и durable операций
+        → worker activities
+           → OCR/Vision / embeddings / PydanticAI tools
+  → PostgreSQL/pgvector как источник прикладной истины
+  → MinIO для файлов
+  → Redis для короткой памяти-кэша
+  → ClickHouse для стоимости и latency
+  → Langfuse/логи/Temporal UI для наблюдения
+```
+
+Это и есть проект без маркетингового упрощения: self-hosted knowledge-base assistant с двумя путями ответа, durable ingestion, tenant-scoped RAG, scoped collections и ограниченным, но реальным tool-calling agent mode.

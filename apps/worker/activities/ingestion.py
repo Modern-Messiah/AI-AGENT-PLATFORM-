@@ -1,7 +1,8 @@
 """Ingestion activities: download → parse → chunk → embed → store.
 
-Each is its own activity so Temporal can retry them independently and so
-the workflow can fan out where useful (e.g. embed in batches).
+Each step is available as an activity. Text ingestion combines parse, chunk, embed,
+and store into ingest_text_document to keep Temporal histories small, while individual
+activities remain available for visual workflows and history replay.
 """
 
 from __future__ import annotations
@@ -227,11 +228,7 @@ async def chunk_and_embed(parsed: ParsedDoc) -> ChunkBatch:
 @activity.defn
 async def ingest_text_document(input: IngestionInput) -> int:
     parsed = await parse_original_document(input)
-    batch = await build_chunk_batch(
-        parsed,
-        embedding_model=settings.embedding_model,
-        embedder=embed_texts,
-    )
+    batch = await chunk_and_embed(parsed)
     return await store_chunk_batch(input, batch)
 
 

@@ -1,7 +1,7 @@
 """Document ingestion workflow.
 
-Sequential for MVP. If embedding cost becomes the bottleneck, split
-chunking + embedding by batches and run them as parallel activities.
+Text documents are processed via ingest_text_document to keep payload history small.
+Visual documents fan out page batches via process_visual_batch and finalize_visual_document.
 """
 
 from __future__ import annotations
@@ -61,6 +61,7 @@ class IngestionWorkflow:
             initial_interval=timedelta(seconds=1),
             maximum_interval=timedelta(seconds=30),
             maximum_attempts=3,
+            non_retryable_error_types=["ValueError"],
         )
         try:
             await workflow.execute_activity(
@@ -119,7 +120,7 @@ class IngestionWorkflow:
                     payload,
                     # Keep parsed text and embeddings inside one activity so Temporal
                     # history stores only the small integer result, not MB-scale chunks.
-                    start_to_close_timeout=timedelta(minutes=30),
+                    start_to_close_timeout=timedelta(minutes=42),
                     retry_policy=retry,
                 )
                 await workflow.execute_activity(
