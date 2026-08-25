@@ -61,7 +61,7 @@ class IngestionWorkflow:
             initial_interval=timedelta(seconds=1),
             maximum_interval=timedelta(seconds=30),
             maximum_attempts=3,
-            non_retryable_error_types=["ValueError"],
+            non_retryable_error_types=["ValueError", "JSONDecodeError", "UnicodeDecodeError"],
         )
         try:
             await workflow.execute_activity(

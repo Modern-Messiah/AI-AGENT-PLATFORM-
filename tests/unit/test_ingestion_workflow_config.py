@@ -36,10 +36,12 @@ def test_legacy_parse_document_path_stays_for_existing_workflow_histories() -> N
     assert legacy_marker in source, "Legacy workflow fallback block missing"
 
     start = source.index(patch_marker)
-    legacy_block = source[start:]
+    legacy_start = source.index(legacy_marker, start)
+    legacy_block = source[legacy_start:]
 
     assert "parse_document" in legacy_block
     assert "chunk_and_embed" in legacy_block
     assert "store_chunks" in legacy_block
     assert "start_to_close_timeout=timedelta(minutes=30)" in legacy_block
-    assert "start_to_close_timeout=timedelta(minutes=5)" not in legacy_block
+    assert "start_to_close_timeout=timedelta(minutes=10)" in legacy_block
+    assert "start_to_close_timeout=timedelta(minutes=2)" in legacy_block
