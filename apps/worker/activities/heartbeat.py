@@ -9,10 +9,9 @@ def heartbeat_safe(details: dict[str, object] | None = None) -> None:
     Unit tests and direct local calls have no Temporal activity context, so the
     heartbeat degrades to a no-op instead of failing the caller.
     """
-    try:
-        if details is not None:
-            activity.heartbeat(details)
-        else:
-            activity.heartbeat()
-    except RuntimeError:
+    if not activity.in_activity():
         return
+    if details is not None:
+        activity.heartbeat(details)
+    else:
+        activity.heartbeat()

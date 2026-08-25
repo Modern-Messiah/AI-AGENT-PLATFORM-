@@ -95,7 +95,7 @@ async def process_visual_batch(batch: VisualBatchInput) -> VisualBatchRef:
     vision_latency_ms = 0
 
     for page in pages:
-        activity.heartbeat(
+        heartbeat_safe(
             {
                 "document_id": input.document_id,
                 "page": page.page_number,
@@ -168,7 +168,7 @@ async def process_visual_batch(batch: VisualBatchInput) -> VisualBatchRef:
                 error=str(exc)[:2000],
             )
         await _update_visual_progress(input)
-        activity.heartbeat(
+        heartbeat_safe(
             {
                 "document_id": input.document_id,
                 "page": page.page_number,

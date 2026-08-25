@@ -12,8 +12,7 @@ from packages.rag.visual import (
     needs_vision_analysis,
     run_paddle_ocr,
 )
-from temporalio import activity
-
+from apps.worker.activities.heartbeat import heartbeat_safe
 from apps.worker.activities.ingestion_types import VisualPageAnalysis
 
 
@@ -89,7 +88,7 @@ async def await_with_heartbeat(
 ) -> VisualPageAnalysis:
     task = asyncio.create_task(awaitable)
     while not task.done():
-        activity.heartbeat(details)
+        heartbeat_safe(details)
         try:
             return await asyncio.wait_for(
                 asyncio.shield(task),

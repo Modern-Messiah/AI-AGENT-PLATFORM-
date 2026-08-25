@@ -82,7 +82,7 @@ def test_visual_batch_reference_round_trips_through_temporal() -> None:
 
 async def test_long_page_analysis_heartbeats_until_completion(monkeypatch) -> None:
     heartbeats: list[dict[str, object]] = []
-    monkeypatch.setattr(visual_analysis.activity, "heartbeat", heartbeats.append)
+    monkeypatch.setattr(visual_analysis, "heartbeat_safe", heartbeats.append)
 
     async def slow_analysis() -> VisualPageAnalysis:
         await asyncio.sleep(0.03)
