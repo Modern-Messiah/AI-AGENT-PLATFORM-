@@ -542,8 +542,8 @@ Ingestion pipeline:
 7. Для PDF и изображений workflow сначала строит visual manifest, затем обрабатывает страницы батчами с concurrency `2`: рендерит WebP preview, запускает OCR и при необходимости Vision-анализ.
 8. URL и GitHub-источники сначала скачиваются API, нормализуются в сохранённый объект, а найденные схемы/изображения описываются отдельным visual-проходом.
 9. `RecursiveCharacterTextSplitter` режет parsed segments по `CHUNK_SIZE=2000` и `CHUNK_OVERLAP=200`, сохраняя metadata страницы/asset.
-10. `embed_texts` считает embedding каждого chunk.
-11. `store_chunk_batch` атомарно заменяет chunks документа, записывает vectors, summary, suggested questions и warnings.
+10. `embed_texts` считает embedding каждого chunk батчами по `EMBEDDING_BATCH_SIZE=256`.
+11. `store_chunk_batch` атомарно заменяет chunks документа, записывает vectors, summary, suggested questions и warnings (в БД действует `UniqueConstraint("tenant_id", "document_id", "chunk_idx", name="uq_chunks_tenant_doc_chunk_idx")` для защиты от дубликатов при повторах активности).
 12. Статус документа становится `done`; при исчерпании activity retries — `failed` с корневой причиной.
 
 ### Что такое embeddings
@@ -822,7 +822,7 @@ sequenceDiagram
 | `MINIO_SECRET_KEY` | Secret key MinIO. | Обычно равен `MINIO_ROOT_PASSWORD`. | Да. |
 | `MINIO_BUCKET` | Bucket для файлов. | Например `app-files`. | Да. |
 
-Дополнительные settings есть в `packages/core/settings.py`, но не перечислены в `.env.example`: `EMBEDDING_MODEL`, `EMBEDDING_DIM`, `CHUNK_SIZE`, `CHUNK_OVERLAP`, `BUDGET_ALERT_USD_PER_CALL`, `ENABLE_CODE_EXEC`, `HTTP_FETCH_ALLOWED_DOMAINS`, `ALLOWED_ORIGINS`, `MAX_UPLOAD_BYTES`, `MAX_BULK_TOTAL_BYTES`.
+Дополнительные settings есть в `packages/core/settings.py`, но не перечислены в `.env.example`: `EMBEDDING_MODEL`, `EMBEDDING_DIM`, `EMBEDDING_BATCH_SIZE`, `CHUNK_SIZE`, `CHUNK_OVERLAP`, `BUDGET_ALERT_USD_PER_CALL`, `ENABLE_CODE_EXEC`, `HTTP_FETCH_ALLOWED_DOMAINS`, `ALLOWED_ORIGINS`, `MAX_UPLOAD_BYTES`, `MAX_BULK_TOTAL_BYTES`.
 
 Про AI-ключи:
 

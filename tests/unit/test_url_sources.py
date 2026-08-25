@@ -29,10 +29,9 @@ from packages.storage import DocumentStatus
 
 def test_url_source_routes_are_registered() -> None:
     routes = {
-        (route.path, method)
-        for route in app.routes
-        if isinstance(route, APIRoute)
-        for method in route.methods
+        (path, method.upper())
+        for path, methods in app.openapi()["paths"].items()
+        for method in methods
     }
 
     assert ("/documents/url/check", "POST") in routes

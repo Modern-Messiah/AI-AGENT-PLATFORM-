@@ -4,10 +4,9 @@ from fastapi.routing import APIRoute
 
 def test_document_chunks_route_is_registered() -> None:
     routes = {
-        (route.path, method)
-        for route in app.routes
-        if isinstance(route, APIRoute)
-        for method in route.methods
+        (path, method.upper())
+        for path, methods in app.openapi()["paths"].items()
+        for method in methods
     }
 
     assert ("/documents/{document_id}/chunks", "GET") in routes
