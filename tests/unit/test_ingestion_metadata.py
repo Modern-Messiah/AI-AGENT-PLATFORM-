@@ -287,14 +287,32 @@ async def test_build_chunk_batch_batches_embeddings_and_heartbeats(monkeypatch) 
         embedding_model="test-model",
         embedder=fake_embedder,
         batch_size=32,
+        document_id="doc-123",
     )
 
     assert len(batch.contents) == 70
     assert embedder_calls == [32, 32, 6]
-    assert heartbeats[0] == {"stage": "embedding-start", "total_chunks": 70}
-    assert heartbeats[1] == {"stage": "embedding", "embedded_chunks": 32, "total_chunks": 70}
-    assert heartbeats[2] == {"stage": "embedding", "embedded_chunks": 64, "total_chunks": 70}
-    assert heartbeats[3] == {"stage": "embedding", "embedded_chunks": 70, "total_chunks": 70}
+    assert heartbeats[0] == {"stage": "embedding-start", "total_chunks": 70, "document_id": "doc-123"}
+    assert heartbeats[1] == {"stage": "embedding", "embedded_chunks": 32, "total_chunks": 70, "document_id": "doc-123"}
+    assert heartbeats[2] == {"stage": "embedding", "embedded_chunks": 64, "total_chunks": 70, "document_id": "doc-123"}
+    assert heartbeats[3] == {"stage": "embedding", "embedded_chunks": 70, "total_chunks": 70, "document_id": "doc-123"}
+
+
+async def test_build_chunk_batch_invalid_batch_size() -> None:
+    import pytest
+
+    parsed = ParsedDoc(segments=[{"text": "Hello world", "metadata": {}}])
+
+    async def fake_embedder(texts: list[str]) -> list[list[float]]:
+        return [[0.1] for _ in texts]
+
+    with pytest.raises(ValueError, match="batch_size must be positive"):
+        await build_chunk_batch(
+            parsed,
+            embedding_model="test-model",
+            embedder=fake_embedder,
+            batch_size=0,
+        )
 
 
 class _FakeSession:

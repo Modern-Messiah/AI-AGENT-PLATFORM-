@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 import uuid
 from collections.abc import Awaitable, Callable
 
+from packages.core import settings
 from packages.rag import build_document_insights, chunk_segments, parse_to_segments
 from packages.rag.parser import ParsedSegment
 from packages.storage import Chunk, Document, object_store
@@ -15,7 +17,7 @@ from apps.worker.activities.url_visuals import append_url_visual_segments
 
 
 async def parse_original_document(input: IngestionInput) -> ParsedDoc:
-    data = object_store.get(input.object_key)
+    data = await asyncio.to_thread(object_store.get, input.object_key)
     segments = await parse_to_segments(data, input.filename)
     url_visuals = await append_url_visual_segments(input, segments)
     segments = url_visuals.segments
@@ -55,8 +57,15 @@ async def build_chunk_batch(
     *,
     embedding_model: str,
     embedder: Callable[[list[str]], Awaitable[list[list[float]]]],
-    batch_size: int = 32,
+    batch_size: int | None = None,
+    document_id: str | None = None,
 ) -> ChunkBatch:
+    effective_batch_size = (
+        batch_size if batch_size is not None else settings.embedding_batch_size
+    )
+    if effective_batch_size <= 0:
+        raise ValueError("batch_size must be positive")
+
     segments = _to_parsed_segments(parsed)
     if not segments and parsed.text.strip():
         segments = [ParsedSegment(text=parsed.text)]
@@ -65,17 +74,27 @@ async def build_chunk_batch(
         raise ValueError("document contains no extractable text")
     contents = [chunk.content for chunk in chunks]
 
-    heartbeat_safe({"stage": "embedding-start", "total_chunks": len(contents)})
+    start_details: dict[str, object] = {
+        "stage": "embedding-start",
+        "total_chunks": len(contents),
+    }
+    if document_id:
+        start_details["document_id"] = document_id
+    heartbeat_safe(start_details)
+
     embeddings: list[list[float]] = []
-    for i in range(0, len(contents), batch_size):
-        batch_contents = contents[i : i + batch_size]
+    for i in range(0, len(contents), effective_batch_size):
+        batch_contents = contents[i : i + effective_batch_size]
         batch_embeddings = await embedder(batch_contents)
         embeddings.extend(batch_embeddings)
-        heartbeat_safe({
+        embed_details: dict[str, object] = {
             "stage": "embedding",
             "embedded_chunks": len(embeddings),
             "total_chunks": len(contents),
-        })
+        }
+        if document_id:
+            embed_details["document_id"] = document_id
+        heartbeat_safe(embed_details)
 
     return ChunkBatch(
         contents=contents,

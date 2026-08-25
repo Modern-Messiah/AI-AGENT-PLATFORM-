@@ -43,6 +43,7 @@ class Settings(BaseSettings):
 
     embedding_model: str = "BAAI/bge-small-en-v1.5"
     embedding_dim: int = 384
+    embedding_batch_size: int = 256
     ocr_language: str = "ru"
     visual_render_max_dimension: int = 1800
     chunk_size: int = 2000
