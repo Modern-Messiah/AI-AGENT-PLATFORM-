@@ -34,7 +34,7 @@ jobs:
           enable-cache: true
 
       - name: Install Python dependencies
-        run: uv sync
+        run: uv sync --frozen
 
       - name: Run backend tests
         env:

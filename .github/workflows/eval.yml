@@ -46,7 +46,7 @@ jobs:
           version: "latest"
 
       - name: Install dependencies
-        run: uv sync
+        run: uv sync --frozen
 
       - name: Run migrations
         run: uv run alembic upgrade head

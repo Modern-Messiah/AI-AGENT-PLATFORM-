@@ -16,14 +16,15 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # Deduplicate existing dirty rows before adding the unique constraint
+    # Deduplicate existing dirty rows deterministically keeping freshest row by (created_at, id)
     op.execute(
         """
-        DELETE FROM chunks c1 USING chunks c2
-        WHERE c1.id > c2.id
-          AND c1.tenant_id = c2.tenant_id
-          AND c1.document_id = c2.document_id
-          AND c1.chunk_idx = c2.chunk_idx
+        DELETE FROM chunks c
+        USING chunks keep
+        WHERE c.tenant_id = keep.tenant_id
+          AND c.document_id = keep.document_id
+          AND c.chunk_idx = keep.chunk_idx
+          AND (c.created_at, c.id) < (keep.created_at, keep.id)
         """
     )
     op.create_unique_constraint(
@@ -31,9 +32,15 @@ def upgrade() -> None:
         "chunks",
         ["tenant_id", "document_id", "chunk_idx"],
     )
+    op.drop_index("ix_chunks_tenant_document", table_name="chunks")
 
 
 def downgrade() -> None:
+    op.create_index(
+        "ix_chunks_tenant_document",
+        "chunks",
+        ["tenant_id", "document_id"],
+    )
     op.drop_constraint(
         "uq_chunks_tenant_doc_chunk_idx",
         "chunks",
