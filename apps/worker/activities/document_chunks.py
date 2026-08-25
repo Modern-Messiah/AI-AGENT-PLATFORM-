@@ -9,7 +9,7 @@ from packages.rag import build_document_insights, chunk_segments, parse_to_segme
 from packages.rag.parser import ParsedSegment
 from packages.storage import Chunk, Document, object_store
 from packages.storage.db import tenant_session
-from sqlalchemy import update
+from sqlalchemy import delete, update
 
 from apps.worker.activities.heartbeat import heartbeat_safe
 from apps.worker.activities.ingestion_types import ChunkBatch, IngestionInput, ParsedDoc
@@ -123,7 +123,7 @@ async def store_chunk_batch(input: IngestionInput, batch: ChunkBatch) -> int:
         # Idempotency: drop any existing chunks for this document before re-insert.
         # On retry we re-embed but never duplicate rows.
         await s.execute(
-            Chunk.__table__.delete().where(
+            delete(Chunk).where(
                 Chunk.document_id == document_id,
                 Chunk.tenant_id == input.tenant_id,
             )

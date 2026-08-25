@@ -28,9 +28,9 @@ from temporalio import activity
 from apps.worker.activities.heartbeat import heartbeat_safe
 from apps.worker.activities.ingestion_types import (
     ChunkBatch,
-    IngestionInput,
+    IngestionInput as IngestionInput,
     ParsedDoc,
-    VisualBatchInput,
+    VisualBatchInput as VisualBatchInput,
     VisualBatchRef,
     VisualManifest,
     VisualPageAnalysis,
@@ -272,7 +272,7 @@ async def finalize_visual_document(
     await mark_visual_document_embedding(input, warnings)
 
     insights = build_document_insights(segments, filename=input.filename)
-    batch = await build_chunk_batch(
+    chunk_batch = await build_chunk_batch(
         ParsedDoc(
             segments=[
                 {
@@ -289,7 +289,7 @@ async def finalize_visual_document(
         embedder=embed_texts,
         document_id=input.document_id,
     )
-    written = await store_chunks(input, batch)
+    written = await store_chunk_batch(input, chunk_batch)
 
     for reference in batches:
         try:
