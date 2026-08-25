@@ -18,6 +18,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
@@ -229,6 +230,7 @@ class Chunk(Base):
 
     __table_args__ = (
         Index("ix_chunks_tenant_document", "tenant_id", "document_id"),
+        UniqueConstraint("tenant_id", "document_id", "chunk_idx", name="uq_chunks_tenant_doc_chunk_idx"),
     )
 
 
