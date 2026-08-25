@@ -3,6 +3,12 @@
 Revision ID: 0014_chunk_unique_constraint
 Revises: 0013_chat_session_scope
 Create Date: 2026-08-25
+
+Requirement: This migration must be executed by a database role with BYPASSRLS
+privileges (such as POSTGRES_USER / superuser postgres in docker-compose.yml:196).
+Because the chunks table has FORCE ROW LEVEL SECURITY enabled with tenant_isolation
+policy, running without BYPASSRLS would prevent cross-tenant deduplication from
+seeing and removing duplicate rows across all tenants prior to constraint creation.
 """
 
 from __future__ import annotations
