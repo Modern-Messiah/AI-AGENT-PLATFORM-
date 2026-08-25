@@ -4,7 +4,6 @@ from uuid import UUID
 import pytest
 from apps.api import main as api
 from apps.api.main import AgentStreamRequest, CreateNotebookRequest, NotebookResponse, app
-from fastapi.routing import APIRoute
 from pydantic import ValidationError
 
 

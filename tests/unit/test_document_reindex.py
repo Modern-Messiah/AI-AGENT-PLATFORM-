@@ -13,7 +13,6 @@ from apps.api.services.url_sources import (
     url_image_sidecar_key,
     url_image_sidecar_payload,
 )
-from fastapi.routing import APIRoute
 from packages.storage import DocumentStatus
 
 

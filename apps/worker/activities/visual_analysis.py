@@ -12,6 +12,7 @@ from packages.rag.visual import (
     needs_vision_analysis,
     run_paddle_ocr,
 )
+
 from apps.worker.activities.heartbeat import heartbeat_safe
 from apps.worker.activities.ingestion_types import VisualPageAnalysis
 

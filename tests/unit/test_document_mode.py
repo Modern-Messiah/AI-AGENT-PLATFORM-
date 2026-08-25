@@ -1,5 +1,4 @@
 from apps.api.main import AgentStreamRequest, DocumentAssetResponse, DocumentChunkPreview, app
-from fastapi.routing import APIRoute
 
 
 def test_document_chunks_route_is_registered() -> None:

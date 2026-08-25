@@ -23,7 +23,6 @@ from apps.api.services.url_sources import (
     url_image_sidecar_payload,
     validate_fetch_url,
 )
-from fastapi.routing import APIRoute
 from packages.storage import DocumentStatus
 
 
