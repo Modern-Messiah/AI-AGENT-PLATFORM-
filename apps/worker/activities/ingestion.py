@@ -231,7 +231,12 @@ async def ingest_text_document(input: IngestionInput) -> int:
     heartbeat_safe({"document_id": input.document_id, "stage": "parse-start"})
     parsed = await parse_original_document(input)
     heartbeat_safe({"document_id": input.document_id, "stage": "parse-complete"})
-    batch = await chunk_and_embed(parsed)
+    batch = await build_chunk_batch(
+        parsed,
+        embedding_model=settings.embedding_model,
+        embedder=embed_texts,
+        document_id=input.document_id,
+    )
     heartbeat_safe({"document_id": input.document_id, "stage": "embed-complete"})
     written = await store_chunk_batch(input, batch)
     heartbeat_safe({"document_id": input.document_id, "stage": "store-complete"})
@@ -267,18 +272,23 @@ async def finalize_visual_document(
     await mark_visual_document_embedding(input, warnings)
 
     insights = build_document_insights(segments, filename=input.filename)
-    batch = await chunk_and_embed(ParsedDoc(
-        segments=[
-            {
-                "text": segment.text,
-                "metadata": segment.metadata,
-            }
-            for segment in segments
-        ],
-        summary=insights.summary,
-        suggested_questions=insights.suggested_questions,
-        warnings=warnings,
-    ))
+    batch = await build_chunk_batch(
+        ParsedDoc(
+            segments=[
+                {
+                    "text": segment.text,
+                    "metadata": segment.metadata,
+                }
+                for segment in segments
+            ],
+            summary=insights.summary,
+            suggested_questions=insights.suggested_questions,
+            warnings=warnings,
+        ),
+        embedding_model=settings.embedding_model,
+        embedder=embed_texts,
+        document_id=input.document_id,
+    )
     written = await store_chunks(input, batch)
 
     for reference in batches:

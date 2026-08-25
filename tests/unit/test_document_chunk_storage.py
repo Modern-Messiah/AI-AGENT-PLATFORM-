@@ -13,7 +13,10 @@ class _ChunkStorageSession:
         self.statements.append(statement)
 
     def add_all(self, rows) -> None:
-        self.rows = list(rows)
+        self.rows.extend(rows)
+
+    async def flush(self) -> None:
+        pass
 
 
 class _ChunkStorageTenantSession:

@@ -25,7 +25,10 @@ from apps.api.services.url_sources import (
 )
 from apps.worker.activities.heartbeat import heartbeat_safe
 from apps.worker.activities.ingestion_types import IngestionInput, VisualPageAnalysis
-from apps.worker.activities.visual_analysis import analyze_visual_page
+from apps.worker.activities.visual_analysis import (
+    analyze_visual_page,
+    await_with_heartbeat,
+)
 from apps.worker.activities.visual_storage import upsert_document_asset
 
 log = logging.getLogger(__name__)
@@ -242,7 +245,14 @@ async def append_url_visual_segments(
             if not pages:
                 raise ValueError("URL image could not be rendered")
             page = replace(pages[0], page_number=index)
-            analysis = await analyze_visual_page(page)
+            analysis = await await_with_heartbeat(
+                analyze_visual_page(page),
+                details={
+                    "document_id": input.document_id,
+                    "image_index": index,
+                    "stage": "url-image-ocr-vision",
+                },
+            )
             if not analysis.text.strip():
                 raise ValueError("URL image contains no extractable visual content")
 

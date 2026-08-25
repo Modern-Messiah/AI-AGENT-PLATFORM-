@@ -114,6 +114,11 @@ async def build_chunk_batch(
 
 async def store_chunk_batch(input: IngestionInput, batch: ChunkBatch) -> int:
     document_id = uuid.UUID(input.document_id)
+    heartbeat_safe({
+        "document_id": input.document_id,
+        "stage": "store-start",
+        "total_chunks": len(batch.contents),
+    })
     async with tenant_session(input.tenant_id) as s:
         # Idempotency: drop any existing chunks for this document before re-insert.
         # On retry we re-embed but never duplicate rows.
@@ -135,22 +140,30 @@ async def store_chunk_batch(input: IngestionInput, batch: ChunkBatch) -> int:
                 warnings=batch.warnings,
             )
         )
-        s.add_all(
-            [
-                Chunk(
-                    document_id=document_id,
-                    tenant_id=input.tenant_id,
-                    chunk_idx=i,
-                    content=content,
-                    embedding=embedding,
-                    chunk_metadata={
-                        "filename": input.filename,
-                        **(batch.metadata[i] if i < len(batch.metadata) else {}),
-                    },
-                )
-                for i, (content, embedding) in enumerate(
-                    zip(batch.contents, batch.embeddings, strict=True)
-                )
-            ]
-        )
+        chunk_rows = [
+            Chunk(
+                document_id=document_id,
+                tenant_id=input.tenant_id,
+                chunk_idx=i,
+                content=content,
+                embedding=embedding,
+                chunk_metadata={
+                    "filename": input.filename,
+                    **(batch.metadata[i] if i < len(batch.metadata) else {}),
+                },
+            )
+            for i, (content, embedding) in enumerate(
+                zip(batch.contents, batch.embeddings, strict=True)
+            )
+        ]
+        store_batch_size = 200
+        for i in range(0, len(chunk_rows), store_batch_size):
+            s.add_all(chunk_rows[i : i + store_batch_size])
+            await s.flush()
+            heartbeat_safe({
+                "document_id": input.document_id,
+                "stage": "storing-chunks",
+                "stored_chunks": min(i + store_batch_size, len(chunk_rows)),
+                "total_chunks": len(chunk_rows),
+            })
     return len(batch.contents)
