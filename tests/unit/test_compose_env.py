@@ -47,6 +47,7 @@ def test_api_container_receives_rag_environment() -> None:
         "FAST_RAG_TOP_K:",
         "FAST_RAG_PER_DOCUMENT_K:",
         "FAST_RAG_CONTEXT_MAX_CHARS:",
+        "HYBRID_SEARCH_ENABLED:",
     ]
 
     for item in expected:
@@ -64,6 +65,7 @@ def test_worker_container_receives_rag_environment() -> None:
         "OCR_LANGUAGE:",
         "RETRIEVAL_MAX_DISTANCE:",
         "RETRIEVAL_TOP_K:",
+        "HYBRID_SEARCH_ENABLED:",
     ]
 
     for item in expected:

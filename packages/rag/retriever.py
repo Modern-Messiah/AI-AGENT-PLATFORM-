@@ -1,4 +1,4 @@
-"""Vector search over pgvector with tenant filter."""
+"""Hybrid retrieval: pgvector neighbours fused with PostgreSQL full-text matches."""
 
 from __future__ import annotations
 
@@ -6,11 +6,12 @@ import re
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import ColumnElement, func, or_, select
 
 from packages.core import settings
-from packages.rag.embedder import embed_texts
+from packages.rag.embedder import embed_queries
 from packages.storage import Chunk, Document
 from packages.storage.db import tenant_session
 
@@ -133,11 +134,7 @@ def _lexical_relevance(query: str, content: str) -> float:
 
     query_pairs = set(zip(query_terms, query_terms[1:], strict=False))
     content_pairs = set(zip(content_terms, content_terms[1:], strict=False))
-    pair_coverage = (
-        len(query_pairs & content_pairs) / len(query_pairs)
-        if query_pairs
-        else 0.0
-    )
+    pair_coverage = len(query_pairs & content_pairs) / len(query_pairs) if query_pairs else 0.0
     return min(1.0, term_coverage * 0.8 + pair_coverage * 0.2)
 
 
@@ -220,6 +217,35 @@ def effective_max_distance_for_scope(
     return configured_max_distance
 
 
+def rrf_merge(
+    vector_ids: Sequence[str],
+    fts_ids: Sequence[str],
+    *,
+    k: int = 60,
+    limit: int | None = None,
+) -> list[str]:
+    """Reciprocal-rank fusion of two ranked id lists.
+
+    Both lists are ordered best-first. An id found by only one list still
+    gets its single-list contribution, which is exactly how exact-term
+    matches the vector search missed become reachable again.
+    """
+    scores: dict[str, float] = {}
+    for ids in (vector_ids, fts_ids):
+        for rank, chunk_id in enumerate(ids):
+            scores[chunk_id] = scores.get(chunk_id, 0.0) + 1.0 / (k + rank + 1)
+    ordered = sorted(scores, key=lambda cid: (-scores[cid], cid))
+    return ordered[:limit] if limit is not None else ordered
+
+
+def _fts_matches(query: str) -> ColumnElement[bool]:
+    """tsquery OR-ing both configs: exact-token hits or Russian morphology."""
+    return or_(
+        Chunk.tsv.op("@@")(func.websearch_to_tsquery("simple", query)),
+        Chunk.tsv.op("@@")(func.websearch_to_tsquery("russian", query)),
+    )
+
+
 async def retrieve_chunks(
     query: str,
     tenant_id: str,
@@ -240,7 +266,7 @@ async def retrieve_chunks(
         document_id=document_id,
         document_ids=document_ids,
     )
-    [query_vec] = await embed_texts([query])
+    [query_vec] = await embed_queries([query])
     document_uuids = [uuid.UUID(str(doc_id)) for doc_id in (document_ids or [])]
     if document_id is not None:
         document_uuids = [uuid.UUID(str(document_id))]
@@ -261,17 +287,49 @@ async def retrieve_chunks(
             stmt = stmt.where(distance <= max_distance)
         rows = (await session.execute(stmt)).all()
 
+        # Full-text leg of the hybrid search: exact tokens and Russian
+        # morphology that cosine neighbours may rank below the cutoff.
+        fts_rows: Sequence[Any] = []
+        if settings.hybrid_search_enabled:
+            rank = func.ts_rank_cd(Chunk.tsv, func.websearch_to_tsquery("simple", query)).label(
+                "rank"
+            )
+            fts_stmt = (
+                select(Chunk, Document.filename, distance.label("distance"), rank)
+                .join(Document, Chunk.document_id == Document.id)
+                .where(Chunk.tenant_id == tenant_id, _fts_matches(query))
+                .order_by(rank.desc())
+                .limit(k)
+            )
+            if document_uuids:
+                fts_stmt = fts_stmt.where(Chunk.document_id.in_(document_uuids))
+            fts_rows = (await session.execute(fts_stmt)).all()
+
+    by_id: dict[str, tuple[Chunk, str, float]] = {}
+    for chunk, filename, dist in rows:
+        by_id[str(chunk.id)] = (chunk, filename, float(dist))
+    for fts_row in fts_rows:
+        chunk, filename, dist = fts_row[0], fts_row[1], fts_row[2]
+        by_id.setdefault(str(chunk.id), (chunk, filename, float(dist)))
+
+    merged_ids = rrf_merge(
+        [str(chunk.id) for chunk, _, _ in rows],
+        [str(fts_row[0].id) for fts_row in fts_rows],
+        k=settings.hybrid_rrf_k,
+        limit=2 * k,
+    )
+
     chunks = [
         RetrievedChunk(
-            chunk_id=str(chunk.id),
-            document_id=str(chunk.document_id),
-            filename=filename,
-            content=chunk.content,
-            score=1.0 - float(distance),
-            metadata=chunk.chunk_metadata,
-            chunk_idx=chunk.chunk_idx,
+            chunk_id=chunk_id,
+            document_id=str(by_id[chunk_id][0].document_id),
+            filename=by_id[chunk_id][1],
+            content=by_id[chunk_id][0].content,
+            score=1.0 - by_id[chunk_id][2],
+            metadata=by_id[chunk_id][0].chunk_metadata,
+            chunk_idx=by_id[chunk_id][0].chunk_idx,
         )
-        for chunk, filename, distance in rows
+        for chunk_id in merged_ids
     ]
     ranked = rerank_chunks(query, chunks)
     if document_uuids:
