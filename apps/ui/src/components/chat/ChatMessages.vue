@@ -1,5 +1,5 @@
 <template>
-  <div class="chat-messages" ref="containerRef">
+  <div class="chat-messages" ref="containerRef" @scroll="onScroll">
     <template v-for="msg in chat.messages" :key="msg.id">
       <!-- HITL approval card -->
       <div v-if="msg.role === 'hitl'" class="hitl-card">
@@ -197,14 +197,27 @@ function expandedCitationGroup(msg) {
   )) || null
 }
 
-async function scrollToBottom() {
+// Follow the stream only while the reader is at (or near) the bottom: scrolling
+// up to re-read must not be fought by per-token auto-scroll.
+const NEAR_BOTTOM_PX = 80
+const stickToBottom = ref(true)
+
+function onScroll() {
+  const el = containerRef.value
+  if (!el) return
+  stickToBottom.value = el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_BOTTOM_PX
+}
+
+async function scrollToBottom(force = false) {
+  if (!force && !stickToBottom.value) return
   await nextTick()
   if (containerRef.value) {
     containerRef.value.scrollTop = containerRef.value.scrollHeight
   }
 }
 
-watch([() => chat.messages.length, () => chat.isActiveSessionLoading(), () => chat.streamTick], scrollToBottom)
+watch(() => chat.messages.length, () => scrollToBottom(true))
+watch([() => chat.isActiveSessionLoading(), () => chat.streamTick], () => scrollToBottom())
 </script>
 
 <style scoped>

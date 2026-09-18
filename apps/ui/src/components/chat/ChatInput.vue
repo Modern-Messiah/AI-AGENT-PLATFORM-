@@ -11,7 +11,14 @@
         @input="resize"
         @keydown.enter.exact.prevent="send"
       ></textarea>
-      <button class="send-btn"
+      <button v-if="chat.isStreaming"
+              class="send-btn stop-btn"
+              :title="t('chat.stop')"
+              :aria-label="t('chat.stop')"
+              @click="chat.cancelStreaming()">
+        <AppIcon name="stop" />
+      </button>
+      <button v-else class="send-btn"
               :disabled="!input.trim() || tooLong || chat.loading || !settings.isConnected"
               @click="send">
         <AppIcon name="send" />
@@ -61,3 +68,9 @@ function send() {
   emit('send', q)
 }
 </script>
+
+<style scoped>
+.stop-btn {
+  background: var(--red);
+}
+</style>

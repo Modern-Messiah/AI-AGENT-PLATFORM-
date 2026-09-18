@@ -24,6 +24,9 @@
   <svg width="14" height="14" viewBox="0 0 14 14" fill="none" v-else-if="name === 'send'">
     <path d="M12.5 1.5L6.5 7.5M12.5 1.5L8.5 12.5L6.5 7.5L1.5 5.5L12.5 1.5Z" stroke="white" stroke-width="1.4" stroke-linejoin="round"/>
   </svg>
+  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" v-else-if="name === 'stop'">
+    <rect x="3" y="3" width="8" height="8" rx="1.5" fill="white"/>
+  </svg>
   <svg :width="size" :height="size" viewBox="0 0 20 20" fill="none" v-else-if="name === 'upload'">
     <path d="M10 13V4M6 8l4-4 4 4M4 16h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
   </svg>
