@@ -1,10 +1,12 @@
 """FastAPI entrypoint.
 
-Auth: every endpoint (except /health and /auth/keys) requires
+Auth: every endpoint (except /health, /health/ready and /auth/keys) requires
   X-API-Key: <raw key>
 Keys are created via POST /auth/keys (protected by X-Admin-Secret header).
 
 Endpoints:
+  GET  /health                       — shallow liveness probe
+  GET  /health/ready                 — dependency readiness probe (503 when degraded)
   POST /agent/run                    — single agent run (optional require_approval)
   POST /agent/research               — multi-step research via child workflows
   GET  /workflows/{id}/result        — poll HITL workflow result

@@ -44,5 +44,9 @@ class ObjectStore:
     def delete(self, key: str) -> None:
         self._client.remove_object(settings.minio_bucket, key)
 
+    def ping(self) -> bool:
+        """Cheap reachability check for health probes: bucket must exist."""
+        return self._client.bucket_exists(settings.minio_bucket)
+
 
 object_store = ObjectStore()
