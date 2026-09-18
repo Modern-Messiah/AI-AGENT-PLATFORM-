@@ -89,6 +89,12 @@ import { useSettingsStore } from '@/stores/settings'
 import { useI18n } from '@/composables/useI18n'
 import { THEMES } from '@/utils/theme'
 
+const AUTO_THEME_OPTION = {
+  id: 'auto',
+  labelKey: 'settings.themeAuto',
+  swatches: ['#0c0e12', '#f6f8fb', '#5067d9'],
+}
+
 const emit = defineEmits(['close'])
 const settings = useSettingsStore()
 const { t } = useI18n()
@@ -96,7 +102,7 @@ const languageOptions = computed(() => [
   { value: 'ru', label: t('settings.russian') },
   { value: 'en', label: t('settings.english') },
 ])
-const themeOptions = THEMES
+const themeOptions = [AUTO_THEME_OPTION, ...THEMES]
 
 const localKey  = ref(settings.apiKey)
 const localBase = ref(settings.baseUrl)

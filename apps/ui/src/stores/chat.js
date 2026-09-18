@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useApi } from '@/composables/useApi'
 import { useSettingsStore } from '@/stores/settings'
 import { formatLocaleTime, translate } from '@/i18n'
@@ -20,7 +20,8 @@ export const useChatStore = defineStore('chat', () => {
   const sessLoading = ref(false)
   const loadedKey = ref(null)
   const streamTick = ref(0)  // incremented on each streaming token to trigger scroll
-  let activeStreamController = null
+  const activeStreamController = ref(null)
+  const isStreaming = computed(() => activeStreamController.value !== null)
 
   // sessId → [{ workflowId, time }, ...]  (array to support multiple pending workflows per session)
   // Persisted to localStorage so pending HITL cards survive page refresh.
@@ -53,9 +54,9 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   function reset() {
-    if (activeStreamController) {
-      activeStreamController.abort()
-      activeStreamController = null
+    if (activeStreamController.value) {
+      activeStreamController.value.abort()
+      activeStreamController.value = null
     }
     sessions.value = []
     activeId.value = null
@@ -252,7 +253,7 @@ export const useChatStore = defineStore('chat', () => {
     const streamBody = { user_query: query, model }
     if (documentId) streamBody.document_id = documentId
     if (notebookId) streamBody.notebook_id = notebookId
-    activeStreamController = streamController
+    activeStreamController.value = streamController
     try {
       const response = await apiStreamFetch('/agent/stream', {
         method: 'POST',
@@ -297,7 +298,7 @@ export const useChatStore = defineStore('chat', () => {
             }
 
           } else if (event.type === 'done') {
-            if (activeStreamController === streamController) activeStreamController = null
+            if (activeStreamController.value === streamController) activeStreamController.value = null
             _stopLoading(sessId)
             if (activeId.value === sessId) {
               if (streamMsg) {
@@ -327,7 +328,7 @@ export const useChatStore = defineStore('chat', () => {
             return streamMsg
 
           } else if (event.type === 'error') {
-            if (activeStreamController === streamController) activeStreamController = null
+            if (activeStreamController.value === streamController) activeStreamController.value = null
             _stopLoading(sessId)
             const errMsg = { id: 'e' + Date.now(), role: 'agent', text: t('common.error', { message: event.message }), time: nowTime(), sources: [], error: true }
             if (activeId.value === sessId) {
@@ -344,7 +345,7 @@ export const useChatStore = defineStore('chat', () => {
         }
       }
     } catch (e) {
-      if (activeStreamController === streamController) activeStreamController = null
+      if (activeStreamController.value === streamController) activeStreamController.value = null
       _stopLoading(sessId)
       if (e?.name === 'AbortError') return null
       const errMsg = { id: 'e' + Date.now(), role: 'agent', text: t('common.error', { message: e.message }), time: nowTime(), sources: [], error: true }
@@ -364,9 +365,9 @@ export const useChatStore = defineStore('chat', () => {
 
   function cancelStreaming(options = {}) {
     const { removePartial = false } = options
-    if (activeStreamController) {
-      activeStreamController.abort()
-      activeStreamController = null
+    if (activeStreamController.value) {
+      activeStreamController.value.abort()
+      activeStreamController.value = null
     }
     _stopLoading()
     if (removePartial) {
@@ -445,6 +446,7 @@ export const useChatStore = defineStore('chat', () => {
 
   return {
     sessions, activeId, messages, loading, loadingSessionId, sessLoading, loadedKey, streamTick,
+    isStreaming,
     reset, loadSessions, selectSession, newChat, deleteSession,
     sendMessage, cancelStreaming, isActiveSessionLoading, approveHitl, rejectHitl
   }
