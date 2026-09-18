@@ -82,7 +82,7 @@ plugins = ["pydantic.mypy"]
 mypy_path = "."
 
 [[tool.mypy.overrides]]
-module = ["temporalio.*", "clickhouse_connect.*", "minio.*"]
+module = ["temporalio.*", "clickhouse_connect.*", "minio.*", "fitz.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
