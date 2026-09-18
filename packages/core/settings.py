@@ -41,7 +41,13 @@ class Settings(BaseSettings):
     minio_secret_key: str = "minioadmin"
     minio_bucket: str = "app-files"
 
-    embedding_model: str = "BAAI/bge-small-en-v1.5"
+    # Multilingual model (~50 languages incl. Russian); same 384-dim output as
+    # the previous English-only bge-small-en-v1.5, so no schema migration is
+    # needed — but vectors are incompatible, so reindex everything after
+    # switching (docs/runbooks/reindex-after-embedding-change.md).
+    # Quality upgrade path: intfloat/multilingual-e5-large (1024d) — requires
+    # the vector-column resize described in the same runbook.
+    embedding_model: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
     embedding_dim: int = 384
     embedding_batch_size: int = 256
     ocr_language: str = "ru"
@@ -130,9 +136,7 @@ class Settings(BaseSettings):
                     "ALLOWED_ORIGINS must be set before running in non-local environments"
                 )
             if "*" in origins:
-                raise ValueError(
-                    "ALLOWED_ORIGINS must not contain '*' in non-local environments"
-                )
+                raise ValueError("ALLOWED_ORIGINS must not contain '*' in non-local environments")
         return self
 
 
