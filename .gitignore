@@ -22,3 +22,6 @@ STATUS.md
 NOTES.local.md
 .codegraph/
 docs/
+
+# Local architecture notes (not for the repo)
+ai-agent-platform.md
