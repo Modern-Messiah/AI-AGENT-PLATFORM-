@@ -104,9 +104,7 @@ class SemanticCache:
         best_result: AgentRunOutput | None = None
 
         for _eid, cached_vec, cached_norm, result in candidates:
-            sim = float(
-                np.dot(query_vec, cached_vec) / (query_norm * cached_norm + 1e-8)
-            )
+            sim = float(np.dot(query_vec, cached_vec) / (query_norm * cached_norm + 1e-8))
             if sim > best_sim:
                 best_sim = sim
                 best_result = result
@@ -118,6 +116,12 @@ class SemanticCache:
     async def set(self, query: str, tenant_id: str, result: AgentRunOutput) -> None:
         if not result.answer.strip():
             log.warning("semantic cache skip empty answer | tenant=%s", tenant_id)
+            return
+        if not result.sources:
+            # Ungrounded refusals ("не нашёл информации…") must not be cached:
+            # cache invalidation is best-effort, so a document uploaded minutes
+            # later could otherwise keep serving the stale refusal for an hour.
+            log.info("semantic cache skip ungrounded answer | tenant=%s", tenant_id)
             return
 
         r = get_redis()

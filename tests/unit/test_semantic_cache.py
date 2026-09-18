@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import json
 
-from packages.cache import semantic as semantic_module
 from packages.agents.schemas import AgentRunOutput
+from packages.cache import semantic as semantic_module
 from packages.cache.semantic import SemanticCache
 
 
@@ -48,15 +48,17 @@ class _FakePipeline:
             return self.raw_values
         if self.get_keys:
             return [
-                json.dumps({
-                    "vec": [1.0, 0.0],
-                    "result": AgentRunOutput(
-                        answer="cached answer",
-                        confidence=0.8,
-                        sources=[],
-                        cached=True,
-                    ).model_dump(),
-                })
+                json.dumps(
+                    {
+                        "vec": [1.0, 0.0],
+                        "result": AgentRunOutput(
+                            answer="cached answer",
+                            confidence=0.8,
+                            sources=[],
+                            cached=True,
+                        ).model_dump(),
+                    }
+                )
                 for _key in self.get_keys
             ]
         return None
@@ -105,9 +107,7 @@ async def test_clear_removes_tenant_index_and_all_cached_entries(monkeypatch) ->
         "scache:tenant-a:entry-two",
         "scache:tenant-a:idx",
     ]
-    assert redis.zrange_calls == [
-        ("scache:tenant-a:idx", 0, -1, False)
-    ]
+    assert redis.zrange_calls == [("scache:tenant-a:idx", 0, -1, False)]
     assert redis.pipeline_instance.executed is True
 
 
@@ -125,16 +125,16 @@ async def test_get_uses_bounded_tenant_index_without_global_key_scan(monkeypatch
 
     assert result is not None
     assert result.answer == "cached answer"
-    assert redis.zrange_calls == [
-        ("scache:tenant-a:idx", 0, semantic_module._MAX_SCAN - 1, True)
-    ]
+    assert redis.zrange_calls == [("scache:tenant-a:idx", 0, semantic_module._MAX_SCAN - 1, True)]
     assert redis.pipeline_instance.get_keys == [
         "scache:tenant-a:entry-one",
         "scache:tenant-a:entry-two",
     ]
 
 
-async def test_get_removes_stale_index_members_without_embedding_when_all_entries_invalid(monkeypatch) -> None:
+async def test_get_removes_stale_index_members_without_embedding_when_all_entries_invalid(
+    monkeypatch,
+) -> None:
     redis = _FakeRedis(
         entry_ids=[b"missing", b"malformed", b"not-object", b"empty-answer", b"bad-vector"],
         raw_values=[
@@ -178,16 +178,38 @@ async def test_set_caps_tenant_index(monkeypatch) -> None:
     await SemanticCache().set(
         "query",
         "tenant-a",
-        AgentRunOutput(answer="answer", confidence=0.8, sources=[], cached=False),
+        AgentRunOutput(answer="answer", confidence=0.8, sources=["report.pdf"], cached=False),
     )
 
     assert redis.pipeline_instance.set_calls
-    assert redis.pipeline_instance.zadd_calls == [
-        ("scache:tenant-a:idx", {"entry-fixed": 123.45})
-    ]
+    assert redis.pipeline_instance.zadd_calls == [("scache:tenant-a:idx", {"entry-fixed": 123.45})]
     assert redis.pipeline_instance.expire_calls == [
         ("scache:tenant-a:idx", semantic_module._TTL_SECONDS)
     ]
     assert redis.pipeline_instance.zremrangebyrank_calls == [
         ("scache:tenant-a:idx", 0, -(semantic_module._MAX_INDEX + 1))
     ]
+
+
+async def test_set_skips_results_without_sources(monkeypatch) -> None:
+    redis = _FakeRedis(entry_ids=[])
+    monkeypatch.setattr(semantic_module, "get_redis", lambda: redis)
+
+    async def fail_embed_texts(values: list[str]) -> list[list[float]]:
+        raise AssertionError("ungrounded results must be rejected before embedding")
+
+    monkeypatch.setattr(semantic_module, "embed_texts", fail_embed_texts)
+
+    await SemanticCache().set(
+        "query",
+        "tenant-a",
+        AgentRunOutput(
+            answer="No relevant information found in the indexed documents.",
+            confidence=0.2,
+            sources=[],
+            cached=False,
+        ),
+    )
+
+    assert redis.pipeline_instance.executed is False
+    assert redis.pipeline_instance.set_calls == []
