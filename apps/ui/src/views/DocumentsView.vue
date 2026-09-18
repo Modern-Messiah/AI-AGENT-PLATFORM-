@@ -273,6 +273,29 @@
                                     </div>
                                     <div
                                         v-if="
+                                            typeof doc._uploadPct === 'number' &&
+                                            doc._uploadPct < 100
+                                        "
+                                        class="page-progress"
+                                    >
+                                        <div class="page-progress-label">
+                                            {{
+                                                t("documents.uploadProgress", {
+                                                    pct: doc._uploadPct,
+                                                })
+                                            }}
+                                        </div>
+                                        <div class="progress">
+                                            <div
+                                                class="progress-fill"
+                                                :style="{
+                                                    width: doc._uploadPct + '%',
+                                                }"
+                                            ></div>
+                                        </div>
+                                    </div>
+                                    <div
+                                        v-if="
                                             doc.totalPages > 0 &&
                                             doc.status !== 'done'
                                         "
@@ -382,7 +405,7 @@ import {
     normalizeDocument,
 } from "@/utils/documents";
 
-const { apiFetch } = useApi();
+const { apiFetch, apiUpload } = useApi();
 const settings = useSettingsStore();
 const { t } = useI18n();
 const router = useRouter();
@@ -741,6 +764,7 @@ async function uploadFile(file) {
             processedPages: 0,
             totalPages: 0,
             progressPct: 0,
+            _uploadPct: 0,
             _pending: true,
         },
         ...docs.value,
@@ -752,16 +776,20 @@ async function uploadFile(file) {
     try {
         const form = new FormData();
         form.append("file", file);
-        const data = await apiFetch("/documents", {
-            method: "POST",
+        const data = await apiUpload("/documents", {
             body: form,
+            onProgress: (fraction) => {
+                updateDoc(tempId, { _uploadPct: Math.round(fraction * 100) });
+            },
         });
         docs.value = docs.value.map((d) =>
-            d.id === tempId ? { ...d, id: data.id, _pending: true } : d,
+            d.id === tempId
+                ? { ...d, id: data.id, _pending: true, _uploadPct: null }
+                : d,
         );
         startStatusPolling(data.id);
     } catch (e) {
-        updateDoc(tempId, { status: "failed", error: e.message });
+        updateDoc(tempId, { status: "failed", error: e.message, _uploadPct: null });
         toast.value = {
             msg: t("common.error", { message: e.message }),
             type: "error",
