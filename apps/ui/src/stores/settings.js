@@ -2,7 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed, watch } from 'vue'
 import { resolveApiConfig } from '@/utils/apiConfig'
 import { normalizeLocale, translate } from '@/i18n'
-import { applyTheme, DEFAULT_THEME, normalizeTheme, persistTheme } from '@/utils/theme'
+import { applyTheme, AUTO_THEME, DEFAULT_THEME, normalizeTheme, persistTheme } from '@/utils/theme'
 
 export const useSettingsStore = defineStore('settings', () => {
   const apiKey = ref('')
@@ -76,6 +76,13 @@ export const useSettingsStore = defineStore('settings', () => {
   watch(theme, value => {
     applyTheme(value)
   }, { immediate: true })
+
+  // Re-resolve the 'auto' pseudo-theme live when the OS colour scheme flips.
+  if (typeof globalThis.matchMedia === 'function') {
+    globalThis.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+      if (theme.value === AUTO_THEME) applyTheme(AUTO_THEME)
+    })
+  }
 
   const keyMasked    = computed(() => (
     apiKey.value ? `…${apiKey.value.slice(-6)}` : translate(locale.value, 'settings.notSet')
