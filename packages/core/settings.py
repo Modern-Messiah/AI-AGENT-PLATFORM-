@@ -62,6 +62,11 @@ class Settings(BaseSettings):
     fast_rag_per_document_k: int = 2
     fast_rag_context_max_chars: int = 8_000
 
+    # Hybrid retrieval: fuse pgvector neighbours with PostgreSQL full-text
+    # matches (tsv column, migration 0016) via reciprocal-rank fusion.
+    hybrid_search_enabled: bool = True
+    hybrid_rrf_k: int = 60
+
     # Interactive agent guardrails.
     agent_query_max_chars: int = 12_000
     agent_rate_limit_per_minute: int = 20

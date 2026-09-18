@@ -10,6 +10,7 @@ from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     BigInteger,
     CheckConstraint,
+    Computed,
     DateTime,
     Enum,
     Float,
@@ -21,7 +22,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 from packages.core import settings
@@ -221,6 +222,12 @@ class Chunk(Base):
     embedding: Mapped[list[float]] = mapped_column(Vector(settings.embedding_dim), nullable=False)
     chunk_metadata: Mapped[dict] = mapped_column(
         "metadata", JSONB, default=dict, nullable=False
+    )
+    # Stored generated column maintained by PostgreSQL (migration 0016):
+    # 'simple' keeps exact tokens/identifiers, 'russian' adds morphology.
+    tsv: Mapped[object] = mapped_column(
+        TSVECTOR,
+        Computed("to_tsvector('simple', content) || to_tsvector('russian', content)"),
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
