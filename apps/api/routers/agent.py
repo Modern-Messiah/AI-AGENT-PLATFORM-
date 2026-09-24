@@ -19,6 +19,7 @@ from packages.llm import stream_chat_text
 from packages.rag import (
     CitationSource,
     build_citations,
+    calibrate_confidence,
     build_grounded_messages,
     normalize_citation_sources,
     retrieve_chunks,
@@ -294,7 +295,7 @@ async def agent_stream(body: AgentStreamRequest, tenant_id: TenantID) -> Streami
             output = AgentRunOutput(
                 answer=answer or "Не удалось получить ответ от модели.",
                 sources=answer_sources if answer else [],
-                confidence=0.85 if answer_sources else 0.2 if answer else 0.0,
+                confidence=calibrate_confidence(selected_chunks, answer_sources, answer),
                 cached=False,
             )
             latency_ms = int((time.monotonic() - request_t0) * 1000)

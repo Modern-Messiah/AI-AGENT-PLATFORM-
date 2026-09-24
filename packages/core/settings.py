@@ -60,7 +60,9 @@ class Settings(BaseSettings):
     scoped_rag_candidate_k: int = 32
     fast_rag_top_k: int = 6
     fast_rag_per_document_k: int = 2
-    fast_rag_context_max_chars: int = 8_000
+    # kimi-k2.6 has a 256k context — 16k chars of grounded context costs
+    # pennies and halves the truncation rate of the old 8k equal split.
+    fast_rag_context_max_chars: int = 16_000
 
     # Hybrid retrieval: fuse pgvector neighbours with PostgreSQL full-text
     # matches (tsv column, migration 0016) via reciprocal-rank fusion.
