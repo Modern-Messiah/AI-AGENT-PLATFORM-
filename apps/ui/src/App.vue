@@ -2,11 +2,22 @@
   <div class="layout">
     <AppSidebar
       :collapsed="sidebarCollapsed"
-      @toggle="toggleSidebar"
+      :mobile-open="mobileNavOpen"
+      @toggle="onSidebarToggle"
       @open-settings="showSettings = true"
     />
+    <div
+      v-if="isMobile && mobileNavOpen"
+      class="mobile-backdrop"
+      @click="mobileNavOpen = false"
+    ></div>
     <div class="main">
-      <AppTopbar :title="meta.title" :sub="meta.sub" />
+      <AppTopbar
+        :title="meta.title"
+        :sub="meta.sub"
+        :show-burger="isMobile"
+        @toggle-sidebar="mobileNavOpen = true"
+      />
       <div class="content">
         <RouterView />
       </div>
@@ -24,6 +35,7 @@ import SettingsModal from './components/SettingsModal.vue'
 import { useSettingsStore } from './stores/settings'
 import { useI18n } from './composables/useI18n'
 import { readStoredSidebarCollapsed, toggleSidebarCollapsed } from './utils/sidebarCollapse'
+import { useMaxWidthMediaQuery } from './utils/mediaQuery'
 import { clearSettingsQuery, shouldOpenSettingsModal } from './utils/settingsRoute'
 
 const route = useRoute()
@@ -32,6 +44,12 @@ const settings = useSettingsStore()
 const { t } = useI18n()
 const showSettings = ref(!settings.isConnected || shouldOpenSettingsModal(route.query))
 const sidebarCollapsed = ref(false)
+const isMobile = useMaxWidthMediaQuery(900)
+const mobileNavOpen = ref(false)
+
+watch(() => route.path, () => {
+  mobileNavOpen.value = false
+})
 
 const meta = computed(() => {
   if (route.path.startsWith('/documents/')) {
@@ -55,6 +73,14 @@ function sidebarStorage() {
   } catch {
     return null
   }
+}
+
+function onSidebarToggle() {
+  if (isMobile.value) {
+    mobileNavOpen.value = !mobileNavOpen.value
+    return
+  }
+  toggleSidebar()
 }
 
 function toggleSidebar() {

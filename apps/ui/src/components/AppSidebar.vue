@@ -1,5 +1,5 @@
 <template>
-  <div class="sidebar" :class="{ collapsed }">
+  <div class="sidebar" :class="{ collapsed, 'mobile-open': mobileOpen }">
     <div class="sidebar-logo">
       <div class="logo-mark">A</div>
       <div class="logo-copy">
@@ -59,6 +59,7 @@ import AppIcon from './AppIcon.vue'
 
 defineProps({
   collapsed: { type: Boolean, default: false },
+  mobileOpen: { type: Boolean, default: false },
 })
 defineEmits(['openSettings', 'toggle'])
 

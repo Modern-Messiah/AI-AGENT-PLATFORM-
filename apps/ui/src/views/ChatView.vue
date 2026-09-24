@@ -1,6 +1,17 @@
 <template>
   <div ref="chatLayoutRef" class="chat-layout" :class="{ 'is-resizing-history': isResizingHistory }">
-    <ChatHistory :model="model" :width="historyWidth" @toast="setToast" />
+    <ChatHistory
+      :model="model"
+      :width="historyWidth"
+      :mobile-open="mobileHistoryOpen"
+      :is-mobile="isMobile"
+      @toast="setToast"
+    />
+    <div
+      v-if="isMobile && mobileHistoryOpen"
+      class="mobile-backdrop"
+      @click="mobileHistoryOpen = false"
+    ></div>
 
     <button
       class="chat-history-resizer"
@@ -19,7 +30,12 @@
     ></button>
 
     <div class="chat-main">
-      <ChatToolbar v-model:model="model" v-model:requireApproval="requireApproval" />
+      <ChatToolbar
+        v-model:model="model"
+        v-model:requireApproval="requireApproval"
+        :show-history-toggle="isMobile"
+        @toggle-history="mobileHistoryOpen = !mobileHistoryOpen"
+      />
       <div v-if="displayScope.type !== 'global'" class="scope-banner">
         <div>
           <strong>{{ displayScope.title }}</strong>
@@ -66,6 +82,7 @@ import {
   storePaneWidth,
 } from '@/utils/paneResize'
 import ChatHistory from '@/components/chat/ChatHistory.vue'
+import { useMaxWidthMediaQuery } from '@/utils/mediaQuery'
 import ChatToolbar from '@/components/chat/ChatToolbar.vue'
 import ChatMessages from '@/components/chat/ChatMessages.vue'
 import ChatInput from '@/components/chat/ChatInput.vue'
@@ -82,6 +99,8 @@ const requireApproval = ref(false)
 const toast = ref(null)
 const consumedAsk = ref('')
 const chatLayoutRef = ref(null)
+const isMobile = useMaxWidthMediaQuery(900)
+const mobileHistoryOpen = ref(false)
 const historyWidth = ref(CHAT_HISTORY_DEFAULT_WIDTH)
 const isResizingHistory = ref(false)
 let previousBodyCursor = ''
