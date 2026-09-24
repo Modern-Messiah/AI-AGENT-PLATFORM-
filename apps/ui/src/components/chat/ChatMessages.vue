@@ -43,11 +43,39 @@
         <div class="msg-avatar"><AppIcon :name="msg.role" /></div>
         <div class="msg-body">
           <div class="msg-bubble" :style="msg.error ? { borderColor: 'var(--red)' } : {}">
-            {{ msg.text }}<span v-if="msg.streaming" class="streaming-cursor">▋</span>
+            <div
+              v-if="msg.role === 'agent' && !msg.streaming && !msg.error"
+              class="md-content"
+              v-html="renderedMarkdown(msg)"
+            ></div>
+            <template v-else>
+              {{ msg.text }}<span v-if="msg.streaming" class="streaming-cursor">▋</span>
+            </template>
           </div>
           <div class="msg-meta">
             <span class="msg-time">{{ msg.time }}</span>
             <span v-if="msg.cached" class="badge badge-purple" style="font-size: 10px; padding: 1px 6px">{{ t('chat.cacheHit') }}</span>
+            <span v-if="!msg.streaming && !msg.error" class="msg-actions">
+              <button
+                class="msg-action"
+                type="button"
+                :title="copiedId === msg.id ? t('chat.copied') : t('chat.copy')"
+                :aria-label="t('chat.copy')"
+                @click="copyMessage(msg)"
+              >
+                <AppIcon :name="copiedId === msg.id ? 'check' : 'copy'" :size="12" />
+              </button>
+              <button
+                v-if="msg.role === 'agent' && isLastAgentMessage(msg) && !chat.isStreaming"
+                class="msg-action"
+                type="button"
+                :title="t('chat.regenerate')"
+                :aria-label="t('chat.regenerate')"
+                @click="$emit('regenerate')"
+              >
+                <AppIcon name="refresh" :size="12" />
+              </button>
+            </span>
           </div>
           <div v-if="msg.sources && msg.sources.length" class="sources-list">
             <template v-for="(group, index) in citationGroups(msg)" :key="citationGroupKey(msg, group, index)">
@@ -143,6 +171,8 @@
 
 <script setup>
 import { ref, watch, nextTick } from 'vue'
+import { renderMarkdown } from '@/utils/markdown'
+import 'highlight.js/styles/github-dark.css'
 import { useChatStore } from '@/stores/chat'
 import { useI18n } from '@/composables/useI18n'
 import AppIcon from '@/components/AppIcon.vue'
@@ -157,12 +187,42 @@ import {
   sourceScoreLabel,
 } from '@/utils/citations'
 
-defineEmits(['approve', 'reject'])
+defineEmits(['approve', 'reject', 'regenerate'])
 
 const chat = useChatStore()
 const { locale, t } = useI18n()
 const containerRef = ref(null)
 const openCitationKey = ref(null)
+
+// Rendered markdown is memoized per message: v-html would re-parse on every
+// reactivity tick otherwise, and message text only changes while streaming
+// (when the plain-text branch is used anyway).
+const markdownCache = new Map()
+
+function renderedMarkdown(msg) {
+  const cached = markdownCache.get(msg.id)
+  if (cached && cached.text === msg.text) return cached.html
+  const entry = { text: msg.text, html: renderMarkdown(msg.text) }
+  markdownCache.set(msg.id, entry)
+  return entry.html
+}
+
+const copiedId = ref(null)
+
+async function copyMessage(msg) {
+  try {
+    await navigator.clipboard.writeText(msg.text)
+    copiedId.value = msg.id
+    setTimeout(() => { if (copiedId.value === msg.id) copiedId.value = null }, 1500)
+  } catch { /* clipboard unavailable (insecure context) — ignore */ }
+}
+
+function isLastAgentMessage(msg) {
+  for (let i = chat.messages.length - 1; i >= 0; i--) {
+    if (chat.messages[i].role === 'agent') return chat.messages[i].id === msg.id
+  }
+  return false
+}
 
 function citationGroups(msg) {
   return groupCitationsByDocument(msg.sources || [])
@@ -221,6 +281,31 @@ watch([() => chat.isActiveSessionLoading(), () => chat.streamTick], () => scroll
 </script>
 
 <style scoped>
+.msg-actions {
+  display: inline-flex;
+  gap: 2px;
+  margin-left: 6px;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.msg:hover .msg-actions { opacity: 1; }
+.msg-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.msg-action:hover {
+  background: color-mix(in oklch, var(--s3) 70%, transparent);
+  color: var(--text);
+}
 .streaming-cursor {
   display: inline-block;
   margin-left: 1px;
