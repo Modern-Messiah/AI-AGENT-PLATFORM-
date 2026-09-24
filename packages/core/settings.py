@@ -40,6 +40,8 @@ class Settings(BaseSettings):
     minio_access_key: str = "minioadmin"
     minio_secret_key: str = "minioadmin"
     minio_bucket: str = "app-files"
+    # True when MinIO is reachable over TLS (reverse-proxied / stunnel sidecar).
+    minio_secure: bool = False
 
     # Multilingual model (~50 languages incl. Russian); same 384-dim output as
     # the previous English-only bge-small-en-v1.5, so no schema migration is
