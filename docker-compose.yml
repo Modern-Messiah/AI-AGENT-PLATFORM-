@@ -224,6 +224,7 @@ services:
       MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:?Set MINIO_ROOT_USER in .env}
       MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD in .env}
       MINIO_BUCKET: ${MINIO_BUCKET:-app-files}
+      MINIO_SECURE: ${MINIO_SECURE:-false}
       MOONSHOT_API_KEY: ${MOONSHOT_API_KEY:-}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       STRONG_MODEL: ${STRONG_MODEL:-moonshot/kimi-k2.6}
@@ -294,6 +295,7 @@ services:
       MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:?Set MINIO_ROOT_USER in .env}
       MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD in .env}
       MINIO_BUCKET: ${MINIO_BUCKET:-app-files}
+      MINIO_SECURE: ${MINIO_SECURE:-false}
       MOONSHOT_API_KEY: ${MOONSHOT_API_KEY:-}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       STRONG_MODEL: ${STRONG_MODEL:-moonshot/kimi-k2.6}
@@ -330,6 +332,26 @@ services:
     command: python -m apps.worker.main
     restart: unless-stopped
 
+  # Optional TLS termination: docker compose --profile tls up -d
+  caddy:
+    image: caddy:2-alpine
+    container_name: aap-caddy
+    profiles: ["tls"]
+    depends_on:
+      ui:
+        condition: service_started
+    environment:
+      TLS_DOMAIN: ${TLS_DOMAIN:-}
+      TLS_EMAIL: ${TLS_EMAIL:-}
+    ports:
+      - "${HOST_BIND_ADDRESS:-127.0.0.1}:443:443"
+      - "${HOST_BIND_ADDRESS:-127.0.0.1}:80:80"
+    volumes:
+      - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    restart: unless-stopped
+
   ui:
     build:
       context: apps/ui
@@ -346,6 +368,8 @@ services:
     restart: unless-stopped
 
 volumes:
+  caddy_data:
+  caddy_config:
   pg_data:
   redis_data:
   clickhouse_data:

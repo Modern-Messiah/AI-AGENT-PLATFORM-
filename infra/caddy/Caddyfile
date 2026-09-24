@@ -1,0 +1,13 @@
+# Optional TLS reverse proxy — enabled with: docker compose --profile tls up -d
+#
+# TLS_DOMAIN=example.com  -> automatic Let's Encrypt certificate
+# TLS_DOMAIN=            (default) -> internal CA (self-signed, fine for LAN)
+# Caddy terminates TLS and proxies the UI container over plain HTTP.
+{
+	email {$TLS_EMAIL}
+}
+
+{$TLS_DOMAIN:localhost} {
+	tls internal
+	reverse_proxy ui:80
+}
