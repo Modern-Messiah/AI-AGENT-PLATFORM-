@@ -100,8 +100,13 @@ class Settings(BaseSettings):
     # Protect POST /auth/keys — change before deploying.
     admin_secret: str = _DEFAULT_ADMIN_SECRET
 
-    # Opt-in: run arbitrary Python in a subprocess (disabled by default — see code_exec.py).
+    # Opt-in: run arbitrary Python (disabled by default — see code_exec.py).
     enable_code_exec: bool = False
+    # Docker sandbox for code_exec: image like "python:3.12-slim". Empty =
+    # hardened host subprocess; set to run snippets in a throwaway container
+    # with no network, memory/cpu/pid caps and a read-only filesystem.
+    code_exec_sandbox_image: str = ""
+    code_exec_sandbox_image: str = ""
 
     # HITL reviewer notification: POST a Slack-compatible JSON payload when
     # an answer awaits approval. Empty = log only (scaffold behaviour).
