@@ -250,7 +250,7 @@ export const useChatStore = defineStore('chat', () => {
     // ── Streaming path ───────────────────────────────────────────────────────
     let streamMsg = null
     const streamController = new AbortController()
-    const streamBody = { user_query: query, model }
+    const streamBody = { user_query: query, model, session_id: sessId }
     if (documentId) streamBody.document_id = documentId
     if (notebookId) streamBody.notebook_id = notebookId
     activeStreamController.value = streamController

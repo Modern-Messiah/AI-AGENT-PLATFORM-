@@ -179,6 +179,7 @@ class CreateKeyResponse(BaseModel):
 class AgentStreamRequest(BaseModel):
     user_query: str
     model: str | None = None
+    session_id: uuid.UUID | None = None
     document_id: uuid.UUID | None = None
     notebook_id: uuid.UUID | None = None
 

@@ -275,3 +275,47 @@ def test_select_answer_sources_does_not_treat_business_values_as_missing_context
     )
 
     assert [source.id for source in selected] == [1]
+
+
+def test_grounded_prompt_interleaves_chat_history_before_the_question() -> None:
+    messages = build_grounded_messages(
+        "а подробнее про второй?",
+        [],
+        max_context_chars=1000,
+        history=[
+            ("user", "Расскажи про документы"),
+            ("agent", "Вот обзор двух документов."),
+        ],
+    )
+
+    assert [m["role"] for m in messages] == ["system", "user", "assistant", "user"]
+    assert messages[1]["content"] == "Расскажи про документы"
+    assert messages[2]["content"] == "Вот обзор двух документов."
+    assert "а подробнее про второй?" in messages[3]["content"]
+
+
+def test_grounded_prompt_trims_history_to_budget_keeping_newest_turns() -> None:
+    long_answer = "Ответ. " * 500  # ~3000 chars
+    messages = build_grounded_messages(
+        "вопрос",
+        [],
+        max_context_chars=1000,
+        history=[
+            ("user", "старый вопрос"),
+            ("agent", long_answer),
+            ("user", "новый вопрос"),
+        ],
+        history_max_chars=100,
+    )
+
+    history_roles = [m["role"] for m in messages[1:-1]]
+    # The old turn is dropped first; the newest turns survive within budget.
+    assert history_roles == ["assistant", "user"]
+    assert sum(len(m["content"]) for m in messages[1:-1]) <= 200
+    assert messages[-2]["content"] == "новый вопрос"
+
+
+def test_grounded_prompt_without_history_matches_legacy_shape() -> None:
+    messages = build_grounded_messages("вопрос", [], max_context_chars=1000)
+
+    assert [m["role"] for m in messages] == ["system", "user"]

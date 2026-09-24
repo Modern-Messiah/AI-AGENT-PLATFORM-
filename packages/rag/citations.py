@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from collections import defaultdict
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 
 from pydantic import BaseModel, Field
 
@@ -84,11 +84,7 @@ def build_citations(chunks: list[RetrievedChunk]) -> list[CitationSource]:
         raw_asset_id = chunk.metadata.get("asset_id")
         asset_id = raw_asset_id if isinstance(raw_asset_id, str) and raw_asset_id else None
         raw_asset_kind = chunk.metadata.get("asset_kind")
-        asset_kind = (
-            raw_asset_kind
-            if isinstance(raw_asset_kind, str) and raw_asset_kind
-            else None
-        )
+        asset_kind = raw_asset_kind if isinstance(raw_asset_kind, str) and raw_asset_kind else None
         citations.append(
             CitationSource(
                 id=citation_id,
@@ -176,11 +172,42 @@ def normalize_citation_sources(
     return select_answer_sources(answer, structured)
 
 
+def _trim_history(
+    history: Sequence[tuple[str, str]],
+    *,
+    max_chars: int,
+) -> list[dict[str, str]]:
+    """Keep the newest turns within a char budget, returned oldest-first.
+
+    DB roles are 'user'/'agent'; the OpenAI-compatible API expects
+    'user'/'assistant'.
+    """
+    kept: list[dict[str, str]] = []
+    budget = max_chars
+    for role, content in reversed(history):
+        content = content.strip()
+        if not content:
+            continue
+        if budget <= 0:
+            break
+        if len(content) > budget:
+            content = content[:budget].rsplit(" ", 1)[0].strip()
+            budget = 0
+        else:
+            budget -= len(content)
+        api_role = "assistant" if role == "agent" else "user"
+        kept.append({"role": api_role, "content": content})
+    kept.reverse()
+    return kept
+
+
 def build_grounded_messages(
     query: str,
     citations: list[CitationSource],
     *,
     max_context_chars: int,
+    history: Sequence[tuple[str, str]] | None = None,
+    history_max_chars: int = 2_000,
 ) -> list[dict[str, str]]:
     separator = "\n\n---\n\n"
     headers: list[str] = []
@@ -191,8 +218,7 @@ def build_grounded_messages(
             else f"chunk {citation.chunk_index}"
         )
         headers.append(
-            f"[{citation.id}] {citation.filename} "
-            f"({location}, score={citation.score:.3f})\n"
+            f"[{citation.id}] {citation.filename} ({location}, score={citation.score:.3f})\n"
         )
 
     fixed_chars = sum(map(len, headers)) + max(0, len(headers) - 1) * len(separator)
@@ -209,7 +235,7 @@ def build_grounded_messages(
         context_parts.append(f"{header}{content}")
 
     context = separator.join(context_parts)
-    return [
+    messages: list[dict[str, str]] = [
         {
             "role": "system",
             "content": (
@@ -220,6 +246,10 @@ def build_grounded_messages(
                 "Never invent facts, citation numbers, or filenames."
             ),
         },
+    ]
+    if history:
+        messages.extend(_trim_history(history, max_chars=history_max_chars))
+    messages.append(
         {
             "role": "user",
             "content": (
@@ -228,4 +258,5 @@ def build_grounded_messages(
                 "Answer in the user's language. Keep it clear and practical."
             ),
         },
-    ]
+    )
+    return messages
