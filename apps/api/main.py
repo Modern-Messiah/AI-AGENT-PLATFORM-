@@ -30,9 +30,8 @@ Endpoints:
 from __future__ import annotations
 
 import logging
-import uuid
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import AsyncIterator
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -41,6 +40,7 @@ from packages.observability import setup_tracing
 from packages.rag.embedder import embed_texts
 from temporalio.client import Client
 
+from apps.api.metrics import MetricsMiddleware
 from apps.api.routers import (
     agent_router,
     analytics_router,
@@ -77,17 +77,17 @@ from apps.api.serializers import (
     notebook_response,
     serialize_sources,
 )
+from apps.api.services.agent_limits import (
+    check_agent_rate_limit,
+    enforce_agent_limits,
+    validate_agent_query,
+)
 from apps.api.services.notebooks import (
     clean_notebook_title,
     dedupe_uuid_list,
     load_notebook_documents,
     load_notebook_insight_sources,
     load_tenant_documents,
-)
-from apps.api.services.agent_limits import (
-    check_agent_rate_limit,
-    enforce_agent_limits,
-    validate_agent_query,
 )
 
 # Backward-compatible names imported by existing tests and scripts.
@@ -116,7 +116,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
         await embed_texts(["warmup"])
         log.info("embedding model ready")
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         log.warning("embedding model warmup failed (%s) — will retry on first use", exc)
     app.state.temporal = await Client.connect(
         settings.temporal_address, namespace=settings.temporal_namespace
@@ -126,6 +126,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(title="AI Agent Platform", lifespan=lifespan)
 
+app.add_middleware(MetricsMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origins or ["*"],
