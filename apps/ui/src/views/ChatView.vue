@@ -34,7 +34,7 @@
           </button>
         </div>
       </div>
-      <ChatMessages @approve="approveHitl" @reject="rejectHitl" />
+      <ChatMessages @approve="approveHitl" @reject="rejectHitl" @regenerate="handleRegenerate" />
       <ChatInput :model="model" :require-approval="requireApproval" @send="handleSend" />
     </div>
 
@@ -308,6 +308,16 @@ async function clearScope() {
   await router.replace({ path: '/chat' })
   if (wasPersistedScope) {
     await chat.newChat(model.value)
+  }
+}
+
+async function handleRegenerate() {
+  // Re-ask the last user question: a fresh answer (new retrieval, new docs).
+  for (let i = chat.messages.length - 1; i >= 0; i--) {
+    if (chat.messages[i].role === 'user' && chat.messages[i].text?.trim()) {
+      await handleSend(chat.messages[i].text.trim())
+      return
+    }
   }
 }
 

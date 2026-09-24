@@ -55,6 +55,27 @@
           <div class="msg-meta">
             <span class="msg-time">{{ msg.time }}</span>
             <span v-if="msg.cached" class="badge badge-purple" style="font-size: 10px; padding: 1px 6px">{{ t('chat.cacheHit') }}</span>
+            <span v-if="!msg.streaming && !msg.error" class="msg-actions">
+              <button
+                class="msg-action"
+                type="button"
+                :title="copiedId === msg.id ? t('chat.copied') : t('chat.copy')"
+                :aria-label="t('chat.copy')"
+                @click="copyMessage(msg)"
+              >
+                <AppIcon :name="copiedId === msg.id ? 'check' : 'copy'" :size="12" />
+              </button>
+              <button
+                v-if="msg.role === 'agent' && isLastAgentMessage(msg) && !chat.isStreaming"
+                class="msg-action"
+                type="button"
+                :title="t('chat.regenerate')"
+                :aria-label="t('chat.regenerate')"
+                @click="$emit('regenerate')"
+              >
+                <AppIcon name="refresh" :size="12" />
+              </button>
+            </span>
           </div>
           <div v-if="msg.sources && msg.sources.length" class="sources-list">
             <template v-for="(group, index) in citationGroups(msg)" :key="citationGroupKey(msg, group, index)">
@@ -166,7 +187,7 @@ import {
   sourceScoreLabel,
 } from '@/utils/citations'
 
-defineEmits(['approve', 'reject'])
+defineEmits(['approve', 'reject', 'regenerate'])
 
 const chat = useChatStore()
 const { locale, t } = useI18n()
@@ -184,6 +205,23 @@ function renderedMarkdown(msg) {
   const entry = { text: msg.text, html: renderMarkdown(msg.text) }
   markdownCache.set(msg.id, entry)
   return entry.html
+}
+
+const copiedId = ref(null)
+
+async function copyMessage(msg) {
+  try {
+    await navigator.clipboard.writeText(msg.text)
+    copiedId.value = msg.id
+    setTimeout(() => { if (copiedId.value === msg.id) copiedId.value = null }, 1500)
+  } catch { /* clipboard unavailable (insecure context) — ignore */ }
+}
+
+function isLastAgentMessage(msg) {
+  for (let i = chat.messages.length - 1; i >= 0; i--) {
+    if (chat.messages[i].role === 'agent') return chat.messages[i].id === msg.id
+  }
+  return false
 }
 
 function citationGroups(msg) {
@@ -243,6 +281,31 @@ watch([() => chat.isActiveSessionLoading(), () => chat.streamTick], () => scroll
 </script>
 
 <style scoped>
+.msg-actions {
+  display: inline-flex;
+  gap: 2px;
+  margin-left: 6px;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.msg:hover .msg-actions { opacity: 1; }
+.msg-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.msg-action:hover {
+  background: color-mix(in oklch, var(--s3) 70%, transparent);
+  color: var(--text);
+}
 .streaming-cursor {
   display: inline-block;
   margin-left: 1px;
