@@ -25,7 +25,7 @@ from packages.rag import (
     select_answer_sources,
     select_diverse_chunks,
 )
-from packages.storage import Chunk, Document, DocumentStatus, Notebook
+from packages.storage import ChatMessage, ChatSession, Chunk, Document, DocumentStatus, Notebook
 from packages.storage.db import tenant_session
 
 from apps.api.deps import TenantID
@@ -33,6 +33,7 @@ from apps.api.schemas import AgentRunApiResponse, AgentStreamRequest
 from apps.api.serializers import serialize_sources
 from apps.api.services.agent_limits import enforce_agent_limits, validate_agent_query
 from apps.api.services.notebooks import load_notebook_documents
+from apps.api.services.query_condensation import condense_query
 from apps.worker.workflows.agent_run import AgentRunWorkflow
 from apps.worker.workflows.multi_step import MultiStepResearchWorkflow
 
@@ -51,9 +52,11 @@ async def run_agent(
     payload = payload.model_copy(update={"user_query": user_query})
 
     async with tenant_session(tenant_id) as db:
-        chunk_count = (await db.execute(
-            select(func.count()).select_from(Chunk).where(Chunk.tenant_id == tenant_id)
-        )).scalar()
+        chunk_count = (
+            await db.execute(
+                select(func.count()).select_from(Chunk).where(Chunk.tenant_id == tenant_id)
+            )
+        ).scalar()
     if not chunk_count:
         return AgentRunApiResponse(
             answer=(
@@ -107,6 +110,40 @@ async def agent_stream(body: AgentStreamRequest, tenant_id: TenantID) -> Streami
     scoped_notebook_id = body.notebook_id
     scoped_document_ids: list[uuid.UUID] | None = None
 
+    # Conversation memory: load recent turns of the session (when the client
+    # sent one) and rewrite follow-ups into a standalone retrieval query.
+    history: list[tuple[str, str]] = []
+    if body.session_id is not None:
+        async with tenant_session(tenant_id) as db:
+            session = (
+                await db.execute(
+                    select(ChatSession).where(
+                        ChatSession.id == body.session_id,
+                        ChatSession.tenant_id == tenant_id,
+                    )
+                )
+            ).scalar_one_or_none()
+            if session is None:
+                raise HTTPException(status_code=404, detail="session not found")
+            rows = (
+                (
+                    await db.execute(
+                        select(ChatMessage)
+                        .where(
+                            ChatMessage.session_id == session.id,
+                            ChatMessage.tenant_id == tenant_id,
+                            ChatMessage.role.in_(["user", "agent"]),
+                        )
+                        .order_by(ChatMessage.created_at.desc())
+                        .limit(settings.chat_history_messages)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        history = [(msg.role, msg.content) for msg in reversed(rows)]
+    retrieval_query = await condense_query(history, user_query)
+
     if scoped_document_id is not None:
         async with tenant_session(tenant_id) as db:
             doc = (
@@ -151,7 +188,7 @@ async def agent_stream(body: AgentStreamRequest, tenant_id: TenantID) -> Streami
             # Semantic cache - instant reply if hit. Scoped document requests skip it:
             # the same wording can mean different things inside different files.
             try:
-                cached = await semantic_cache.get(user_query, tenant_id)
+                cached = await semantic_cache.get(retrieval_query, tenant_id)
             except Exception:
                 cached = None
             log.info(
@@ -173,7 +210,7 @@ async def agent_stream(body: AgentStreamRequest, tenant_id: TenantID) -> Streami
         try:
             retrieve_t0 = time.monotonic()
             chunks = await retrieve_chunks(
-                user_query,
+                retrieval_query,
                 tenant_id,
                 k=settings.fast_rag_candidate_k,
                 max_distance=settings.retrieval_max_distance,
@@ -231,6 +268,7 @@ async def agent_stream(body: AgentStreamRequest, tenant_id: TenantID) -> Streami
                 user_query,
                 sources,
                 max_context_chars=settings.fast_rag_context_max_chars,
+                history=history,
             )
 
             async for event in stream_chat_text(model_name, messages):
@@ -273,21 +311,23 @@ async def agent_stream(body: AgentStreamRequest, tenant_id: TenantID) -> Streami
             )
 
             try:
-                await record_usage(UsageEvent(
-                    tenant_id=tenant_id,
-                    workflow_id=f"stream-{uuid.uuid4().hex[:12]}",
-                    run_id=f"stream-{uuid.uuid4().hex[:12]}",
-                    model=model_name,
-                    prompt_tokens=prompt_tokens,
-                    completion_tokens=completion_tokens,
-                    latency_ms=latency_ms,
-                ))
+                await record_usage(
+                    UsageEvent(
+                        tenant_id=tenant_id,
+                        workflow_id=f"stream-{uuid.uuid4().hex[:12]}",
+                        run_id=f"stream-{uuid.uuid4().hex[:12]}",
+                        model=model_name,
+                        prompt_tokens=prompt_tokens,
+                        completion_tokens=completion_tokens,
+                        latency_ms=latency_ms,
+                    )
+                )
             except Exception:
                 pass
 
             if not scoped:
                 try:
-                    await semantic_cache.set(user_query, tenant_id, output)
+                    await semantic_cache.set(retrieval_query, tenant_id, output)
                 except Exception:
                     pass
 
@@ -315,11 +355,13 @@ async def run_research(
     """Multi-step research: fan-out sub-queries as child workflows, then synthesise."""
     main_query = await enforce_agent_limits(tenant_id, payload.main_query, "/agent/research")
     sub_queries = [validate_agent_query(q) for q in payload.sub_queries]
-    payload = payload.model_copy(update={
-        "tenant_id": tenant_id,
-        "main_query": main_query,
-        "sub_queries": sub_queries,
-    })
+    payload = payload.model_copy(
+        update={
+            "tenant_id": tenant_id,
+            "main_query": main_query,
+            "sub_queries": sub_queries,
+        }
+    )
     client: Client = request.app.state.temporal
     workflow_id = f"research-{tenant_id}-{uuid.uuid4()}"
     try:

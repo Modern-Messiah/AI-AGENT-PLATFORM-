@@ -72,6 +72,12 @@ class Settings(BaseSettings):
     agent_rate_limit_per_minute: int = 20
     llm_timeout_seconds: float = 60.0
 
+    # Conversation memory for the streaming chat: rewrite follow-up questions
+    # into standalone queries (weak model) and pass recent turns to the LLM.
+    query_condensation_enabled: bool = True
+    chat_history_messages: int = 10
+    chat_history_max_chars: int = 2_000
+
     # Log a WARNING when a single LLM call costs more than this amount.
     budget_alert_usd_per_call: float = 0.10
 
