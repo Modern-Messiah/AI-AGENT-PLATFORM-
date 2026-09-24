@@ -10,7 +10,7 @@ import asyncio
 import hashlib
 import secrets
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import Header, HTTPException
 from sqlalchemy import select, update
@@ -31,6 +31,12 @@ def generate_key() -> tuple[str, str]:
     """Return (raw_key, key_hash). Caller stores only the hash."""
     raw = secrets.token_urlsafe(32)
     return raw, _hash(raw)
+
+
+def revoke_cached(key_hash: str) -> None:
+    """Drop a key from the in-process auth cache (called by the revocation listener)."""
+    _AUTH_CACHE.pop(key_hash, None)
+    _AUTH_LOCKS.pop(key_hash, None)
 
 
 async def require_tenant(x_api_key: str | None = Header(None, alias="X-API-Key")) -> str:
@@ -78,7 +84,7 @@ async def require_tenant(x_api_key: str | None = Header(None, alias="X-API-Key")
             await s.execute(
                 update(ApiKey)
                 .where(ApiKey.key_hash == key_hash)
-                .values(last_used_at=datetime.now(timezone.utc))
+                .values(last_used_at=datetime.now(UTC))
             )
 
         return tenant_id

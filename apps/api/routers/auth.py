@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Header, HTTPException, Query
-from packages.auth import generate_key
+from packages.auth import generate_key, publish_revocation
 from packages.core import settings
 from packages.storage import ApiKey, async_session
 from sqlalchemy import select
@@ -92,3 +92,5 @@ async def revoke_api_key(
         if row is None:
             raise HTTPException(status_code=404, detail="key not found")
         row.is_active = False
+    # Cross-process cache eviction: revoke within ms instead of the 30s TTL.
+    await publish_revocation(row.key_hash)
