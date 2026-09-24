@@ -4,10 +4,7 @@ import asyncio
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
-from apps.worker.activities import ingestion
-from apps.worker.activities import ingestion_types
-from apps.worker.activities import ingestion_status
-from apps.worker.activities import visual_analysis
+from apps.worker.activities import ingestion, ingestion_status, ingestion_types, visual_analysis
 from apps.worker.activities.document_chunks import build_chunk_batch
 from apps.worker.activities.ingestion import (
     IngestionInput,
@@ -21,6 +18,7 @@ from apps.worker.activities.ingestion import (
     mark_done,
     mark_failed,
 )
+from packages.rag import detect_language
 from packages.rag.visual import OCRResult, VisualPage
 from temporalio.converter import default
 
@@ -198,8 +196,9 @@ async def test_chunk_and_embed_preserves_segment_metadata(monkeypatch) -> None:
         metadata == {
             "page": 4,
             "embedding_model": ingestion.settings.embedding_model,
+            "lang": detect_language(content),
         }
-        for metadata in batch.metadata
+        for metadata, content in zip(batch.metadata, batch.contents, strict=True)
     )
     assert batch.summary == "Page four evidence summary."
     assert batch.suggested_questions == ["Что есть на странице 4?"]
