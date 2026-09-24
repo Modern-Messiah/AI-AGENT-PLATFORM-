@@ -218,20 +218,18 @@ def effective_max_distance_for_scope(
 
 
 def rrf_merge(
-    vector_ids: Sequence[str],
-    fts_ids: Sequence[str],
-    *,
+    *ranked_lists: Sequence[str],
     k: int = 60,
     limit: int | None = None,
 ) -> list[str]:
-    """Reciprocal-rank fusion of two ranked id lists.
+    """Reciprocal-rank fusion of any number of ranked id lists.
 
-    Both lists are ordered best-first. An id found by only one list still
-    gets its single-list contribution, which is exactly how exact-term
-    matches the vector search missed become reachable again.
+    Lists are ordered best-first. An id found by only one list still gets
+    its single-list contribution, which is exactly how exact-term matches
+    the vector search missed become reachable again.
     """
     scores: dict[str, float] = {}
-    for ids in (vector_ids, fts_ids):
+    for ids in ranked_lists:
         for rank, chunk_id in enumerate(ids):
             scores[chunk_id] = scores.get(chunk_id, 0.0) + 1.0 / (k + rank + 1)
     ordered = sorted(scores, key=lambda cid: (-scores[cid], cid))
@@ -260,6 +258,29 @@ def _fts_queries(query: str) -> tuple[ColumnElement[bool], ColumnElement[bool]] 
         func.to_tsquery("simple", joined),
         func.to_tsquery("russian", joined),
     )
+
+
+def merge_variant_results(
+    variant_results: Sequence[list[RetrievedChunk]],
+    *,
+    limit: int,
+) -> list[RetrievedChunk]:
+    """RRF-merge per-variant ranked results, deduped by chunk id.
+
+    A chunk appearing in several variants keeps its best (max) score —
+    consensus across paraphrases is the signal, not one lucky embedding.
+    """
+    merged_ids = rrf_merge(
+        *[[chunk.chunk_id for chunk in results] for results in variant_results],
+        limit=limit,
+    )
+    by_id: dict[str, RetrievedChunk] = {}
+    for results in variant_results:
+        for chunk in results:
+            existing = by_id.get(chunk.chunk_id)
+            if existing is None or chunk.score > existing.score:
+                by_id[chunk.chunk_id] = chunk
+    return [by_id[chunk_id] for chunk_id in merged_ids if chunk_id in by_id]
 
 
 async def retrieve_chunks(

@@ -18,7 +18,6 @@ from packages.rag import (
     build_grounded_messages,
     calibrate_confidence,
     normalize_citation_sources,
-    retrieve_chunks,
     select_answer_sources,
     select_diverse_chunks,
 )
@@ -213,7 +212,7 @@ async def agent_stream(body: AgentStreamRequest, tenant_id: TenantID) -> Streami
 
         try:
             retrieve_t0 = time.monotonic()
-            chunks = await retrieve_chunks(
+            chunks = await retrieve_chunks_with_expansion(
                 retrieval_query,
                 tenant_id,
                 k=settings.fast_rag_candidate_k,

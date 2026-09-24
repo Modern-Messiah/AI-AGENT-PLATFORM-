@@ -3,7 +3,6 @@ from __future__ import annotations
 from collections.abc import Iterator
 
 import pytest
-
 from packages.core import settings
 
 
@@ -18,4 +17,5 @@ def _no_external_llm(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """
     monkeypatch.setattr(settings, "ai_document_insights_enabled", False)
     monkeypatch.setattr(settings, "query_condensation_enabled", False)
+    monkeypatch.setattr(settings, "query_expansion_enabled", False)
     yield
