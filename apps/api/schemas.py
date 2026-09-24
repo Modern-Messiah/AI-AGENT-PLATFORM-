@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import uuid
-
-from pydantic import BaseModel, Field, model_validator
+from datetime import datetime
 
 from packages.rag import CitationSource
 from packages.storage import DocumentAssetStatus, DocumentStatus
+from pydantic import BaseModel, Field, model_validator
 
 
 class ChatMessageSchema(BaseModel):
@@ -36,7 +36,7 @@ class CreateSessionRequest(BaseModel):
     notebook_id: uuid.UUID | None = None
 
     @model_validator(mode="after")
-    def validate_single_scope(self) -> "CreateSessionRequest":
+    def validate_single_scope(self) -> CreateSessionRequest:
         if self.document_id is not None and self.notebook_id is not None:
             raise ValueError("document_id and notebook_id cannot be used together")
         return self
@@ -176,6 +176,16 @@ class CreateKeyResponse(BaseModel):
     raw_key: str  # shown once - store it now
 
 
+class ApiKeyInfo(BaseModel):
+    """Admin-facing key view: no hashes, no raw keys."""
+    id: str
+    tenant_id: str
+    name: str | None = None
+    is_active: bool
+    created_at: datetime
+    last_used_at: datetime | None = None
+
+
 class AgentStreamRequest(BaseModel):
     user_query: str
     model: str | None = None
@@ -184,7 +194,7 @@ class AgentStreamRequest(BaseModel):
     notebook_id: uuid.UUID | None = None
 
     @model_validator(mode="after")
-    def validate_single_scope(self) -> "AgentStreamRequest":
+    def validate_single_scope(self) -> AgentStreamRequest:
         if self.document_id is not None and self.notebook_id is not None:
             raise ValueError("document_id and notebook_id cannot be used together")
         return self
