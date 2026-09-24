@@ -13,6 +13,8 @@ from packages.cache.redis import get_redis
 from packages.storage.db import async_session
 from packages.storage.object_store import object_store
 
+from apps.api.metrics import metrics_response
+
 log = logging.getLogger(__name__)
 router = APIRouter()
 
@@ -20,6 +22,12 @@ router = APIRouter()
 @router.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@router.get("/metrics")
+async def metrics() -> Any:
+    """Prometheus scrape endpoint (aggregate counters only, no tenant data)."""
+    return await metrics_response()
 
 
 # ── Readiness ─────────────────────────────────────────────────────────────────

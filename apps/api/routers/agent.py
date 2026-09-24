@@ -4,13 +4,9 @@ import json
 import logging
 import time
 import uuid
-from typing import AsyncIterator
+from collections.abc import AsyncIterator
 
 from fastapi import APIRouter, HTTPException, Request
-from sqlalchemy import func, select
-from starlette.responses import StreamingResponse
-from temporalio.client import Client
-
 from packages.agents import AgentRunInput, AgentRunOutput, MultiStepResearchInput
 from packages.analytics.events import UsageEvent, record_usage
 from packages.cache.semantic import semantic_cache
@@ -19,8 +15,8 @@ from packages.llm import stream_chat_text
 from packages.rag import (
     CitationSource,
     build_citations,
-    calibrate_confidence,
     build_grounded_messages,
+    calibrate_confidence,
     normalize_citation_sources,
     retrieve_chunks,
     select_answer_sources,
@@ -28,8 +24,12 @@ from packages.rag import (
 )
 from packages.storage import ChatMessage, ChatSession, Chunk, Document, DocumentStatus, Notebook
 from packages.storage.db import tenant_session
+from sqlalchemy import func, select
+from starlette.responses import StreamingResponse
+from temporalio.client import Client
 
 from apps.api.deps import TenantID
+from apps.api.metrics import agent_cache_requests_total, agent_tokens_total
 from apps.api.schemas import AgentRunApiResponse, AgentStreamRequest
 from apps.api.serializers import serialize_sources
 from apps.api.services.agent_limits import enforce_agent_limits, validate_agent_query
@@ -80,7 +80,7 @@ async def run_agent(
                 id=workflow_id,
                 task_queue=settings.temporal_task_queue,
             )
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             raise HTTPException(status_code=500, detail=str(e)) from e
         return AgentRunApiResponse(workflow_id=workflow_id, pending_approval=True)
 
@@ -98,7 +98,7 @@ async def run_agent(
             sources=sources,
             cached=result.cached,
         )
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
@@ -192,6 +192,9 @@ async def agent_stream(body: AgentStreamRequest, tenant_id: TenantID) -> Streami
                 cached = await semantic_cache.get(retrieval_query, tenant_id)
             except Exception:
                 cached = None
+            agent_cache_requests_total.labels(
+                result="hit" if cached is not None else "miss"
+            ).inc()
             log.info(
                 "agent_stream cache lookup | tenant=%s hit=%s latency_ms=%d",
                 tenant_id,
@@ -311,6 +314,10 @@ async def agent_stream(body: AgentStreamRequest, tenant_id: TenantID) -> Streami
                 latency_ms,
             )
 
+            if prompt_tokens or completion_tokens:
+                agent_tokens_total.labels(model=model_name, kind="prompt").inc(prompt_tokens)
+                agent_tokens_total.labels(model=model_name, kind="completion").inc(completion_tokens)
+
             try:
                 await record_usage(
                     UsageEvent(
@@ -378,5 +385,5 @@ async def run_research(
             sources=normalize_citation_sources(result.answer, result.sources),
             cached=result.cached,
         )
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
