@@ -29,12 +29,14 @@ Endpoints:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from packages.auth import revocation_listener
 from packages.core import settings
 from packages.observability import setup_tracing
 from packages.rag.embedder import embed_texts
@@ -53,10 +55,10 @@ from apps.api.routers import (
 )
 from apps.api.schemas import (
     AddMessageRequest,
-    ApiKeyInfo,
     AddUrlDocumentRequest,
     AgentRunApiResponse,
     AgentStreamRequest,
+    ApiKeyInfo,
     ChatMessageSchema,
     ChatSessionSchema,
     CreateKeyRequest,
@@ -67,10 +69,10 @@ from apps.api.schemas import (
     DocumentChunkPreview,
     DocumentResponse,
     NotebookResponse,
+    UpdateNotebookDocumentsRequest,
+    UpdateSessionRequest,
     UrlCheckRequest,
     UrlCheckResponse,
-    UpdateSessionRequest,
-    UpdateNotebookDocumentsRequest,
     WorkflowSignalResponse,
 )
 from apps.api.serializers import (
@@ -122,7 +124,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.temporal = await Client.connect(
         settings.temporal_address, namespace=settings.temporal_namespace
     )
+    revocation_task = asyncio.create_task(revocation_listener())
     yield
+    revocation_task.cancel()
 
 
 app = FastAPI(title="AI Agent Platform", lifespan=lifespan)

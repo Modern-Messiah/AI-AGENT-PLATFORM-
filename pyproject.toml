@@ -72,6 +72,8 @@ ignore = ["E501"]
 [tool.ruff.lint.per-file-ignores]
 # Russian fixture strings in tests are intentional, not homoglyph accidents.
 "tests/**" = ["RUF001", "RUF002", "RUF003"]
+# Backward-compatible re-exports consumed by tests and scripts — not unused.
+"apps/api/main.py" = ["F401"]
 
 [tool.mypy]
 python_version = "3.12"
