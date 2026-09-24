@@ -51,19 +51,7 @@
             <div class="empty-title">{{ t('analytics.noDaily') }}</div>
             <div class="empty-sub">{{ t('analytics.noDailySub') }}</div>
           </div>
-          <div v-else class="trend-chart">
-            <div
-              v-for="day in dashboard.dailyTrend"
-              :key="day.day"
-              class="trend-day"
-            >
-              <div class="trend-bars">
-                <span class="trend-bar cost" :style="{ height: day.costHeight + '%' }"></span>
-                <span class="trend-bar tokens" :style="{ height: day.tokensHeight + '%' }"></span>
-              </div>
-              <div class="trend-label">{{ day.dayLabel }}</div>
-            </div>
-          </div>
+          <TrendChart v-else :days="dashboard.dailyTrend" />
           <div class="legend-row">
             <span><i class="legend-dot cost"></i> {{ t('analytics.cost') }}</span>
             <span><i class="legend-dot tokens"></i> {{ t('analytics.tokens') }}</span>
@@ -189,6 +177,7 @@ import { ref, computed, watch } from 'vue'
 import { useApi } from '@/composables/useApi'
 import { useSettingsStore } from '@/stores/settings'
 import { useI18n } from '@/composables/useI18n'
+import TrendChart from '@/components/TrendChart.vue'
 import AppIcon from '@/components/AppIcon.vue'
 import {
   buildAnalyticsDashboard,
@@ -292,49 +281,6 @@ const stats = computed(() => {
 }
 .trend-card {
   grid-row: span 2;
-}
-.trend-chart {
-  display: flex;
-  align-items: flex-end;
-  gap: 12px;
-  min-height: 260px;
-  padding: 18px 22px 8px;
-}
-.trend-day {
-  display: flex;
-  flex: 1;
-  min-width: 28px;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-}
-.trend-bars {
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  gap: 4px;
-  width: 100%;
-  height: 220px;
-  padding: 0 2px;
-  border-bottom: 1px solid var(--border);
-}
-.trend-bar {
-  width: 10px;
-  min-height: 4px;
-  border-radius: 999px 999px 0 0;
-}
-.trend-bar.cost,
-.legend-dot.cost {
-  background: var(--accent);
-}
-.trend-bar.tokens,
-.legend-dot.tokens {
-  background: var(--purple);
-}
-.trend-label {
-  color: var(--muted);
-  font-family: var(--mono);
-  font-size: 10px;
 }
 .legend-row {
   display: flex;
