@@ -93,6 +93,14 @@ class Settings(BaseSettings):
     # Opt-in: run arbitrary Python in a subprocess (disabled by default — see code_exec.py).
     enable_code_exec: bool = False
 
+    # HITL reviewer notification: POST a Slack-compatible JSON payload when
+    # an answer awaits approval. Empty = log only (scaffold behaviour).
+    hitl_webhook_url: str = ""
+    # Optional public base URL used to build approve links in the message
+    # (e.g. https://aap.example.com). Empty = plain API-path hint.
+    hitl_webhook_base_url: str = ""
+    hitl_webhook_timeout_seconds: float = 5.0
+
     # Explicit domain allowlist for http_fetch tool.
     # Accepts JSON array  (HTTP_FETCH_ALLOWED_DOMAINS='["docs.python.org"]')
     # or comma-separated  (HTTP_FETCH_ALLOWED_DOMAINS=docs.python.org,api.github.com).
