@@ -2,6 +2,7 @@ from packages.rag.chunker import chunk_segments, chunk_text
 from packages.rag.citations import (
     CitationSource,
     build_citations,
+    calibrate_confidence,
     build_grounded_messages,
     normalize_citation_sources,
     select_answer_sources,
@@ -27,6 +28,7 @@ __all__ = [
     "build_citations",
     "build_document_insights",
     "build_grounded_messages",
+    "calibrate_confidence",
     "build_notebook_insights",
     "chunk_segments",
     "chunk_text",

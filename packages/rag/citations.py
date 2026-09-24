@@ -201,6 +201,60 @@ def _trim_history(
     return kept
 
 
+def _weighted_char_budgets(
+    citations: list[CitationSource],
+    available: int,
+    *,
+    min_share_fraction: float = 0.4,
+) -> list[int]:
+    """Score-weighted per-citation char budgets.
+
+    The equal split starved strong sources: six sources over a fixed budget
+    meant identical truncation regardless of relevance. Weights follow the
+    retrieval score; a floor (fraction of the equal share) keeps
+    weak-but-selected sources from being squeezed to nothing.
+    """
+    n = len(citations)
+    if n == 0 or available <= 0:
+        return [0] * n
+    equal = available // n
+    floor = max(64, int(equal * min_share_fraction))
+    weights = [max(citation.score, 1e-6) for citation in citations]
+    total_weight = sum(weights)
+    budgets = [
+        min(available, max(floor, int(available * weight / total_weight))) for weight in weights
+    ]
+    overflow = sum(budgets) - available
+    if overflow > 0:
+        scale = available / sum(budgets)
+        budgets = [max(1, int(budget * scale)) for budget in budgets]
+    return budgets
+
+
+def calibrate_confidence(
+    selected_chunks: Sequence[RetrievedChunk],
+    answer_sources: Sequence[CitationSource],
+    answer: str,
+) -> float:
+    """Evidence-derived confidence in [0, 1].
+
+    Replaces the hardcoded 0.85/0.2/0.0 that depended only on whether
+    citation markers parsed: the value now tracks the retrieval scores of
+    the context actually handed to the model, and answers without cited
+    sources are capped low.
+    """
+    if not answer.strip():
+        return 0.0
+    if not selected_chunks:
+        return 0.2
+    top_scores = sorted((chunk.score for chunk in selected_chunks), reverse=True)[:3]
+    semantic = max(0.0, min(1.0, sum(top_scores) / len(top_scores)))
+    base = 0.35 + 0.55 * semantic
+    if answer_sources:
+        return round(min(0.95, base + 0.15), 2)
+    return round(min(base, 0.45), 2)
+
+
 def build_grounded_messages(
     query: str,
     citations: list[CitationSource],
@@ -223,15 +277,15 @@ def build_grounded_messages(
 
     fixed_chars = sum(map(len, headers)) + max(0, len(headers) - 1) * len(separator)
     available_content = max(0, max_context_chars - fixed_chars)
-    per_citation = available_content // len(citations) if citations else 0
+    budgets = _weighted_char_budgets(citations, available_content)
 
     context_parts: list[str] = []
-    for citation, header in zip(citations, headers, strict=True):
+    for citation, header, budget in zip(citations, headers, budgets, strict=True):
         content = citation.excerpt
-        if len(content) > per_citation:
-            content = content[:per_citation].rsplit(" ", 1)[0].strip()
-            if not content and per_citation:
-                content = citation.excerpt[:per_citation]
+        if len(content) > budget > 0:
+            content = content[:budget].rsplit(" ", 1)[0].strip()
+            if not content and budget:
+                content = citation.excerpt[:budget]
         context_parts.append(f"{header}{content}")
 
     context = separator.join(context_parts)

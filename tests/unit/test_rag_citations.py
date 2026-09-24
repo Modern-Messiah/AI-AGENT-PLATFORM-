@@ -5,8 +5,11 @@ import asyncio
 import fitz
 from packages.rag.chunker import chunk_segments
 from packages.rag.citations import (
+    CitationSource,
+    _weighted_char_budgets,
     build_citations,
     build_grounded_messages,
+    calibrate_confidence,
     normalize_citation_sources,
     select_answer_sources,
     select_diverse_chunks,
@@ -148,9 +151,7 @@ def test_normalize_citation_sources_returns_only_cited_structured_sources() -> N
 
 
 def test_normalize_citation_sources_drops_sources_for_insufficient_context() -> None:
-    citations = build_citations(
-        [_chunk("chunk-1", "document-1", "guide.pdf", 0.91, chunk_idx=1)]
-    )
+    citations = build_citations([_chunk("chunk-1", "document-1", "guide.pdf", 0.91, chunk_idx=1)])
 
     selected = normalize_citation_sources(
         "Не нашёл релевантной информации в загруженных документах. [1]",
@@ -212,11 +213,13 @@ def test_grounded_prompt_keeps_every_selected_source_with_long_excerpts() -> Non
 
 
 def test_select_answer_sources_keeps_only_sources_cited_in_answer() -> None:
-    sources = build_citations([
-        _chunk("chunk-1", "document-1", "linux.pdf", 0.91, chunk_idx=1),
-        _chunk("chunk-2", "document-1", "linux.pdf", 0.89, chunk_idx=2),
-        _chunk("chunk-3", "document-2", "vim.pdf", 0.87, chunk_idx=1),
-    ])
+    sources = build_citations(
+        [
+            _chunk("chunk-1", "document-1", "linux.pdf", 0.91, chunk_idx=1),
+            _chunk("chunk-2", "document-1", "linux.pdf", 0.89, chunk_idx=2),
+            _chunk("chunk-3", "document-2", "vim.pdf", 0.87, chunk_idx=1),
+        ]
+    )
 
     selected = select_answer_sources(
         "Команды описаны в Linux-документе [1] и Vim-документе [3].",
@@ -227,11 +230,13 @@ def test_select_answer_sources_keeps_only_sources_cited_in_answer() -> None:
 
 
 def test_select_answer_sources_expands_citation_ranges() -> None:
-    sources = build_citations([
-        _chunk("chunk-1", "document-1", "incident.pdf", 0.91, chunk_idx=1),
-        _chunk("chunk-2", "document-1", "incident.pdf", 0.89, chunk_idx=2),
-        _chunk("chunk-3", "document-1", "incident.pdf", 0.87, chunk_idx=3),
-    ])
+    sources = build_citations(
+        [
+            _chunk("chunk-1", "document-1", "incident.pdf", 0.91, chunk_idx=1),
+            _chunk("chunk-2", "document-1", "incident.pdf", 0.89, chunk_idx=2),
+            _chunk("chunk-3", "document-1", "incident.pdf", 0.87, chunk_idx=3),
+        ]
+    )
 
     selected = select_answer_sources("Процесс описан в нескольких местах [1-2].", sources)
 
@@ -239,9 +244,11 @@ def test_select_answer_sources_expands_citation_ranges() -> None:
 
 
 def test_select_answer_sources_clears_sources_for_insufficient_context_answer() -> None:
-    sources = build_citations([
-        _chunk("chunk-1", "document-1", "incident.pdf", 0.91, chunk_idx=1),
-    ])
+    sources = build_citations(
+        [
+            _chunk("chunk-1", "document-1", "incident.pdf", 0.91, chunk_idx=1),
+        ]
+    )
 
     selected = select_answer_sources(
         "В базе знаний нет данных о погоде сегодня.",
@@ -252,9 +259,11 @@ def test_select_answer_sources_clears_sources_for_insufficient_context_answer() 
 
 
 def test_select_answer_sources_clears_sources_when_answer_has_no_citation_markers() -> None:
-    sources = build_citations([
-        _chunk("chunk-1", "document-1", "incident.pdf", 0.91, chunk_idx=1),
-    ])
+    sources = build_citations(
+        [
+            _chunk("chunk-1", "document-1", "incident.pdf", 0.91, chunk_idx=1),
+        ]
+    )
 
     selected = select_answer_sources(
         "Документ описывает процесс проверки оплаты.",
@@ -265,9 +274,11 @@ def test_select_answer_sources_clears_sources_when_answer_has_no_citation_marker
 
 
 def test_select_answer_sources_does_not_treat_business_values_as_missing_context() -> None:
-    sources = build_citations([
-        _chunk("chunk-1", "document-1", "incident.pdf", 0.91, chunk_idx=1),
-    ])
+    sources = build_citations(
+        [
+            _chunk("chunk-1", "document-1", "incident.pdf", 0.91, chunk_idx=1),
+        ]
+    )
 
     selected = select_answer_sources(
         "В таблице указан результат проверки: нет оплаты [1].",
@@ -319,3 +330,113 @@ def test_grounded_prompt_without_history_matches_legacy_shape() -> None:
     messages = build_grounded_messages("вопрос", [], max_context_chars=1000)
 
     assert [m["role"] for m in messages] == ["system", "user"]
+
+
+def test_weighted_char_budgets_favour_strong_sources_with_floor_for_weak() -> None:
+    citations = [
+        CitationSource(
+            id=1,
+            document_id="d1",
+            chunk_id="c1",
+            filename="a.pdf",
+            chunk_index=0,
+            excerpt="",
+            score=0.9,
+        ),
+        CitationSource(
+            id=2,
+            document_id="d2",
+            chunk_id="c2",
+            filename="b.pdf",
+            chunk_index=0,
+            excerpt="",
+            score=0.9,
+        ),
+        CitationSource(
+            id=3,
+            document_id="d3",
+            chunk_id="c3",
+            filename="c.pdf",
+            chunk_index=0,
+            excerpt="",
+            score=0.3,
+        ),
+    ]
+
+    budgets = _weighted_char_budgets(citations, 6_000)
+
+    assert sum(budgets) <= 6_000
+    # the two strong sources get clearly more than the equal share…
+    assert budgets[0] > 2_000 and budgets[1] > 2_000
+    # …while the weak one keeps at least 40% of the equal share
+    assert budgets[2] >= int(2_000 * 0.4)
+
+
+def test_weighted_char_budgets_single_source_takes_everything() -> None:
+    budgets = _weighted_char_budgets(
+        [
+            CitationSource(
+                id=1,
+                document_id="d1",
+                chunk_id="c1",
+                filename="a.pdf",
+                chunk_index=0,
+                excerpt="",
+                score=0.5,
+            )
+        ],
+        5_000,
+    )
+    assert budgets == [5_000]
+
+
+def test_weighted_char_budgets_zero_available() -> None:
+    assert _weighted_char_budgets([], 1_000) == []
+    assert _weighted_char_budgets(
+        [
+            CitationSource(
+                id=1,
+                document_id="d1",
+                chunk_id="c1",
+                filename="a.pdf",
+                chunk_index=0,
+                excerpt="",
+                score=0.5,
+            )
+        ],
+        0,
+    ) == [0]
+
+
+def test_calibrate_confidence_tracks_evidence() -> None:
+    strong = [
+        RetrievedChunk(
+            chunk_id="1", document_id="d", filename="f", content="c", score=0.85, metadata={}
+        )
+    ]
+    weak = [
+        RetrievedChunk(
+            chunk_id="1", document_id="d", filename="f", content="c", score=0.2, metadata={}
+        )
+    ]
+    cited = [
+        CitationSource(
+            id=1, document_id="d", chunk_id="c", filename="f", chunk_index=0, excerpt="", score=0.8
+        )
+    ]
+
+    assert calibrate_confidence([], [], "") == 0.0
+    assert calibrate_confidence([], [], "ответ") == 0.2
+    # strong retrieval + cited sources → high
+    assert calibrate_confidence(strong, cited, "ответ") >= 0.8
+    # same answer without cited sources is capped low
+    assert calibrate_confidence(strong, [], "ответ") <= 0.45
+    # weak retrieval lowers the value
+    assert calibrate_confidence(weak, cited, "ответ") < calibrate_confidence(strong, cited, "ответ")
+    # never above 0.95
+    best = [
+        RetrievedChunk(
+            chunk_id="1", document_id="d", filename="f", content="c", score=1.0, metadata={}
+        )
+    ]
+    assert calibrate_confidence(best, cited, "ответ") <= 0.95
