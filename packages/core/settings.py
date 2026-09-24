@@ -82,6 +82,14 @@ class Settings(BaseSettings):
     chat_history_messages: int = 10
     chat_history_max_chars: int = 2_000
 
+    # Query expansion: when the primary retrieval's best score is below the
+    # trigger, paraphrase the query (weak model, incl. a translation for
+    # mixed-language corpora) and RRF-merge the per-variant results.
+    query_expansion_enabled: bool = True
+    query_expansion_variants: int = 3
+    query_expansion_trigger_score: float = 0.55
+    query_expansion_timeout_seconds: float = 8.0
+
     # LLM-generated document summaries (weak model) instead of the
     # first-sentences heuristic; heuristic stays as the failure fallback.
     ai_document_insights_enabled: bool = True
