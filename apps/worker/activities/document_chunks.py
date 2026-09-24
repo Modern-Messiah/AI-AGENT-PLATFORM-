@@ -5,7 +5,12 @@ import uuid
 from collections.abc import Awaitable, Callable
 
 from packages.core import settings
-from packages.rag import chunk_segments, generate_document_insights, parse_to_segments
+from packages.rag import (
+    chunk_segments,
+    detect_language,
+    generate_document_insights,
+    parse_to_segments,
+)
 from packages.rag.parser import ParsedSegment
 from packages.storage import Chunk, Document, object_store
 from packages.storage.db import tenant_session
@@ -103,6 +108,7 @@ async def build_chunk_batch(
             {
                 **chunk.metadata,
                 "embedding_model": embedding_model,
+                "lang": detect_language(chunk.content),
             }
             for chunk in chunks
         ],
