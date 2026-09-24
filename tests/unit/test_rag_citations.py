@@ -258,7 +258,10 @@ def test_select_answer_sources_clears_sources_for_insufficient_context_answer() 
     assert selected == []
 
 
-def test_select_answer_sources_clears_sources_when_answer_has_no_citation_markers() -> None:
+def test_select_answer_sources_keeps_provenance_when_answer_has_no_citation_markers() -> None:
+    # Contract change: a markerless non-refusal answer previously dropped ALL
+    # sources, stripping provenance on the flakiest generations. It now keeps
+    # the strongest sources (see test_..._keeps_top_two for the cap).
     sources = build_citations(
         [
             _chunk("chunk-1", "document-1", "incident.pdf", 0.91, chunk_idx=1),
@@ -270,7 +273,7 @@ def test_select_answer_sources_clears_sources_when_answer_has_no_citation_marker
         sources,
     )
 
-    assert selected == []
+    assert [source.id for source in selected] == [1]
 
 
 def test_select_answer_sources_does_not_treat_business_values_as_missing_context() -> None:
@@ -440,3 +443,33 @@ def test_calibrate_confidence_tracks_evidence() -> None:
         )
     ]
     assert calibrate_confidence(best, cited, "ответ") <= 0.95
+
+
+def test_select_answer_sources_without_markers_keeps_top_two() -> None:
+    sources = build_citations(
+        [
+            _chunk("chunk-1", "document-1", "linux.pdf", 0.91, chunk_idx=1),
+            _chunk("chunk-2", "document-1", "linux.pdf", 0.89, chunk_idx=2),
+            _chunk("chunk-3", "document-2", "vim.pdf", 0.87, chunk_idx=1),
+        ]
+    )
+
+    selected = select_answer_sources(
+        "Ответ обычным текстом без единого маркера цитирования.",
+        sources,
+    )
+
+    # A markerless answer is a generation glitch, not a refusal — the two
+    # strongest sources keep provenance instead of dropping everything.
+    assert [source.id for source in selected] == [1, 2]
+
+
+def test_select_answer_sources_insufficient_context_still_drops_all() -> None:
+    sources = build_citations(
+        [
+            _chunk("chunk-1", "document-1", "linux.pdf", 0.91, chunk_idx=1),
+        ]
+    )
+
+    assert select_answer_sources("В базе знаний нет данных о погоде.", sources) == []
+    assert select_answer_sources("", sources) == []
