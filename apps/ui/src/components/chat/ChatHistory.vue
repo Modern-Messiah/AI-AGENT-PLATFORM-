@@ -1,5 +1,9 @@
 <template>
-  <div class="chat-history" :style="{ width: `${width}px` }">
+  <div
+    class="chat-history"
+    :class="{ 'mobile-open': mobileOpen }"
+    :style="isMobile ? undefined : { width: `${width}px` }"
+  >
     <div class="chat-history-header">
       <span>{{ t('chat.sessions') }}</span>
       <button class="btn btn-ghost btn-sm" style="padding: 3px 7px; gap: 4px" @click="handleNew">
@@ -60,6 +64,8 @@ import { formatLocaleDate } from '@/i18n'
 const props = defineProps({
   model: String,
   width: { type: Number, default: 220 },
+  mobileOpen: { type: Boolean, default: false },
+  isMobile: { type: Boolean, default: false },
 })
 const emit = defineEmits(['toast'])
 

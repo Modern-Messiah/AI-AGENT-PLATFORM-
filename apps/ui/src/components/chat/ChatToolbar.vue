@@ -1,5 +1,15 @@
 <template>
   <div class="chat-toolbar">
+    <button
+      v-if="showHistoryToggle"
+      class="btn btn-ghost btn-sm history-toggle"
+      type="button"
+      :aria-label="t('chat.sessions')"
+      :title="t('chat.sessions')"
+      @click="$emit('toggle-history')"
+    >
+      <AppIcon name="docs" :size="14" />
+    </button>
     <select class="model-select" :value="model" @change="$emit('update:model', $event.target.value)">
       <option v-for="m in MODELS" :key="m" :value="m">{{ m }}</option>
     </select>
@@ -18,12 +28,14 @@
 <script setup>
 import { useSettingsStore } from '@/stores/settings'
 import { useI18n } from '@/composables/useI18n'
+import AppIcon from '@/components/AppIcon.vue'
 
 const MODELS = ['moonshot/kimi-k2.6', 'deepseek/deepseek-v4-pro', 'deepseek/deepseek-v4-flash']
 
 defineProps({
   model: String,
-  requireApproval: Boolean
+  requireApproval: Boolean,
+  showHistoryToggle: Boolean,
 })
 defineEmits(['update:model', 'update:requireApproval'])
 
