@@ -115,11 +115,11 @@ async def test_get_uses_bounded_tenant_index_without_global_key_scan(monkeypatch
     redis = _FakeRedis()
     monkeypatch.setattr(semantic_module, "get_redis", lambda: redis)
 
-    async def fake_embed_texts(values: list[str]) -> list[list[float]]:
+    async def fake_embed_queries(values: list[str]) -> list[list[float]]:
         assert values == ["query"]
         return [[1.0, 0.0]]
 
-    monkeypatch.setattr(semantic_module, "embed_texts", fake_embed_texts)
+    monkeypatch.setattr(semantic_module, "embed_queries", fake_embed_queries)
 
     result = await SemanticCache().get("query", "tenant-a")
 
@@ -147,10 +147,10 @@ async def test_get_removes_stale_index_members_without_embedding_when_all_entrie
     )
     monkeypatch.setattr(semantic_module, "get_redis", lambda: redis)
 
-    async def fake_embed_texts(values: list[str]) -> list[list[float]]:
+    async def fake_embed_queries(values: list[str]) -> list[list[float]]:
         raise AssertionError("embedding should not run when no valid cache payloads remain")
 
-    monkeypatch.setattr(semantic_module, "embed_texts", fake_embed_texts)
+    monkeypatch.setattr(semantic_module, "embed_queries", fake_embed_queries)
 
     result = await SemanticCache().get("query", "tenant-a")
 
@@ -167,11 +167,11 @@ async def test_set_caps_tenant_index(monkeypatch) -> None:
     redis = _FakeRedis(entry_ids=[])
     monkeypatch.setattr(semantic_module, "get_redis", lambda: redis)
 
-    async def fake_embed_texts(values: list[str]) -> list[list[float]]:
+    async def fake_embed_queries(values: list[str]) -> list[list[float]]:
         assert values == ["query"]
         return [[1.0, 0.0]]
 
-    monkeypatch.setattr(semantic_module, "embed_texts", fake_embed_texts)
+    monkeypatch.setattr(semantic_module, "embed_queries", fake_embed_queries)
     monkeypatch.setattr(semantic_module.uuid, "uuid4", lambda: "entry-fixed")
     monkeypatch.setattr(semantic_module.time, "time", lambda: 123.45)
 
@@ -195,10 +195,10 @@ async def test_set_skips_results_without_sources(monkeypatch) -> None:
     redis = _FakeRedis(entry_ids=[])
     monkeypatch.setattr(semantic_module, "get_redis", lambda: redis)
 
-    async def fail_embed_texts(values: list[str]) -> list[list[float]]:
+    async def fail_embed_queries(values: list[str]) -> list[list[float]]:
         raise AssertionError("ungrounded results must be rejected before embedding")
 
-    monkeypatch.setattr(semantic_module, "embed_texts", fail_embed_texts)
+    monkeypatch.setattr(semantic_module, "embed_queries", fail_embed_queries)
 
     await SemanticCache().set(
         "query",

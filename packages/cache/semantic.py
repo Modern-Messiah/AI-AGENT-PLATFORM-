@@ -23,7 +23,7 @@ import numpy as np
 
 from packages.agents.schemas import AgentRunOutput
 from packages.cache.redis import get_redis
-from packages.rag.embedder import embed_texts
+from packages.rag.embedder import embed_queries
 
 log = logging.getLogger(__name__)
 
@@ -97,7 +97,7 @@ class SemanticCache:
         if not candidates:
             return None
 
-        query_vec = np.array((await embed_texts([query]))[0], dtype=np.float32)
+        query_vec = np.array((await embed_queries([query]))[0], dtype=np.float32)
         query_norm = float(np.linalg.norm(query_vec))
 
         best_sim = _THRESHOLD
@@ -125,7 +125,7 @@ class SemanticCache:
             return
 
         r = get_redis()
-        vec = np.array((await embed_texts([query]))[0], dtype=np.float32)
+        vec = np.array((await embed_queries([query]))[0], dtype=np.float32)
         entry_id = str(uuid.uuid4())
 
         data = json.dumps({"vec": vec.tolist(), "result": result.model_dump()})
