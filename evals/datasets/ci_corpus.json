@@ -1,0 +1,35 @@
+{
+  "tenant": "ci-eval",
+  "documents": [
+    {
+      "filename": "ru_network_setup.pdf",
+      "chunks": [
+        "Инструкция по настройке сети офиса. Откройте веб-интерфейс маршрутизатора по адресу 192.168.1.1, перейдите в раздел беспроводной сети и укажите имя SSID и пароль. После настройки сети проверьте, что DHCP раздаёт адреса в диапазоне 192.168.1.100-192.168.1.200. Если соединение обрывается, а в логах появляется код ERR_CONN_REFUSED_42 — проверьте правила firewall на шлюзе и перезапустите службу маршрутизации."
+      ]
+    },
+    {
+      "filename": "ru_tariffs.pdf",
+      "chunks": [
+        "Тарифная сетка сервиса. Тариф Бизнес: лимит 100 запросов в минуту к API, хранилище до 500 гигабайт, приоритетная поддержка. Тариф Старт: лимит 20 запросов в минуту и 50 гигабайт хранилища. Превышение лимитов тарифа возвращает ошибку 429 без списания средств."
+      ]
+    },
+    {
+      "filename": "en_deployment.md",
+      "chunks": [
+        "Deployment guide. The service ships as Docker images behind nginx. To enable HTTPS, mount the TLS certificate and key into the reverse proxy and redirect port 80 to 443. The default strong model is moonshot/kimi-k2.6; the cheap helper model is deepseek/deepseek-v4-flash. Health checks live at /health and readiness at /health/ready."
+      ]
+    },
+    {
+      "filename": "ru_backup_policy.txt",
+      "chunks": [
+        "Политика резервного копирования. Резервное копирование базы данных выполняется каждую ночь в 03:00 по расписанию cron. Копии складываются в бакет MinIO backups, время хранения 30 суток. Восстановление проверяется ежеквартальным учебным восстановлением по чек-листу."
+      ]
+    },
+    {
+      "filename": "en_troubleshooting.md",
+      "chunks": [
+        "Troubleshooting runbook. Slow responses usually mean the vector index is cold; warm it with a healthz probe. Gateway errors with code TIMEOUT_504_GATEWAY indicate an upstream provider timeout — retry with exponential backoff. Empty citations mean the reranker filtered all candidates; check the retrieval_max_distance setting."
+      ]
+    }
+  ]
+}

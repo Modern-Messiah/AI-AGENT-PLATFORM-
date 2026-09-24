@@ -1,0 +1,10 @@
+{"query": "как настроить беспроводную сеть на маршрутизаторе", "expected_doc_substrings": ["SSID"]}
+{"query": "инструкция по настройке сети офиса", "expected_doc_substrings": ["192.168.1.1"]}
+{"query": "ошибка ERR_CONN_REFUSED_42 что делать", "expected_doc_substrings": ["ERR_CONN_REFUSED_42"]}
+{"query": "какие лимиты у бизнес тарифа", "expected_doc_substrings": ["100 запросов"]}
+{"query": "как включить HTTPS на сервисе", "expected_doc_substrings": ["TLS"]}
+{"query": "which model is used by default", "expected_doc_substrings": ["kimi-k2.6"]}
+{"query": "куда складываются резервные копии базы", "expected_doc_substrings": ["MinIO"]}
+{"query": "код TIMEOUT_504_GATEWAY", "expected_doc_substrings": ["TIMEOUT_504_GATEWAY"]}
+{"query": "empty citations in the answer troubleshooting", "expected_doc_substrings": ["retrieval_max_distance"]}
+{"query": "когда по расписанию делается бэкап", "expected_doc_substrings": ["03:00"]}

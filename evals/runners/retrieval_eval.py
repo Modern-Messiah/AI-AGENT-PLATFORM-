@@ -7,7 +7,8 @@ oracle is cheap to maintain; replace with id-based ground truth once
 the corpus is fixed.
 
 Usage:
-    uv run python -m evals.runners.retrieval_eval --tenant demo --k 5
+    uv run python -m evals.runners.retrieval_eval --tenant demo --k 5 \
+        --dataset evals/datasets/ci_retrieval.jsonl --min-recall 0.9
 """
 
 from __future__ import annotations
@@ -19,7 +20,7 @@ from pathlib import Path
 
 from packages.rag import retrieve_chunks
 
-DATASET = Path(__file__).resolve().parents[1] / "datasets" / "sample.jsonl"
+DEFAULT_DATASET = Path(__file__).resolve().parents[1] / "datasets" / "sample.jsonl"
 
 
 def _hit_rank(retrieved_contents: list[str], expected_substrings: list[str]) -> int | None:
@@ -29,8 +30,12 @@ def _hit_rank(retrieved_contents: list[str], expected_substrings: list[str]) -> 
     return None
 
 
-async def run(tenant_id: str, k: int) -> None:
-    examples = [json.loads(line) for line in DATASET.read_text().splitlines() if line.strip()]
+def load_examples(dataset: Path) -> list[dict]:
+    return [json.loads(line) for line in dataset.read_text().splitlines() if line.strip()]
+
+
+async def run(tenant_id: str, k: int, examples: list[dict]) -> float:
+    """Returns recall@k over the dataset."""
     hits = 0
     rr_total = 0.0
 
@@ -46,16 +51,28 @@ async def run(tenant_id: str, k: int) -> None:
             print(f"  ✗ miss      | {ex['query']}")
 
     n = len(examples)
-    print(f"\nrecall@{k} = {hits}/{n} = {hits / n:.2%}")
-    print(f"MRR       = {rr_total / n:.3f}")
+    recall = hits / n if n else 0.0
+    print(f"\nrecall@{k} = {hits}/{n} = {recall:.2%}")
+    print(f"MRR       = {rr_total / n:.3f}" if n else "MRR       = n/a")
+    return recall
 
 
 def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--tenant", default="demo")
     p.add_argument("--k", type=int, default=5)
+    p.add_argument("--dataset", type=Path, default=DEFAULT_DATASET)
+    p.add_argument(
+        "--min-recall",
+        type=float,
+        default=None,
+        help="fail (exit 1) when recall@k falls below this threshold",
+    )
     args = p.parse_args()
-    asyncio.run(run(args.tenant, args.k))
+    recall = asyncio.run(run(args.tenant, args.k, load_examples(args.dataset)))
+    if args.min_recall is not None and recall < args.min_recall:
+        print(f"FAIL: recall@{args.k} {recall:.2%} is below the required {args.min_recall:.2%}")
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

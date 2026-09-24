@@ -158,7 +158,7 @@ def test_filter_unsupported_query_chunks_rejects_obvious_out_of_knowledge_result
             document_id="doc-linux",
             filename="golden_linux.txt",
             content="Golden Linux command notes. Команда pwd показывает текущую директорию shell.",
-            score=0.57,
+            score=0.52,
             metadata={},
         ),
         RetrievedChunk(
@@ -166,15 +166,38 @@ def test_filter_unsupported_query_chunks_rejects_obvious_out_of_knowledge_result
             document_id="doc-table",
             filename="golden_table.pdf",
             content="GOLDEN_TABLE_PLAN Premium 9900",
-            score=0.56,
+            score=0.51,
             metadata={"page": 1},
         ),
     ]
 
-    assert filter_unsupported_query_chunks(
-        "ZXQ-77 methane weather forecast on Europa tomorrow",
-        chunks,
-    ) == []
+    assert (
+        filter_unsupported_query_chunks(
+            "ZXQ-77 methane weather forecast on Europa tomorrow",
+            chunks,
+        )
+        == []
+    )
+
+    # Recalibrated threshold (0.55 for the multilingual model, was 0.62 for
+    # bge-small-en): weak-but-present semantics now pass through, only
+    # clearly-absent knowledge is rejected.
+    assert (
+        filter_unsupported_query_chunks(
+            "ZXQ-77 methane weather forecast on Europa tomorrow",
+            [
+                RetrievedChunk(
+                    chunk_id="chunk-1",
+                    document_id="doc-linux",
+                    filename="golden_linux.txt",
+                    content="Golden Linux command notes.",
+                    score=0.57,
+                    metadata={},
+                )
+            ],
+        )
+        != []
+    )
 
 
 def test_filter_unsupported_query_chunks_keeps_lexically_supported_results() -> None:
@@ -184,7 +207,7 @@ def test_filter_unsupported_query_chunks_keeps_lexically_supported_results() -> 
             document_id="doc-table",
             filename="golden_table.pdf",
             content="GOLDEN_TABLE_PLAN Premium 9900",
-            score=0.56,
+            score=0.51,
             metadata={"page": 1},
         )
     ]

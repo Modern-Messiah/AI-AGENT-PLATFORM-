@@ -174,7 +174,7 @@ def filter_unsupported_query_chunks(
     query: str,
     chunks: list[RetrievedChunk],
     *,
-    min_semantic_score_without_lexical_support: float = 0.62,
+    min_semantic_score_without_lexical_support: float = 0.55,
 ) -> list[RetrievedChunk]:
     """Drop unscoped nearest-neighbour noise for clearly unsupported queries.
 
@@ -238,11 +238,27 @@ def rrf_merge(
     return ordered[:limit] if limit is not None else ordered
 
 
-def _fts_matches(query: str) -> ColumnElement[bool]:
-    """tsquery OR-ing both configs: exact-token hits or Russian morphology."""
-    return or_(
-        Chunk.tsv.op("@@")(func.websearch_to_tsquery("simple", query)),
-        Chunk.tsv.op("@@")(func.websearch_to_tsquery("russian", query)),
+def _fts_terms(query: str) -> list[str]:
+    """Sanitized query terms for OR-mode to_tsquery (word characters only)."""
+    return _lexical_terms(query)[:8]
+
+
+def _fts_queries(query: str) -> tuple[ColumnElement[bool], ColumnElement[bool]] | None:
+    """OR-mode tsqueries over both configs.
+
+    websearch_to_tsquery ANDs every word — a query like "which model is
+    used by default" matched nothing unless the chunk contained ALL terms.
+    OR-mode lets partial lexical evidence enter the pool; ts_rank_cd then
+    ranks full matches above single-word noise. Terms come from
+    _lexical_terms (\\w+ only), so the to_tsquery string needs no escaping.
+    """
+    terms = _fts_terms(query)
+    if not terms:
+        return None
+    joined = " | ".join(terms)
+    return (
+        func.to_tsquery("simple", joined),
+        func.to_tsquery("russian", joined),
     )
 
 
@@ -290,14 +306,19 @@ async def retrieve_chunks(
         # Full-text leg of the hybrid search: exact tokens and Russian
         # morphology that cosine neighbours may rank below the cutoff.
         fts_rows: Sequence[Any] = []
-        if settings.hybrid_search_enabled:
-            rank = func.ts_rank_cd(Chunk.tsv, func.websearch_to_tsquery("simple", query)).label(
-                "rank"
-            )
+        queries = _fts_queries(query) if settings.hybrid_search_enabled else None
+        if queries is not None:
+            tsq_simple, tsq_russian = queries
+            rank = (
+                func.ts_rank_cd(Chunk.tsv, tsq_simple) + func.ts_rank_cd(Chunk.tsv, tsq_russian)
+            ).label("rank")
             fts_stmt = (
                 select(Chunk, Document.filename, distance.label("distance"), rank)
                 .join(Document, Chunk.document_id == Document.id)
-                .where(Chunk.tenant_id == tenant_id, _fts_matches(query))
+                .where(
+                    Chunk.tenant_id == tenant_id,
+                    or_(Chunk.tsv.op("@@")(tsq_simple), Chunk.tsv.op("@@")(tsq_russian)),
+                )
                 .order_by(rank.desc())
                 .limit(k)
             )
