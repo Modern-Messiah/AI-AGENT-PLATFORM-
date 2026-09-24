@@ -53,6 +53,7 @@ from apps.api.routers import (
 )
 from apps.api.schemas import (
     AddMessageRequest,
+    ApiKeyInfo,
     AddUrlDocumentRequest,
     AgentRunApiResponse,
     AgentStreamRequest,
