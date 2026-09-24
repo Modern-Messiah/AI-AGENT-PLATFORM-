@@ -69,6 +69,70 @@ jobs:
         working-directory: apps/ui
         run: npm run build
 
+  retrieval-evals:
+    name: Retrieval quality evals
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_PASSWORD: ci-eval-password
+          POSTGRES_DB: app
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 15
+
+    env:
+      DATABASE_URL: postgresql+asyncpg://postgres:ci-eval-password@localhost:5432/app
+      APP_DB_USER: aap_app
+      APP_DB_PASSWORD: ci-eval-app-password
+      FASTEMBED_CACHE_PATH: /home/runner/.cache/fastembed
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+          enable-cache: true
+
+      - name: Install Python dependencies
+        run: uv sync --frozen
+
+      - name: Cache embedding model
+        uses: actions/cache@v4
+        with:
+          path: /home/runner/.cache/fastembed
+          key: fastembed-${{ hashFiles('pyproject.toml') }}
+
+      - name: Run migrations
+        run: |
+          docker exec $(docker ps -qf "ancestor=pgvector/pgvector:pg16") psql -U postgres -d app -c "CREATE EXTENSION IF NOT EXISTS pg_trgm"
+          uv run alembic upgrade head
+
+      - name: Seed eval corpus
+        run: PYTHONPATH=. uv run python scripts/seed_eval_corpus.py
+
+      - name: Run retrieval eval (recall@5 >= 90%)
+        run: |
+          PYTHONPATH=. uv run python -m evals.runners.retrieval_eval \
+            --tenant ci-eval --k 5 \
+            --dataset evals/datasets/ci_retrieval.jsonl \
+            --min-recall 0.9
+
   compose:
     name: Docker Compose config
     runs-on: ubuntu-latest
