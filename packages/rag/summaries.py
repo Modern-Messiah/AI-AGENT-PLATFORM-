@@ -1,16 +1,21 @@
-"""Deterministic document summaries for the knowledge-base UI."""
+"""Document summaries: LLM-generated with deterministic fallback."""
 
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 
 from pydantic import BaseModel, Field
 
+from packages.core import settings
 from packages.llm import complete_chat_json
 from packages.rag.parser import ParsedSegment
+
+log = logging.getLogger(__name__)
 
 _SPACE_RE = re.compile(r"\s+")
 _SENTENCE_RE = re.compile(r"(?<=[.!?])\s+")
@@ -149,6 +154,83 @@ def build_notebook_insights(
             f"Какие выводы можно сделать по коллекции {title}?",
         ],
         key_topics=_extract_key_topics(topic_text),
+    )
+
+
+_AI_DOCUMENT_MODEL = "deepseek/deepseek-v4-flash"
+_AI_DOCUMENT_MAX_CONTEXT_CHARS = 12_000
+_AI_DOCUMENT_MAX_TOKENS = 700
+_AI_DOCUMENT_TIMEOUT_SECONDS = 45.0
+
+
+class _GeneratedDocumentInsights(BaseModel):
+    summary: str = Field(min_length=20, max_length=900)
+    suggested_questions: list[str] = Field(min_length=3, max_length=3)
+
+
+async def generate_document_insights(
+    segments: list[ParsedSegment],
+    *,
+    filename: str,
+    complete_json: Callable[..., Awaitable[str]] | None = None,
+) -> DocumentInsights:
+    """LLM summary + chat questions for one document.
+
+    Falls back to the deterministic build_document_insights heuristic on
+    any failure (provider down, malformed JSON, timeout) so ingestion
+    never breaks because of the summary step.
+    """
+    heuristic = build_document_insights(segments, filename=filename)
+    if not settings.ai_document_insights_enabled:
+        return heuristic
+    text = _normalize_text(" ".join(segment.text for segment in segments if segment.text))
+    if len(text) < 200:
+        return heuristic
+
+    completion = complete_json or complete_chat_json
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "Ты создаёшь краткое описание одного документа строго по его тексту. "
+                "Верни только валидный JSON без markdown. Формат: "
+                '{"summary":"2-4 предложения","suggested_questions":["вопрос"]}. '
+                "summary должен описывать фактическое содержание, а не копировать "
+                "начало текста. suggested_questions: ровно 3 конкретных вопроса, "
+                "на которые отвечает документ. Пиши на языке документа. "
+                "Не выдумывай факты."
+            ),
+        },
+        {
+            "role": "user",
+            "content": (
+                "Создай JSON-описание документа:\n"
+                + json.dumps(
+                    {"filename": filename.strip(), "text": text[:_AI_DOCUMENT_MAX_CONTEXT_CHARS]},
+                    ensure_ascii=False,
+                )
+            ),
+        },
+    ]
+    try:
+        raw = await asyncio.wait_for(
+            completion(_AI_DOCUMENT_MODEL, messages, max_tokens=_AI_DOCUMENT_MAX_TOKENS),
+            timeout=_AI_DOCUMENT_TIMEOUT_SECONDS,
+        )
+        generated = _GeneratedDocumentInsights.model_validate_json(raw)
+    except Exception as exc:  # noqa: BLE001 - summary generation is best-effort
+        log.info(
+            "LLM document insights fell back to heuristic | file=%s error=%s",
+            filename,
+            type(exc).__name__,
+        )
+        return heuristic
+
+    return DocumentInsights(
+        summary=_normalize_text(generated.summary),
+        suggested_questions=[
+            _normalize_text(question) for question in generated.suggested_questions
+        ],
     )
 
 

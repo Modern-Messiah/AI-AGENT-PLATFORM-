@@ -13,7 +13,7 @@ import logging
 import time
 
 from packages.core import settings
-from packages.rag import build_document_insights, embed_texts
+from packages.rag import embed_texts, generate_document_insights
 from packages.rag.parser import ParsedSegment
 from packages.rag.visual import (
     render_visual_pages,
@@ -271,7 +271,7 @@ async def finalize_visual_document(
 
     await mark_visual_document_embedding(input, warnings)
 
-    insights = build_document_insights(segments, filename=input.filename)
+    insights = await generate_document_insights(segments, filename=input.filename)
     chunk_batch = await build_chunk_batch(
         ParsedDoc(
             segments=[
