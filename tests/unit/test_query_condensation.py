@@ -21,6 +21,7 @@ def _fake_llm(response: str | Exception) -> list[list[dict]]:
 async def test_condense_query_resolves_followup_with_history(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr(settings, "query_condensation_enabled", True)
     calls, fake = _fake_llm('{"standalone_query": "Какие ограничения во втором документе?"}')
     monkeypatch.setattr(condensation_module, "complete_chat_json", fake)
 
@@ -37,6 +38,7 @@ async def test_condense_query_resolves_followup_with_history(
 async def test_condense_query_falls_back_to_raw_query_on_llm_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr(settings, "query_condensation_enabled", True)
     _, fake = _fake_llm(RuntimeError("provider down"))
     monkeypatch.setattr(condensation_module, "complete_chat_json", fake)
 
@@ -48,6 +50,7 @@ async def test_condense_query_falls_back_to_raw_query_on_llm_failure(
 async def test_condense_query_falls_back_on_malformed_json(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr(settings, "query_condensation_enabled", True)
     _, fake = _fake_llm("not json at all")
     monkeypatch.setattr(condensation_module, "complete_chat_json", fake)
 

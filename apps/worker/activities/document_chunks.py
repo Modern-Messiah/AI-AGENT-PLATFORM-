@@ -5,7 +5,7 @@ import uuid
 from collections.abc import Awaitable, Callable
 
 from packages.core import settings
-from packages.rag import build_document_insights, chunk_segments, parse_to_segments
+from packages.rag import chunk_segments, generate_document_insights, parse_to_segments
 from packages.rag.parser import ParsedSegment
 from packages.storage import Chunk, Document, object_store
 from packages.storage.db import tenant_session
@@ -21,7 +21,7 @@ async def parse_original_document(input: IngestionInput) -> ParsedDoc:
     segments = await parse_to_segments(data, input.filename)
     url_visuals = await append_url_visual_segments(input, segments)
     segments = url_visuals.segments
-    insights = build_document_insights(segments, filename=input.filename)
+    insights = await generate_document_insights(segments, filename=input.filename)
     return ParsedDoc(
         segments=[
             {

@@ -80,6 +80,10 @@ class Settings(BaseSettings):
     chat_history_messages: int = 10
     chat_history_max_chars: int = 2_000
 
+    # LLM-generated document summaries (weak model) instead of the
+    # first-sentences heuristic; heuristic stays as the failure fallback.
+    ai_document_insights_enabled: bool = True
+
     # Log a WARNING when a single LLM call costs more than this amount.
     budget_alert_usd_per_call: float = 0.10
 

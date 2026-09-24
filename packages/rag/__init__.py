@@ -17,6 +17,7 @@ from packages.rag.summaries import (
     NotebookInsightSource,
     build_document_insights,
     build_notebook_insights,
+    generate_document_insights,
     generate_notebook_insights,
 )
 
@@ -34,6 +35,7 @@ __all__ = [
     "chunk_text",
     "embed_queries",
     "embed_texts",
+    "generate_document_insights",
     "generate_notebook_insights",
     "normalize_citation_sources",
     "parse_to_segments",
