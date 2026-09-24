@@ -43,7 +43,14 @@
         <div class="msg-avatar"><AppIcon :name="msg.role" /></div>
         <div class="msg-body">
           <div class="msg-bubble" :style="msg.error ? { borderColor: 'var(--red)' } : {}">
-            {{ msg.text }}<span v-if="msg.streaming" class="streaming-cursor">▋</span>
+            <div
+              v-if="msg.role === 'agent' && !msg.streaming && !msg.error"
+              class="md-content"
+              v-html="renderedMarkdown(msg)"
+            ></div>
+            <template v-else>
+              {{ msg.text }}<span v-if="msg.streaming" class="streaming-cursor">▋</span>
+            </template>
           </div>
           <div class="msg-meta">
             <span class="msg-time">{{ msg.time }}</span>
@@ -143,6 +150,8 @@
 
 <script setup>
 import { ref, watch, nextTick } from 'vue'
+import { renderMarkdown } from '@/utils/markdown'
+import 'highlight.js/styles/github-dark.css'
 import { useChatStore } from '@/stores/chat'
 import { useI18n } from '@/composables/useI18n'
 import AppIcon from '@/components/AppIcon.vue'
@@ -163,6 +172,19 @@ const chat = useChatStore()
 const { locale, t } = useI18n()
 const containerRef = ref(null)
 const openCitationKey = ref(null)
+
+// Rendered markdown is memoized per message: v-html would re-parse on every
+// reactivity tick otherwise, and message text only changes while streaming
+// (when the plain-text branch is used anyway).
+const markdownCache = new Map()
+
+function renderedMarkdown(msg) {
+  const cached = markdownCache.get(msg.id)
+  if (cached && cached.text === msg.text) return cached.html
+  const entry = { text: msg.text, html: renderMarkdown(msg.text) }
+  markdownCache.set(msg.id, entry)
+  return entry.html
+}
 
 function citationGroups(msg) {
   return groupCitationsByDocument(msg.sources || [])
