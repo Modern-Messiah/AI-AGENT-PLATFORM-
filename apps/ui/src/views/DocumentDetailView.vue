@@ -92,6 +92,30 @@
         </div>
       </div>
 
+      <div v-if="previewAssets.length" class="card">
+        <div class="card-header">
+          <div>
+            <div class="card-title">{{ t('documentDetail.pagesTitle') }}</div>
+            <div class="card-sub">{{ t('documentDetail.pagesSub') }}</div>
+          </div>
+        </div>
+        <div class="detail-card-body">
+          <div class="asset-gallery">
+            <ProtectedAssetImage
+              v-for="asset in previewAssets"
+              :key="asset.id"
+              :document-id="documentId"
+              :asset-id="asset.id"
+              :page-number="asset.page_number"
+              :alt="asset.asset_kind === 'page'
+                ? t('documentDetail.pagePreviewAlt', { page: asset.page_number })
+                : t('documentDetail.imagePreviewAlt')"
+              compact
+            />
+          </div>
+        </div>
+      </div>
+
       <div v-if="normalized.warnings.length" class="card warnings-card">
         <div class="card-header">
           <div class="card-title">{{ t('documentDetail.warningsTitle') }}</div>
@@ -176,6 +200,7 @@ import { useApi } from '@/composables/useApi'
 import { useSettingsStore } from '@/stores/settings'
 import { useI18n } from '@/composables/useI18n'
 import StatusBadge from '@/components/StatusBadge.vue'
+import ProtectedAssetImage from '@/components/ProtectedAssetImage.vue'
 import {
   buildDocumentChatRoute,
   buildQuestionRoute,
@@ -191,11 +216,20 @@ const { t } = useI18n()
 
 const document = ref(null)
 const chunks = ref([])
+const assets = ref([])
 const loading = ref(false)
 const error = ref('')
 let documentPollTimer = null
 
 const documentId = computed(() => String(route.params.id || ''))
+
+// Only assets the API marks preview_available (rendered pages/images);
+// url_image assets intentionally stay out of the gallery.
+const previewAssets = computed(() =>
+  assets.value
+    .filter(asset => asset.preview_available)
+    .sort((a, b) => (a.page_number ?? 0) - (b.page_number ?? 0))
+)
 const normalized = computed(() => (
   document.value ? normalizeDocument(document.value, settings.locale) : null
 ))
@@ -239,12 +273,14 @@ async function loadDocument(options = {}) {
   if (!background) loading.value = true
   error.value = ''
   try {
-    const [doc, chunkRows] = await Promise.all([
+    const [doc, chunkRows, assetRows] = await Promise.all([
       apiFetch(`/documents/${documentId.value}`),
       apiFetch(`/documents/${documentId.value}/chunks`).catch(() => []),
+      apiFetch(`/documents/${documentId.value}/assets?limit=200`).catch(() => []),
     ])
     document.value = doc
     chunks.value = chunkRows
+    assets.value = assetRows
     scheduleDocumentRefresh(doc)
     await nextTick()
     scrollToTargetChunk()
@@ -252,6 +288,7 @@ async function loadDocument(options = {}) {
     clearDocumentRefresh()
     document.value = null
     chunks.value = []
+    assets.value = []
     error.value = e.message
   } finally {
     if (!background) loading.value = false
@@ -370,6 +407,12 @@ function openDocumentChat() {
   grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
   gap: 14px;
 }
+.asset-gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 12px;
+}
+
 .detail-card-body {
   padding: 16px 18px;
 }

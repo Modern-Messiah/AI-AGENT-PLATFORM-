@@ -254,12 +254,12 @@ test('knowledge base accepts image sources and shows page progress', () => {
   assert.match(documentsViewSource, /doc\.totalPages/)
 })
 
-test('document detail does not show a visual asset gallery', () => {
-  assert.doesNotMatch(viewSource, /apiFetch\(`\/documents\/\$\{documentId\.value\}\/assets`\)/)
-  assert.doesNotMatch(viewSource, /<ProtectedAssetImage/)
-  assert.doesNotMatch(viewSource, /class="asset-gallery"/)
-  assert.doesNotMatch(i18nSource, /Распознанные страницы и изображения/)
-  assert.doesNotMatch(i18nSource, /Recognized pages and images/)
+test('document detail shows a lazy visual asset gallery for rendered pages', () => {
+  assert.match(viewSource, /\/assets\?limit=200/)
+  assert.match(viewSource, /<ProtectedAssetImage/)
+  assert.match(viewSource, /class="asset-gallery"/)
+  // only preview-able assets enter the gallery
+  assert.match(viewSource, /preview_available/)
 })
 
 test('chat citation details do not show image previews', () => {
