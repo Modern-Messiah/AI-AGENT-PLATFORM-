@@ -148,7 +148,11 @@ def select_answer_sources(
 
     cited_ids = _citation_ids_in_answer(answer)
     if not cited_ids:
-        return []
+        # No markers parsed: usually a generation glitch, not a refusal
+        # (explicit refusals are caught above). Keep the two strongest
+        # sources instead of stripping provenance entirely — confidence
+        # calibration already scores such answers low.
+        return sources[:2]
 
     return [source for source in sources if source.id in cited_ids]
 
