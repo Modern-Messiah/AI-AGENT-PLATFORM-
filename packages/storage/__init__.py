@@ -11,6 +11,7 @@ from packages.storage.models import (
     DocumentStatus,
     Notebook,
     NotebookDocument,
+    User,
 )
 from packages.storage.object_store import object_store
 
@@ -26,6 +27,7 @@ __all__ = [
     "DocumentStatus",
     "Notebook",
     "NotebookDocument",
+    "User",
     "async_session",
     "engine",
     "object_store",

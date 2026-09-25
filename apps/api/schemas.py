@@ -167,6 +167,7 @@ class WorkflowSignalResponse(BaseModel):
 class CreateKeyRequest(BaseModel):
     tenant_id: str
     name: str | None = None
+    user_id: uuid.UUID | None = None
 
 
 class CreateKeyResponse(BaseModel):
@@ -176,11 +177,27 @@ class CreateKeyResponse(BaseModel):
     raw_key: str  # shown once - store it now
 
 
+class CreateUserRequest(BaseModel):
+    tenant_id: str = Field(min_length=1, max_length=64)
+    name: str = Field(min_length=1, max_length=256)
+    role: str = Field(default="member", pattern="^(member|admin)$")
+
+
+class UserInfo(BaseModel):
+    id: str
+    tenant_id: str
+    name: str
+    role: str
+    created_at: datetime
+
+
 class ApiKeyInfo(BaseModel):
     """Admin-facing key view: no hashes, no raw keys."""
+
     id: str
     tenant_id: str
     name: str | None = None
+    user_id: str | None = None
     is_active: bool
     created_at: datetime
     last_used_at: datetime | None = None

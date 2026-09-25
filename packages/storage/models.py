@@ -87,13 +87,13 @@ class Document(Base):
         nullable=False,
     )
 
-    chunks: Mapped[list["Chunk"]] = relationship(
+    chunks: Mapped[list[Chunk]] = relationship(
         back_populates="document", cascade="all, delete-orphan"
     )
-    assets: Mapped[list["DocumentAsset"]] = relationship(
+    assets: Mapped[list[DocumentAsset]] = relationship(
         back_populates="document", cascade="all, delete-orphan"
     )
-    notebook_links: Mapped[list["NotebookDocument"]] = relationship(
+    notebook_links: Mapped[list[NotebookDocument]] = relationship(
         back_populates="document", cascade="all, delete-orphan"
     )
 
@@ -175,7 +175,7 @@ class Notebook(Base):
         nullable=False,
     )
 
-    document_links: Mapped[list["NotebookDocument"]] = relationship(
+    document_links: Mapped[list[NotebookDocument]] = relationship(
         back_populates="notebook", cascade="all, delete-orphan"
     )
 
@@ -261,7 +261,7 @@ class ChatSession(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
-    messages: Mapped[list["ChatMessage"]] = relationship(back_populates="session", cascade="all, delete-orphan", order_by="ChatMessage.created_at")
+    messages: Mapped[list[ChatMessage]] = relationship(back_populates="session", cascade="all, delete-orphan", order_by="ChatMessage.created_at")
 
     __table_args__ = (
         CheckConstraint(
@@ -291,6 +291,21 @@ class ChatMessage(Base):
     session: Mapped[ChatSession] = relationship(back_populates="messages")
 
 
+class User(Base):
+    """A person within a tenant; API keys attach to a user for attribution."""
+
+    __tablename__ = "users"
+    __table_args__ = (UniqueConstraint("tenant_id", "name"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    name: Mapped[str] = mapped_column(String(256), nullable=False)
+    role: Mapped[str] = mapped_column(String(32), default="member", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 class ApiKey(Base):
     __tablename__ = "api_keys"
 
@@ -298,6 +313,9 @@ class ApiKey(Base):
     tenant_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
     key_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     name: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     is_active: Mapped[bool] = mapped_column(default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
