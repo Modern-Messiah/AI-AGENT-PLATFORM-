@@ -11,7 +11,7 @@ import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
-import fitz  # type: ignore[import-untyped]  # pymupdf
+import fitz  # pymupdf
 from markitdown import MarkItDown
 
 _md = MarkItDown()
@@ -20,7 +20,7 @@ _md = MarkItDown()
 @dataclass
 class ParsedSegment:
     text: str
-    metadata: dict = field(default_factory=dict)
+    metadata: dict[str, object] = field(default_factory=dict)
 
 
 def _parse_pdf(data: bytes) -> list[ParsedSegment]:

@@ -161,7 +161,7 @@ class _ReadableTextParser(HTMLParser):
         self._parts: list[str] = []
         self._skip_depth = 0
 
-    def handle_starttag(self, tag: str, attrs) -> None:
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         tag = tag.lower()
         if tag in _SKIP_TAGS:
             self._skip_depth += 1
@@ -197,7 +197,7 @@ class _ImageSourceParser(HTMLParser):
         self.sources: list[UrlImageSource] = []
         self._seen: set[str] = set()
 
-    def handle_starttag(self, tag: str, attrs) -> None:
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         if tag.lower() != "img":
             return
         attr = {str(key).lower(): str(value or "") for key, value in attrs}
@@ -231,7 +231,7 @@ class _ImageRefParser(HTMLParser):
         super().__init__(convert_charrefs=True)
         self.refs: list[tuple[str, str, str]] = []
 
-    def handle_starttag(self, tag: str, attrs) -> None:
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         if tag.lower() != "img":
             return
         attr = {str(key).lower(): str(value or "") for key, value in attrs}
@@ -514,7 +514,7 @@ async def validate_fetch_url(url: str) -> str:
 
     for _, _, _, _, sockaddr in infos:
         ip = sockaddr[0]
-        if _is_blocked_ip(ip):
+        if isinstance(ip, str) and _is_blocked_ip(ip):
             raise UrlSourceError(
                 "requests to private or internal network addresses are not allowed"
             )

@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import uuid
+from collections.abc import Iterator
 from dataclasses import dataclass, field, replace
 from pathlib import PurePosixPath
 from urllib.parse import urljoin, urlparse
@@ -47,13 +48,13 @@ class UrlVisualSegmentsResult:
     segments: list[ParsedSegment]
     warnings: list[str] = field(default_factory=list)
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[ParsedSegment]:
         return iter(self.segments)
 
     def __len__(self) -> int:
         return len(self.segments)
 
-    def __getitem__(self, index):
+    def __getitem__(self, index: int) -> ParsedSegment:
         return self.segments[index]
 
     def __eq__(self, other: object) -> bool:

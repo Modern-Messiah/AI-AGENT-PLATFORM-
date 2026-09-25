@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 
 @dataclass
@@ -15,10 +16,10 @@ class IngestionInput:
 class ParsedDoc:
     # Keep this DTO JSON-like: workflow payload decoding must not depend on parser
     # runtime classes inside Temporal's sandbox.
-    segments: list = field(default_factory=list)
+    segments: list[dict[str, Any]] = field(default_factory=list)
     text: str = ""
     summary: str = ""
-    suggested_questions: list = field(default_factory=list)
+    suggested_questions: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
 
 
@@ -26,7 +27,7 @@ class ParsedDoc:
 class ChunkBatch:
     contents: list[str]
     embeddings: list[list[float]]
-    metadata: list[dict] = field(default_factory=list)
+    metadata: list[dict[str, Any]] = field(default_factory=list)
     summary: str = ""
     suggested_questions: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)

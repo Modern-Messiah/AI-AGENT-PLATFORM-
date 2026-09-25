@@ -12,7 +12,7 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any
 
-import fitz  # type: ignore[import-untyped]
+import fitz
 from PIL import Image, ImageOps
 
 from packages.core import settings
@@ -163,7 +163,7 @@ def _paddle_ocr_options(machine: str | None = None) -> dict[str, object]:
 
 
 @lru_cache(maxsize=1)
-def _paddle_ocr():
+def _paddle_ocr() -> Any:
     from paddleocr import PaddleOCR
 
     return PaddleOCR(

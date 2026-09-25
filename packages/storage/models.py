@@ -210,7 +210,9 @@ class Chunk(Base):
     chunk_idx: Mapped[int] = mapped_column(Integer, nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     embedding: Mapped[list[float]] = mapped_column(Vector(settings.embedding_dim), nullable=False)
-    chunk_metadata: Mapped[dict] = mapped_column("metadata", JSONB, default=dict, nullable=False)
+    chunk_metadata: Mapped[dict[str, object]] = mapped_column(
+        "metadata", JSONB, default=dict, nullable=False
+    )
     # Stored generated column maintained by PostgreSQL (migration 0016):
     # 'simple' keeps exact tokens/identifiers, 'russian' adds morphology.
     tsv: Mapped[object] = mapped_column(
@@ -285,7 +287,7 @@ class ChatMessage(Base):
     tenant_id: Mapped[str] = mapped_column(String(64), nullable=False)
     role: Mapped[str] = mapped_column(String(16), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
-    sources: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
+    sources: Mapped[list[object]] = mapped_column(JSONB, default=list, nullable=False)
     cached: Mapped[bool] = mapped_column(default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import time
 import uuid
+from typing import Any
 
 from fastapi import HTTPException
 from packages.cache.redis import get_redis
@@ -24,7 +25,7 @@ def validate_agent_query(query: str) -> str:
 
 
 async def check_agent_rate_limit(
-    redis,
+    redis: Any,
     tenant_id: str,
     *,
     limit: int,

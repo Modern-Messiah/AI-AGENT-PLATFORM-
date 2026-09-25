@@ -28,11 +28,12 @@ def _get_embedder() -> TextEmbedding:
     if _embedder is None:
         with _lock:
             if _embedder is None:
-                kwargs: dict = {"model_name": settings.embedding_model}
                 cache_dir = os.environ.get("FASTEMBED_CACHE_PATH")
-                if cache_dir:
-                    kwargs["cache_dir"] = cache_dir
-                _embedder = TextEmbedding(**kwargs)
+                _embedder = (
+                    TextEmbedding(model_name=settings.embedding_model, cache_dir=cache_dir)
+                    if cache_dir
+                    else TextEmbedding(model_name=settings.embedding_model)
+                )
     return _embedder
 
 

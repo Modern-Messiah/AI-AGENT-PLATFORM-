@@ -70,7 +70,7 @@ def _collapse_parens(sql: str) -> str:
 
 def register_sql_tool(agent: Agent[AgentDeps, object]) -> None:
     @agent.tool
-    async def sql_query(ctx: RunContext[AgentDeps], query: str) -> list[dict]:
+    async def sql_query(ctx: RunContext[AgentDeps], query: str) -> list[dict[str, object]]:
         """Run a read-only SELECT against the platform database.
 
         Use this to look up document metadata or chunk content for the current tenant.

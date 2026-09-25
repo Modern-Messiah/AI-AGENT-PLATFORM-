@@ -60,7 +60,7 @@ def _merge_sources(
     return merged
 
 
-async def _collect_child_results[T](child_handles: Sequence[Awaitable[_T]]) -> list[_T]:
+async def _collect_child_results(child_handles: Sequence[Awaitable[_T]]) -> list[_T]:
     import asyncio
 
     return list(await asyncio.gather(*child_handles))
@@ -102,5 +102,5 @@ class MultiStepResearchWorkflow:
             start_to_close_timeout=timedelta(minutes=10),
             retry_policy=_RETRY,
         )
-        final.sources = _merge_sources(final.sources, all_sources)
-        return final
+        merged_sources = _merge_sources(list(final.sources), list(all_sources))
+        return final.model_copy(update={"sources": merged_sources})

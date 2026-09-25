@@ -114,7 +114,6 @@ class Settings(BaseSettings):
     # hardened host subprocess; set to run snippets in a throwaway container
     # with no network, memory/cpu/pid caps and a read-only filesystem.
     code_exec_sandbox_image: str = ""
-    code_exec_sandbox_image: str = ""
 
     # HITL reviewer notification: POST a Slack-compatible JSON payload when
     # an answer awaits approval. Empty = log only (scaffold behaviour).
