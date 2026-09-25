@@ -304,19 +304,20 @@ export const useChatStore = defineStore('chat', () => {
               if (streamMsg) {
                 const idx = messages.value.findIndex(m => m.id === streamMsg.id)
                 if (idx !== -1) {
-                  messages.value[idx] = { ...messages.value[idx], text: event.answer, sources: event.sources || [], cached: event.cached || false, streaming: false }
+                  messages.value[idx] = { ...messages.value[idx], text: event.answer, sources: event.sources || [], cached: event.cached || false, confidence: event.confidence, streaming: false }
                 } else {
                   messages.value.push({
                     ...streamMsg,
                     text: event.answer,
                     sources: event.sources || [],
                     cached: event.cached || false,
+                    confidence: event.confidence,
                     streaming: false
                   })
                 }
               } else {
                 // Cache hit — full answer in one shot
-                streamMsg = { id: 'a' + Date.now(), role: 'agent', text: event.answer, time: nowTime(), sources: event.sources || [], cached: event.cached || false, streaming: false }
+                streamMsg = { id: 'a' + Date.now(), role: 'agent', text: event.answer, time: nowTime(), sources: event.sources || [], cached: event.cached || false, confidence: event.confidence, streaming: false }
                 messages.value.push(streamMsg)
               }
             }
