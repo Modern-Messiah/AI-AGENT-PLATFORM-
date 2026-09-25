@@ -17,6 +17,7 @@ from tests.e2e.test_smoke import (
     _DEFAULT_API_BASE,
     _RUN_E2E,
     _create_api_key,
+    _admin_secret,
     _delete_tenant_api_keys,
     _wait_document_done,
 )
@@ -194,4 +195,4 @@ def test_url_source_ingests_hidden_image_text_from_local_fixture() -> None:
         finally:
             if document_id:
                 client.delete(f"/documents/{document_id}", headers=headers)
-            asyncio.run(_delete_tenant_api_keys(tenant_id))
+            _delete_tenant_api_keys(client, tenant_id)

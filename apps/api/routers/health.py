@@ -69,7 +69,8 @@ async def _check_temporal(request: Request) -> None:
     client = getattr(request.app.state, "temporal", None)
     if client is None:
         raise RuntimeError("temporal client not initialised")
-    await client.check_health()
+    # check_health lives on the service client, not the Client facade
+    await client.service_client.check_health()
 
 
 _CHECK_NAMES = ("postgres", "redis", "clickhouse", "minio", "temporal")

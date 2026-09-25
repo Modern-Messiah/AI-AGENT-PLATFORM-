@@ -110,13 +110,19 @@ def _read_sse_done(response: httpx.Response) -> dict[str, Any]:
     pytest.fail("agent stream ended without a done event")
 
 
-async def _delete_tenant_api_keys(tenant_id: str) -> None:
-    from sqlalchemy import delete
+def _delete_tenant_api_keys(client: httpx.Client, tenant_id: str) -> None:
+    """Revoke the tenant's keys via the admin API.
 
-    from packages.storage import ApiKey, async_session
-
-    async with async_session() as session, session.begin():
-        await session.execute(delete(ApiKey).where(ApiKey.tenant_id == tenant_id))
+    A direct async-session cleanup breaks when several asyncio.run() loops
+    share the process: the engine pool binds to the first loop and later
+    futures land on a foreign one.
+    """
+    admin_headers = {"X-Admin-Secret": _admin_secret()}
+    response = client.get("/auth/keys", params={"tenant_id": tenant_id}, headers=admin_headers)
+    response.raise_for_status()
+    for key in response.json():
+        delete_response = client.delete(f"/auth/keys/{key['id']}", headers=admin_headers)
+        delete_response.raise_for_status()
 
 
 def test_document_upload_ingestion_scoped_stream_and_citations_smoke() -> None:
@@ -191,4 +197,4 @@ def test_document_upload_ingestion_scoped_stream_and_citations_smoke() -> None:
             for document_id in (target_document_id, distractor_document_id):
                 if document_id:
                     client.delete(f"/documents/{document_id}", headers=headers)
-            asyncio.run(_delete_tenant_api_keys(tenant_id))
+            _delete_tenant_api_keys(client, tenant_id)

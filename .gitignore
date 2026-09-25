@@ -25,3 +25,6 @@ docs/
 
 # Local architecture notes (not for the repo)
 ai-agent-platform.md
+
+# Playwright run artifacts
+apps/ui/e2e/.artifacts/

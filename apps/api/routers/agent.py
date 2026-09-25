@@ -18,6 +18,7 @@ from packages.rag import (
     build_grounded_messages,
     calibrate_confidence,
     normalize_citation_sources,
+    retrieve_chunks_with_expansion,
     select_answer_sources,
     select_diverse_chunks,
 )
