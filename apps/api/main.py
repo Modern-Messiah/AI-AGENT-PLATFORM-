@@ -65,6 +65,7 @@ from apps.api.schemas import (
     CreateKeyResponse,
     CreateNotebookRequest,
     CreateSessionRequest,
+    CreateUserRequest,
     DocumentAssetResponse,
     DocumentChunkPreview,
     DocumentResponse,
@@ -73,6 +74,7 @@ from apps.api.schemas import (
     UpdateSessionRequest,
     UrlCheckRequest,
     UrlCheckResponse,
+    UserInfo,
     WorkflowSignalResponse,
 )
 from apps.api.serializers import (

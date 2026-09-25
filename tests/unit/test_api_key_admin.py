@@ -49,8 +49,10 @@ def test_api_key_info_exposes_no_secrets() -> None:
         "id",
         "tenant_id",
         "name",
+        "user_id",
         "is_active",
         "created_at",
         "last_used_at",
     }
+    assert dumped["user_id"] is None
     assert dumped["last_used_at"] is None
