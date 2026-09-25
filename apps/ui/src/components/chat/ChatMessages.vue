@@ -54,6 +54,12 @@
           </div>
           <div class="msg-meta">
             <span class="msg-time">{{ msg.time }}</span>
+            <span
+              v-if="msg.role === 'agent' && !msg.error && confidenceBand(msg.confidence)"
+              :class="confidenceBadgeClass(msg.confidence)"
+              :title="t('chat.confidenceTitle', { value: Math.round((msg.confidence || 0) * 100) })"
+              style="font-size: 10px; padding: 1px 6px"
+            >{{ t(`chat.confidence.${confidenceBand(msg.confidence)}`) }}</span>
             <span v-if="msg.cached" class="badge badge-purple" style="font-size: 10px; padding: 1px 6px">{{ t('chat.cacheHit') }}</span>
             <span v-if="!msg.streaming && !msg.error" class="msg-actions">
               <button
@@ -172,6 +178,7 @@
 <script setup>
 import { ref, watch, nextTick } from 'vue'
 import { renderMarkdown } from '@/utils/markdown'
+import { confidenceBadgeClass, confidenceBand } from '@/utils/confidence'
 import 'highlight.js/styles/github-dark.css'
 import { useChatStore } from '@/stores/chat'
 import { useI18n } from '@/composables/useI18n'
