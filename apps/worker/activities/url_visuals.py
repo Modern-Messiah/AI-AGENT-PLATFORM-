@@ -114,11 +114,13 @@ def _load_url_image_sources(object_key: str) -> list[UrlImageSource] | None:
         url = str(image.get("url", "")).strip()
         if not url:
             continue
-        sources.append(UrlImageSource(
-            url=url,
-            alt=str(image.get("alt", "")).strip()[:500],
-            title=str(image.get("title", "")).strip()[:500],
-        ))
+        sources.append(
+            UrlImageSource(
+                url=url,
+                alt=str(image.get("alt", "")).strip()[:500],
+                title=str(image.get("title", "")).strip()[:500],
+            )
+        )
     return sources
 
 
@@ -126,14 +128,18 @@ async def _clear_url_image_assets(input: IngestionInput) -> None:
     document_id = uuid.UUID(input.document_id)
     async with tenant_session(input.tenant_id) as session:
         previous_assets = (
-            await session.execute(
-                select(DocumentAsset).where(
-                    DocumentAsset.document_id == document_id,
-                    DocumentAsset.tenant_id == input.tenant_id,
-                    DocumentAsset.asset_kind.in_(("image", "url_image")),
+            (
+                await session.execute(
+                    select(DocumentAsset).where(
+                        DocumentAsset.document_id == document_id,
+                        DocumentAsset.tenant_id == input.tenant_id,
+                        DocumentAsset.asset_kind.in_(("image", "url_image")),
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         await session.execute(
             delete(DocumentAsset).where(
                 DocumentAsset.document_id == document_id,
@@ -146,7 +152,9 @@ async def _clear_url_image_assets(input: IngestionInput) -> None:
         try:
             await asyncio.to_thread(object_store.delete, asset.preview_object_key)
         except Exception as exc:
-            log.warning("stale URL image cleanup failed | key=%s error=%s", asset.preview_object_key, exc)
+            log.warning(
+                "stale URL image cleanup failed | key=%s error=%s", asset.preview_object_key, exc
+            )
 
 
 async def _fetch_url_image(source: UrlImageSource) -> tuple[bytes, str, str]:
@@ -165,7 +173,9 @@ async def _fetch_url_image(source: UrlImageSource) -> tuple[bytes, str, str]:
                 raise UrlSourceError(f"URL image request failed: {exc}") from exc
 
             if 300 <= response.status_code < 400 and response.headers.get("location"):
-                current_url = await validate_fetch_url(urljoin(current_url, response.headers["location"]))
+                current_url = await validate_fetch_url(
+                    urljoin(current_url, response.headers["location"])
+                )
                 continue
 
             try:
@@ -234,11 +244,13 @@ async def append_url_visual_segments(
     failed = 0
     segment_count = 0
     for index, source in enumerate(sources, start=1):
-        heartbeat_safe({
-            "document_id": input.document_id,
-            "stage": "url-image-start",
-            "image_index": index,
-        })
+        heartbeat_safe(
+            {
+                "document_id": input.document_id,
+                "stage": "url-image-start",
+                "image_index": index,
+            }
+        )
         try:
             data, _content_type, filename = await _fetch_url_image(source)
             pages = await asyncio.to_thread(render_visual_pages, data, filename, 1, 1)
@@ -256,10 +268,7 @@ async def append_url_visual_segments(
             if not analysis.text.strip():
                 raise ValueError("URL image contains no extractable visual content")
 
-            preview_key = (
-                f"{input.tenant_id}/{input.document_id}/assets/"
-                f"url-image-{index}.webp"
-            )
+            preview_key = f"{input.tenant_id}/{input.document_id}/assets/url-image-{index}.webp"
             await asyncio.to_thread(
                 object_store.put,
                 preview_key,
@@ -301,11 +310,13 @@ async def append_url_visual_segments(
                 source.url,
                 exc,
             )
-        heartbeat_safe({
-            "document_id": input.document_id,
-            "stage": "url-image-complete",
-            "image_index": index,
-        })
+        heartbeat_safe(
+            {
+                "document_id": input.document_id,
+                "stage": "url-image-complete",
+                "image_index": index,
+            }
+        )
     log.info(
         "URL image analysis summary | tenant=%s document=%s found=%s processed=%s failed=%s segments=%s",
         input.tenant_id,

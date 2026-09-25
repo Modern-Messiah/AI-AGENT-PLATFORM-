@@ -12,10 +12,10 @@ import uuid
 
 import pytest
 from fastapi import HTTPException
-
 from packages.core.tenant_utils import check_workflow_tenant
 
 # ── check_workflow_tenant ─────────────────────────────────────────────────────
+
 
 def test_correct_tenant_passes() -> None:
     uid = str(uuid.uuid4())
@@ -56,23 +56,29 @@ def test_injected_extra_suffix_rejected() -> None:
 _SAFE_TENANT = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
 
 
-@pytest.mark.parametrize("tenant_id", [
-    "tenant-a",
-    "Tenant_123",
-    "a" * 64,
-    "abc",
-])
+@pytest.mark.parametrize(
+    "tenant_id",
+    [
+        "tenant-a",
+        "Tenant_123",
+        "a" * 64,
+        "abc",
+    ],
+)
 def test_safe_tenant_ids_pass(tenant_id: str) -> None:
     assert _SAFE_TENANT.match(tenant_id)
 
 
-@pytest.mark.parametrize("tenant_id", [
-    "",
-    "a" * 65,
-    "tenant; DROP TABLE documents--",
-    "tenant'a",
-    "tenant a",
-    "../etc/passwd",
-])
+@pytest.mark.parametrize(
+    "tenant_id",
+    [
+        "",
+        "a" * 65,
+        "tenant; DROP TABLE documents--",
+        "tenant'a",
+        "tenant a",
+        "../etc/passwd",
+    ],
+)
 def test_unsafe_tenant_ids_rejected(tenant_id: str) -> None:
     assert not _SAFE_TENANT.match(tenant_id)

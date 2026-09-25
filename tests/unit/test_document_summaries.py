@@ -63,7 +63,9 @@ async def test_generate_document_insights_falls_back_on_bad_json(monkeypatch) ->
         return "not json"
 
     segments = [
-        ParsedSegment(text="Требования к среде. Нужен Python 3.12. Запуск через uvicorn.", metadata={})
+        ParsedSegment(
+            text="Требования к среде. Нужен Python 3.12. Запуск через uvicorn.", metadata={}
+        )
     ]
     segments = [segments[0]] * 20
     insights = await generate_document_insights(

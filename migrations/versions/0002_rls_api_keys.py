@@ -22,7 +22,6 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-
 revision: str = "0002_rls_api_keys"
 down_revision: str | None = "0001_initial"
 branch_labels = None

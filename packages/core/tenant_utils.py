@@ -6,9 +6,7 @@ import re
 
 from fastapi import HTTPException
 
-_UUID_RE = re.compile(
-    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
-)
+_UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 
 
 def check_workflow_tenant(workflow_id: str, tenant_id: str) -> None:
@@ -21,6 +19,6 @@ def check_workflow_tenant(workflow_id: str, tenant_id: str) -> None:
     prefix = f"agent-run-{tenant_id}-"
     if not workflow_id.startswith(prefix):
         raise HTTPException(status_code=403, detail="workflow does not belong to this tenant")
-    suffix = workflow_id[len(prefix):]
+    suffix = workflow_id[len(prefix) :]
     if not _UUID_RE.match(suffix):
         raise HTTPException(status_code=403, detail="invalid workflow_id format")

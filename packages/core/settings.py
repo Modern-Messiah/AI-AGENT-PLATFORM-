@@ -74,6 +74,14 @@ class Settings(BaseSettings):
     # Interactive agent guardrails.
     agent_query_max_chars: int = 12_000
     agent_rate_limit_per_minute: int = 20
+    # Fail-open preserves chat availability when Redis is down (default).
+    # Set true to reject agent requests instead (503) when the limiter
+    # cannot be consulted.
+    rate_limit_fail_closed: bool = False
+
+    # Delete chat sessions idle for longer than N days (0 = keep forever).
+    # Runs at API startup and then daily; messages cascade with the session.
+    chat_session_retention_days: int = 0
     llm_timeout_seconds: float = 60.0
 
     # Conversation memory for the streaming chat: rewrite follow-up questions
@@ -146,7 +154,7 @@ class Settings(BaseSettings):
     max_upload_bytes: int = 50 * 1024 * 1024  # 50 MB per file
 
     # Maximum total body across ALL files in a single POST /documents/bulk request.
-    # Prevents memory exhaustion from 20 × 50 MB = 1 GB bulk uploads.
+    # Prevents memory exhaustion from 20 x 50 MB = 1 GB bulk uploads.
     max_bulk_total_bytes: int = 200 * 1024 * 1024  # 200 MB
 
     # Maximum bytes fetched from a URL source before it is stored as a document.

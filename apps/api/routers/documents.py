@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile
 from packages.core import settings
@@ -62,11 +62,9 @@ def _object_bytes_or_none(object_key: str) -> bytes | None:
 
 
 def _url_source_objects_changed(object_key: str, fetched: FetchedUrlSource) -> bool:
-    return (
-        _object_bytes_or_none(object_key) != fetched.data
-        or _object_bytes_or_none(url_image_sidecar_key(object_key))
-        != url_image_sidecar_payload(fetched.image_sources)
-    )
+    return _object_bytes_or_none(object_key) != fetched.data or _object_bytes_or_none(
+        url_image_sidecar_key(object_key)
+    ) != url_image_sidecar_payload(fetched.image_sources)
 
 
 def _apply_url_source_metadata(doc: Document, fetched: FetchedUrlSource) -> None:
@@ -76,7 +74,7 @@ def _apply_url_source_metadata(doc: Document, fetched: FetchedUrlSource) -> None
     doc.source_type = fetched.source_type
     doc.source_url = fetched.final_url
     doc.source_title = fetched.title
-    doc.source_checked_at = datetime.now(timezone.utc)
+    doc.source_checked_at = datetime.now(UTC)
 
 
 @router.get("/documents", response_model=list[DocumentResponse])
@@ -86,13 +84,19 @@ async def list_documents(
     offset: int = Query(default=0, ge=0),
 ) -> list[DocumentResponse]:
     async with tenant_session(tenant_id) as s:
-        rows = (await s.execute(
-            select(Document)
-            .where(Document.tenant_id == tenant_id)
-            .order_by(Document.created_at.desc())
-            .limit(limit)
-            .offset(offset)
-        )).scalars().all()
+        rows = (
+            (
+                await s.execute(
+                    select(Document)
+                    .where(Document.tenant_id == tenant_id)
+                    .order_by(Document.created_at.desc())
+                    .limit(limit)
+                    .offset(offset)
+                )
+            )
+            .scalars()
+            .all()
+        )
     return [document_response(doc) for doc in rows]
 
 
@@ -106,7 +110,10 @@ async def upload_document(
     # so use a 2x guard here; exact byte-level check happens inside read_with_limit).
     cl = request.headers.get("content-length")
     if cl and int(cl) > settings.max_upload_bytes * 2:
-        raise HTTPException(status_code=413, detail=f"file exceeds {settings.max_upload_bytes // (1024 * 1024)} MB limit")
+        raise HTTPException(
+            status_code=413,
+            detail=f"file exceeds {settings.max_upload_bytes // (1024 * 1024)} MB limit",
+        )
 
     data = await read_with_limit(file, settings.max_upload_bytes)
     if not data:
@@ -117,15 +124,17 @@ async def upload_document(
     object_store.put(object_key, data, content_type=file.content_type or "application/octet-stream")
 
     async with tenant_session(tenant_id) as s:
-        s.add(Document(
-            id=document_id,
-            tenant_id=tenant_id,
-            filename=file.filename or "unnamed",
-            mime_type=file.content_type or "application/octet-stream",
-            object_key=object_key,
-            size_bytes=len(data),
-            status=DocumentStatus.pending,
-        ))
+        s.add(
+            Document(
+                id=document_id,
+                tenant_id=tenant_id,
+                filename=file.filename or "unnamed",
+                mime_type=file.content_type or "application/octet-stream",
+                object_key=object_key,
+                size_bytes=len(data),
+                status=DocumentStatus.pending,
+            )
+        )
 
     await invalidate_semantic_cache(tenant_id, f"document-upload:{document_id}")
 
@@ -205,19 +214,22 @@ async def upload_documents_bulk(
         document_id = uuid.uuid4()
         object_key = f"{tenant_id}/{document_id}/{file.filename}"
         object_store.put(
-            object_key, data,
+            object_key,
+            data,
             content_type=file.content_type or "application/octet-stream",
         )
         async with tenant_session(tenant_id) as s:
-            s.add(Document(
-                id=document_id,
-                tenant_id=tenant_id,
-                filename=file.filename or "unnamed",
-                mime_type=file.content_type or "application/octet-stream",
-                object_key=object_key,
-                size_bytes=len(data),
-                status=DocumentStatus.pending,
-            ))
+            s.add(
+                Document(
+                    id=document_id,
+                    tenant_id=tenant_id,
+                    filename=file.filename or "unnamed",
+                    mime_type=file.content_type or "application/octet-stream",
+                    object_key=object_key,
+                    size_bytes=len(data),
+                    status=DocumentStatus.pending,
+                )
+            )
         await invalidate_semantic_cache(tenant_id, f"document-upload:{document_id}")
         try:
             await client.start_workflow(
@@ -236,7 +248,9 @@ async def upload_documents_bulk(
                 await s.execute(
                     update(Document)
                     .where(Document.id == document_id)
-                    .values(status=DocumentStatus.failed, error="Failed to start ingestion workflow")
+                    .values(
+                        status=DocumentStatus.failed, error="Failed to start ingestion workflow"
+                    )
                 )
         async with tenant_session(tenant_id) as s:
             doc = (await s.execute(select(Document).where(Document.id == document_id))).scalar_one()
@@ -283,26 +297,28 @@ async def add_url_document(
     document_id = uuid.uuid4()
     object_key = f"{tenant_id}/{document_id}/{fetched.filename}"
     _store_url_source_objects(object_key, fetched)
-    checked_at = datetime.now(timezone.utc)
+    checked_at = datetime.now(UTC)
 
     async with tenant_session(tenant_id) as s:
-        s.add(Document(
-            id=document_id,
-            tenant_id=tenant_id,
-            filename=fetched.filename,
-            mime_type=fetched.content_type,
-            object_key=object_key,
-            size_bytes=fetched.size_bytes,
-            source_type=fetched.source_type,
-            source_url=fetched.final_url,
-            source_title=fetched.title,
-            source_checked_at=checked_at,
-            status=DocumentStatus.pending,
-            processing_stage="queued",
-            processed_pages=0,
-            total_pages=0,
-            warnings=[],
-        ))
+        s.add(
+            Document(
+                id=document_id,
+                tenant_id=tenant_id,
+                filename=fetched.filename,
+                mime_type=fetched.content_type,
+                object_key=object_key,
+                size_bytes=fetched.size_bytes,
+                source_type=fetched.source_type,
+                source_url=fetched.final_url,
+                source_title=fetched.title,
+                source_checked_at=checked_at,
+                status=DocumentStatus.pending,
+                processing_stage="queued",
+                processed_pages=0,
+                total_pages=0,
+                warnings=[],
+            )
+        )
 
     await invalidate_semantic_cache(tenant_id, f"document-url:{document_id}")
 
@@ -365,17 +381,21 @@ async def list_document_assets(
         if doc is None:
             raise HTTPException(status_code=404, detail="document not found")
         assets = (
-            await s.execute(
-                select(DocumentAsset)
-                .where(
-                    DocumentAsset.document_id == document_id,
-                    DocumentAsset.tenant_id == tenant_id,
+            (
+                await s.execute(
+                    select(DocumentAsset)
+                    .where(
+                        DocumentAsset.document_id == document_id,
+                        DocumentAsset.tenant_id == tenant_id,
+                    )
+                    .order_by(DocumentAsset.page_number, DocumentAsset.created_at)
+                    .limit(limit)
+                    .offset(offset)
                 )
-                .order_by(DocumentAsset.page_number, DocumentAsset.created_at)
-                .limit(limit)
-                .offset(offset)
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
     return [document_asset_response(asset) for asset in assets]
 
 
@@ -437,14 +457,18 @@ async def list_document_chunks(
         if doc is None:
             raise HTTPException(status_code=404, detail="document not found")
         chunks = (
-            await s.execute(
-                select(Chunk)
-                .where(Chunk.document_id == document_id, Chunk.tenant_id == tenant_id)
-                .order_by(Chunk.chunk_idx)
-                .limit(limit)
-                .offset(offset)
+            (
+                await s.execute(
+                    select(Chunk)
+                    .where(Chunk.document_id == document_id, Chunk.tenant_id == tenant_id)
+                    .order_by(Chunk.chunk_idx)
+                    .limit(limit)
+                    .offset(offset)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
     return [
         DocumentChunkPreview(
@@ -457,7 +481,9 @@ async def list_document_chunks(
     ]
 
 
-@router.post("/documents/{document_id}/reindex", response_model=DocumentReindexResponse, status_code=202)
+@router.post(
+    "/documents/{document_id}/reindex", response_model=DocumentReindexResponse, status_code=202
+)
 async def reindex_document(
     document_id: uuid.UUID,
     tenant_id: TenantID,
@@ -551,7 +577,9 @@ async def delete_document(document_id: uuid.UUID, tenant_id: TenantID) -> None:
                         DocumentAsset.tenant_id == tenant_id,
                     )
                 )
-            ).scalars().all()
+            )
+            .scalars()
+            .all()
         )
         await s.delete(doc)  # CASCADE deletes chunks via FK ondelete="CASCADE"
 

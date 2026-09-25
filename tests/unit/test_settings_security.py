@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import pytest
-from pydantic import ValidationError
-
 from packages.core.settings import Settings
+from pydantic import ValidationError
 
 
 def test_local_environment_allows_default_cors_origins() -> None:

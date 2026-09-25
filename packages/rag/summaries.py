@@ -136,8 +136,7 @@ def build_notebook_insights(
         return NotebookInsights()
 
     summary_parts = [
-        f"{source.filename}: {_normalize_text(source.summary)}"
-        for source in useful_sources[:4]
+        f"{source.filename}: {_normalize_text(source.summary)}" for source in useful_sources[:4]
     ]
     summary = _trim_at_word(" ".join(summary_parts), _MAX_NOTEBOOK_SUMMARY_CHARS)
     title = title.strip() or "коллекции"
@@ -218,9 +217,9 @@ async def generate_document_insights(
             timeout=_AI_DOCUMENT_TIMEOUT_SECONDS,
         )
         generated = _GeneratedDocumentInsights.model_validate_json(raw)
-    except Exception as exc:  # noqa: BLE001 - summary generation is best-effort
-        log.info(
-            "LLM document insights fell back to heuristic | file=%s error=%s",
+    except Exception as exc:
+        log.warning(
+            "LLM feature degraded: document insights fell back to heuristic | file=%s error=%s",
             filename,
             type(exc).__name__,
         )

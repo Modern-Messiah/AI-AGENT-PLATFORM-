@@ -58,7 +58,7 @@ async def analyze_visual_page(
                     "change the meaning."
                 ),
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             vision_latency_ms = int((time.monotonic() - vision_started) * 1000)
             return VisualPageAnalysis(
                 text=ocr.text.strip(),

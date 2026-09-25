@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import os
 import threading
 import time
@@ -10,12 +9,10 @@ from typing import Any
 
 import httpx
 import pytest
-
 from tests.e2e.test_smoke import (
     _DEFAULT_API_BASE,
     _RUN_E2E,
     _create_api_key,
-    _admin_secret,
     _delete_tenant_api_keys,
     _wait_document_done,
 )
@@ -32,7 +29,7 @@ pytestmark = [
 class _MutableUrlFixtureHandler(BaseHTTPRequestHandler):
     sentinel = "URL_LIFECYCLE_SENTINEL_ALPHA"
 
-    def do_GET(self) -> None:  # noqa: N802 - stdlib callback name
+    def do_GET(self) -> None:
         if self.path == "/source.html":
             body = (
                 "<!doctype html><html><head><title>Mutable URL lifecycle</title></head>"
@@ -40,7 +37,7 @@ class _MutableUrlFixtureHandler(BaseHTTPRequestHandler):
                 "<h1>Mutable URL source</h1>"
                 f"<p>{self.sentinel} belongs to source lifecycle e2e.</p>"
                 "</body></html>"
-            ).encode("utf-8")
+            ).encode()
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
@@ -67,7 +64,7 @@ class _MutableFixtureServer:
     def set_sentinel(self, value: str) -> None:
         _MutableUrlFixtureHandler.sentinel = value
 
-    def __enter__(self) -> "_MutableFixtureServer":
+    def __enter__(self) -> _MutableFixtureServer:
         self.thread.start()
         return self
 
@@ -106,8 +103,7 @@ def _reindex(client: httpx.Client, headers: dict[str, str], document_id: str) ->
 
 
 @pytest.mark.skipif(
-    os.getenv("E2E_ALLOW_LOCAL_URL_SOURCES", "").strip().lower()
-    not in {"1", "true", "yes"},
+    os.getenv("E2E_ALLOW_LOCAL_URL_SOURCES", "").strip().lower() not in {"1", "true", "yes"},
     reason="set E2E_ALLOW_LOCAL_URL_SOURCES=true and recreate api/worker containers",
 )
 def test_url_source_reindex_detects_no_change_then_change_and_delete() -> None:
@@ -115,10 +111,13 @@ def test_url_source_reindex_detects_no_change_then_change_and_delete() -> None:
     tenant_id = f"e2e-url-lifecycle-{int(time.time())}-{uuid.uuid4().hex[:8]}"
     document_id: str | None = None
 
-    with _MutableFixtureServer() as fixture, httpx.Client(
-        base_url=api_base,
-        timeout=httpx.Timeout(180.0),
-    ) as client:
+    with (
+        _MutableFixtureServer() as fixture,
+        httpx.Client(
+            base_url=api_base,
+            timeout=httpx.Timeout(180.0),
+        ) as client,
+    ):
         client.get("/health").raise_for_status()
         api_key = _create_api_key(client, tenant_id)
         headers = _headers(api_key)
@@ -188,7 +187,9 @@ def test_github_source_lifecycle_no_change_reindex_and_delete() -> None:
             assert check_payload["file_count"] >= 1
 
             document_id = _add_url_document(client, headers, github_url)
-            _wait_document_done(client, headers=headers, document_id=document_id, timeout_seconds=300)
+            _wait_document_done(
+                client, headers=headers, document_id=document_id, timeout_seconds=300
+            )
             assert expected in _chunk_text(client, headers, document_id)
 
             no_change = _reindex(client, headers, document_id)

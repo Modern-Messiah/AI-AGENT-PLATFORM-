@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import fitz
-
 from evals.golden.suite import (
-    EvalChunk,
     GITHUB_DATASET_PATH,
+    EvalChunk,
     evaluate_case,
     generate_fixture_files,
     load_golden_cases,

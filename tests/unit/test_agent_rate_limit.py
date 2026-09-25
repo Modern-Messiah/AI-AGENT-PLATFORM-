@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import pytest
-from fastapi import HTTPException
-
 from apps.api.main import _check_agent_rate_limit
+from fastapi import HTTPException
 
 
 class FakeRedisPipeline:
@@ -45,10 +44,7 @@ class FakeRedis:
 
     async def zremrangebyscore(self, key: str, min_score: float, max_score: float) -> int:
         zset = self.zsets.setdefault(key, {})
-        removed = [
-            member for member, score in zset.items()
-            if min_score <= score <= max_score
-        ]
+        removed = [member for member, score in zset.items() if min_score <= score <= max_score]
         for member in removed:
             del zset[member]
         return len(removed)
@@ -76,7 +72,9 @@ class FakeRedis:
         del zset[member]
         return 1
 
-    async def zrange(self, key: str, start: int, end: int, *, withscores: bool) -> list[tuple[str, float]]:
+    async def zrange(
+        self, key: str, start: int, end: int, *, withscores: bool
+    ) -> list[tuple[str, float]]:
         assert start == 0
         assert end == 0
         assert withscores is True
@@ -106,3 +104,35 @@ async def test_agent_rate_limit_allows_requests_after_window_expires() -> None:
     await _check_agent_rate_limit(redis, "tenant-a", limit=2, now_ms=62_000)
 
     assert await redis.zcard("rl:tenant-a:agent") == 1
+
+
+async def test_enforce_agent_limits_fail_closed_rejects_when_redis_down(monkeypatch) -> None:
+    from apps.api.services import agent_limits
+    from fastapi import HTTPException
+
+    def broken_redis():
+        raise RuntimeError("redis down")
+
+    monkeypatch.setattr(agent_limits, "get_redis", broken_redis)
+    monkeypatch.setattr(agent_limits.settings, "agent_rate_limit_per_minute", 20)
+    monkeypatch.setattr(agent_limits.settings, "rate_limit_fail_closed", True)
+
+    import pytest
+
+    with pytest.raises(HTTPException) as exc_info:
+        await agent_limits.enforce_agent_limits("tenant-a", "вопрос", "/agent/stream")
+    assert exc_info.value.status_code == 503
+
+
+async def test_enforce_agent_limits_fail_open_passes_when_redis_down(monkeypatch) -> None:
+    from apps.api.services import agent_limits
+
+    def broken_redis():
+        raise RuntimeError("redis down")
+
+    monkeypatch.setattr(agent_limits, "get_redis", broken_redis)
+    monkeypatch.setattr(agent_limits.settings, "agent_rate_limit_per_minute", 20)
+    monkeypatch.setattr(agent_limits.settings, "rate_limit_fail_closed", False)
+
+    result = await agent_limits.enforce_agent_limits("tenant-a", "вопрос", "/agent/stream")
+    assert result == "вопрос"

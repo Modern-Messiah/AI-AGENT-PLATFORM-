@@ -95,10 +95,12 @@ def register_http_tool(agent: Agent[AgentDeps, object]) -> None:
         if err:
             return err
 
-        async with httpx.AsyncClient(
-            timeout=_TIMEOUT,
-            follow_redirects=False,  # don't follow redirects — target could redirect to internal host
-        ) as client:
+        async with (
+            httpx.AsyncClient(
+                timeout=_TIMEOUT,
+                follow_redirects=False,  # don't follow redirects — target could redirect to internal host
+            ) as client
+        ):
             try:
                 resp = await client.get(url)
                 resp.raise_for_status()

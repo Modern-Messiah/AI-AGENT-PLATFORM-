@@ -37,8 +37,7 @@ def test_ocr_and_vision_text_are_combined_without_empty_sections() -> None:
         "Visual description:\nA bar chart comparing two quarters."
     )
     assert merge_visual_text("Invoice total: 42", "A photographed invoice.") == (
-        "Recognized text:\nInvoice total: 42\n\n"
-        "Visual description:\nA photographed invoice."
+        "Recognized text:\nInvoice total: 42\n\nVisual description:\nA photographed invoice."
     )
 
 
@@ -58,10 +57,7 @@ def test_visual_sections_keep_each_diagram_heading_with_its_flow() -> None:
     )
 
     assert sections[0].startswith("Recognized text:")
-    assert sections[1] == (
-        "### Схема 1. Проверка оплаты\n"
-        "Ветка B2C проверяет технологию и оплату."
-    )
+    assert sections[1] == ("### Схема 1. Проверка оплаты\nВетка B2C проверяет технологию и оплату.")
     assert sections[2] == (
         "### Схема 2. Первичное решение проблемы\n"
         "Если перезагрузка не помогла, проверяются индикаторы и кабель.\n"

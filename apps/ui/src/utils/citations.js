@@ -144,3 +144,12 @@ export function buildCitationDocumentRoute(group) {
   return { path: `/documents/${firstCitation.document_id}` }
 }
 import { translate } from '../i18n/index.js'
+
+
+export function buildCitationPageRoute(source) {
+  if (!hasAssetPreview(source)) return null
+  return {
+    path: `/documents/${encodeURIComponent(source.document_id)}`,
+    query: { asset: source.asset_id },
+  }
+}

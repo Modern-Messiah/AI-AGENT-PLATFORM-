@@ -3,10 +3,9 @@ from __future__ import annotations
 import uuid
 
 from fastapi import HTTPException
-from sqlalchemy import select
-
 from packages.rag import NotebookInsightSource
 from packages.storage import Chunk, Document, Notebook, NotebookDocument
+from sqlalchemy import select
 
 
 def dedupe_uuid_list(ids: list[uuid.UUID]) -> list[uuid.UUID]:
@@ -35,12 +34,16 @@ async def load_tenant_documents(
     if not document_ids:
         return []
     rows = (
-        await db.execute(
-            select(Document)
-            .where(Document.id.in_(document_ids), Document.tenant_id == tenant_id)
-            .order_by(Document.created_at.desc())
+        (
+            await db.execute(
+                select(Document)
+                .where(Document.id.in_(document_ids), Document.tenant_id == tenant_id)
+                .order_by(Document.created_at.desc())
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     if len(rows) != len(document_ids):
         raise HTTPException(status_code=404, detail="one or more documents not found")
     by_id = {doc.id: doc for doc in rows}
@@ -49,17 +52,21 @@ async def load_tenant_documents(
 
 async def load_notebook_documents(db, tenant_id: str, notebook_id: uuid.UUID) -> list[Document]:
     return (
-        await db.execute(
-            select(Document)
-            .join(NotebookDocument, NotebookDocument.document_id == Document.id)
-            .where(
-                NotebookDocument.notebook_id == notebook_id,
-                NotebookDocument.tenant_id == tenant_id,
-                Document.tenant_id == tenant_id,
+        (
+            await db.execute(
+                select(Document)
+                .join(NotebookDocument, NotebookDocument.document_id == Document.id)
+                .where(
+                    NotebookDocument.notebook_id == notebook_id,
+                    NotebookDocument.tenant_id == tenant_id,
+                    Document.tenant_id == tenant_id,
+                )
+                .order_by(NotebookDocument.created_at, Document.created_at.desc())
             )
-            .order_by(NotebookDocument.created_at, Document.created_at.desc())
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
 
 async def load_notebooks_with_documents(
@@ -70,14 +77,18 @@ async def load_notebooks_with_documents(
     offset: int,
 ) -> list[tuple[Notebook, list[Document]]]:
     notebooks = (
-        await db.execute(
-            select(Notebook)
-            .where(Notebook.tenant_id == tenant_id)
-            .order_by(Notebook.created_at.desc())
-            .limit(limit)
-            .offset(offset)
+        (
+            await db.execute(
+                select(Notebook)
+                .where(Notebook.tenant_id == tenant_id)
+                .order_by(Notebook.created_at.desc())
+                .limit(limit)
+                .offset(offset)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     if not notebooks:
         return []
 
@@ -105,10 +116,7 @@ async def load_notebooks_with_documents(
     for notebook_id, document in rows:
         documents_by_notebook.setdefault(notebook_id, []).append(document)
 
-    return [
-        (notebook, documents_by_notebook.get(notebook.id, []))
-        for notebook in notebooks
-    ]
+    return [(notebook, documents_by_notebook.get(notebook.id, [])) for notebook in notebooks]
 
 
 async def load_notebook_insight_sources(
@@ -122,15 +130,19 @@ async def load_notebook_insight_sources(
 
     document_ids = [doc.id for doc in documents]
     chunks = (
-        await db.execute(
-            select(Chunk)
-            .where(
-                Chunk.document_id.in_(document_ids),
-                Chunk.tenant_id == tenant_id,
+        (
+            await db.execute(
+                select(Chunk)
+                .where(
+                    Chunk.document_id.in_(document_ids),
+                    Chunk.tenant_id == tenant_id,
+                )
+                .order_by(Chunk.document_id, Chunk.chunk_idx)
             )
-            .order_by(Chunk.document_id, Chunk.chunk_idx)
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     chunks_by_document: dict[uuid.UUID, list[str]] = {
         document_id: [] for document_id in document_ids
     }

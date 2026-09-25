@@ -138,12 +138,21 @@
                     </span>
                   </div>
                   <div class="citation-excerpt">{{ citation.excerpt }}</div>
-                  <RouterLink
-                    class="btn btn-ghost btn-sm citation-open"
-                    :to="buildCitationRoute(citation)"
-                  >
-                    {{ t('chat.openFragment') }}
-                  </RouterLink>
+                  <div class="citation-open-row">
+                    <RouterLink
+                      class="btn btn-ghost btn-sm citation-open"
+                      :to="buildCitationRoute(citation)"
+                    >
+                      {{ t('chat.openFragment') }}
+                    </RouterLink>
+                    <RouterLink
+                      v-if="hasAssetPreview(citation)"
+                      class="btn btn-ghost btn-sm citation-open"
+                      :to="buildCitationPageRoute(citation)"
+                    >
+                      {{ t('chat.openPage') }}
+                    </RouterLink>
+                  </div>
                 </article>
               </div>
             </div>
@@ -185,7 +194,9 @@ import { useI18n } from '@/composables/useI18n'
 import AppIcon from '@/components/AppIcon.vue'
 import {
   buildCitationDocumentRoute,
+  buildCitationPageRoute,
   buildCitationRoute,
+  hasAssetPreview,
   citationGroupIsReferenced,
   citationGroupLabel,
   citationGroupMarker,

@@ -14,7 +14,7 @@ import gzip
 import os
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 # Ensure project root is importable.
 from pathlib import Path
@@ -22,8 +22,8 @@ from urllib.parse import urlparse
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from packages.core import settings  # noqa: E402
-from packages.storage.object_store import object_store  # noqa: E402
+from packages.core import settings
+from packages.storage.object_store import object_store
 
 
 def main() -> None:
@@ -31,7 +31,7 @@ def main() -> None:
     pg_url = settings.database_url.replace("+asyncpg", "")
     parsed = urlparse(pg_url)
 
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
     backup_key = f"backups/postgres_{timestamp}.sql.gz"
 
     print(f"Dumping database → {backup_key} …")

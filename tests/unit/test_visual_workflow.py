@@ -12,7 +12,7 @@ def _get_worker_activities_block() -> str:
 
 
 def test_visual_ingestion_runs_at_most_two_batches_with_heartbeats() -> None:
-    assert '_VISUAL_CONCURRENCY = 2' in WORKFLOW
+    assert "_VISUAL_CONCURRENCY = 2" in WORKFLOW
     assert "range(0, len(batches), _VISUAL_CONCURRENCY)" in WORKFLOW
     assert "asyncio.gather" in WORKFLOW
     assert "heartbeat_timeout=timedelta(minutes=2)" in WORKFLOW

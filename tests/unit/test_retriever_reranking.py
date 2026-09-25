@@ -74,8 +74,7 @@ def test_reranking_promotes_title_page_metadata_queries() -> None:
         ),
         _chunk(
             "chunk-1",
-            "Техническое задание. Версия: 1.0. Автор: Тимиров Рустам. "
-            "Дата: 05.03.2026.",
+            "Техническое задание. Версия: 1.0. Автор: Тимиров Рустам. Дата: 05.03.2026.",
             0.20,
             page=1,
         ),
@@ -90,28 +89,40 @@ def test_reranking_promotes_title_page_metadata_queries() -> None:
 
 
 def test_scoped_document_search_uses_a_wider_candidate_pool() -> None:
-    assert candidate_limit_for_scope(
-        default_limit=12,
-        scoped_limit=32,
-        document_id="document-1",
-        document_ids=None,
-    ) == 32
-    assert candidate_limit_for_scope(
-        default_limit=12,
-        scoped_limit=32,
-        document_id=None,
-        document_ids=None,
-    ) == 12
+    assert (
+        candidate_limit_for_scope(
+            default_limit=12,
+            scoped_limit=32,
+            document_id="document-1",
+            document_ids=None,
+        )
+        == 32
+    )
+    assert (
+        candidate_limit_for_scope(
+            default_limit=12,
+            scoped_limit=32,
+            document_id=None,
+            document_ids=None,
+        )
+        == 12
+    )
 
 
 def test_single_document_scope_disables_distance_cutoff() -> None:
-    assert effective_max_distance_for_scope(
-        configured_max_distance=0.75,
-        document_id="document-1",
-        document_ids=None,
-    ) == 0
-    assert effective_max_distance_for_scope(
-        configured_max_distance=0.75,
-        document_id=None,
-        document_ids=["document-1", "document-2"],
-    ) == 0.75
+    assert (
+        effective_max_distance_for_scope(
+            configured_max_distance=0.75,
+            document_id="document-1",
+            document_ids=None,
+        )
+        == 0
+    )
+    assert (
+        effective_max_distance_for_scope(
+            configured_max_distance=0.75,
+            document_id=None,
+            document_ids=["document-1", "document-2"],
+        )
+        == 0.75
+    )

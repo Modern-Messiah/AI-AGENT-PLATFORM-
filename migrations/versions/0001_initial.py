@@ -9,10 +9,9 @@ from __future__ import annotations
 
 import sqlalchemy as sa
 from alembic import op
+from packages.core import settings
 from pgvector.sqlalchemy import Vector
 from sqlalchemy.dialects import postgresql
-
-from packages.core import settings
 
 revision: str = "0001_initial"
 down_revision: str | None = None
@@ -83,8 +82,7 @@ def upgrade() -> None:
     # later if recall@k drops on real data. Build is slow on bulk insert; if
     # we ever load >1M chunks, drop → insert → recreate.
     op.execute(
-        "CREATE INDEX ix_chunks_embedding_hnsw ON chunks "
-        "USING hnsw (embedding vector_cosine_ops)"
+        "CREATE INDEX ix_chunks_embedding_hnsw ON chunks USING hnsw (embedding vector_cosine_ops)"
     )
 
 

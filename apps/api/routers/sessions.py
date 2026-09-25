@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, HTTPException, Query
-from sqlalchemy import func, select
-
 from packages.storage import ChatMessage, ChatSession, Document, Notebook
 from packages.storage.db import tenant_session
+from sqlalchemy import func, select
 
 from apps.api.deps import TenantID
 from apps.api.schemas import (
@@ -40,13 +39,15 @@ async def list_sessions(
         .scalar_subquery()
     )
     async with tenant_session(tenant_id) as s:
-        rows = (await s.execute(
-            select(ChatSession, msg_count_sq.label("cnt"))
-            .where(ChatSession.tenant_id == tenant_id)
-            .order_by(ChatSession.updated_at.desc())
-            .limit(limit)
-            .offset(offset)
-        )).all()
+        rows = (
+            await s.execute(
+                select(ChatSession, msg_count_sq.label("cnt"))
+                .where(ChatSession.tenant_id == tenant_id)
+                .order_by(ChatSession.updated_at.desc())
+                .limit(limit)
+                .offset(offset)
+            )
+        ).all()
     return [chat_session_response(sess, cnt) for sess, cnt in rows]
 
 
@@ -55,22 +56,26 @@ async def create_session(body: CreateSessionRequest, tenant_id: TenantID) -> Cha
     async with tenant_session(tenant_id) as s:
         scope_type = None
         if body.document_id is not None:
-            doc = (await s.execute(
-                select(Document.id).where(
-                    Document.id == body.document_id,
-                    Document.tenant_id == tenant_id,
+            doc = (
+                await s.execute(
+                    select(Document.id).where(
+                        Document.id == body.document_id,
+                        Document.tenant_id == tenant_id,
+                    )
                 )
-            )).scalar_one_or_none()
+            ).scalar_one_or_none()
             if doc is None:
                 raise HTTPException(status_code=404, detail="document not found")
             scope_type = "document"
         elif body.notebook_id is not None:
-            notebook = (await s.execute(
-                select(Notebook.id).where(
-                    Notebook.id == body.notebook_id,
-                    Notebook.tenant_id == tenant_id,
+            notebook = (
+                await s.execute(
+                    select(Notebook.id).where(
+                        Notebook.id == body.notebook_id,
+                        Notebook.tenant_id == tenant_id,
+                    )
                 )
-            )).scalar_one_or_none()
+            ).scalar_one_or_none()
             if notebook is None:
                 raise HTTPException(status_code=404, detail="notebook not found")
             scope_type = "notebook"
@@ -96,9 +101,13 @@ async def update_session(
     tenant_id: TenantID,
 ) -> ChatSessionSchema:
     async with tenant_session(tenant_id) as s:
-        sess = (await s.execute(
-            select(ChatSession).where(ChatSession.id == session_id, ChatSession.tenant_id == tenant_id)
-        )).scalar_one_or_none()
+        sess = (
+            await s.execute(
+                select(ChatSession).where(
+                    ChatSession.id == session_id, ChatSession.tenant_id == tenant_id
+                )
+            )
+        ).scalar_one_or_none()
         if sess is None:
             raise HTTPException(status_code=404, detail="session not found")
         if body.title is not None:
@@ -113,9 +122,13 @@ async def update_session(
 @router.delete("/sessions/{session_id}", status_code=204)
 async def delete_session(session_id: uuid.UUID, tenant_id: TenantID) -> None:
     async with tenant_session(tenant_id) as s:
-        sess = (await s.execute(
-            select(ChatSession).where(ChatSession.id == session_id, ChatSession.tenant_id == tenant_id)
-        )).scalar_one_or_none()
+        sess = (
+            await s.execute(
+                select(ChatSession).where(
+                    ChatSession.id == session_id, ChatSession.tenant_id == tenant_id
+                )
+            )
+        ).scalar_one_or_none()
         if sess is None:
             raise HTTPException(status_code=404, detail="session not found")
         await s.delete(sess)
@@ -129,13 +142,19 @@ async def get_messages(
     offset: int = Query(default=0, ge=0),
 ) -> list[ChatMessageSchema]:
     async with tenant_session(tenant_id) as s:
-        msgs = (await s.execute(
-            select(ChatMessage)
-            .where(ChatMessage.session_id == session_id, ChatMessage.tenant_id == tenant_id)
-            .order_by(ChatMessage.created_at)
-            .limit(limit)
-            .offset(offset)
-        )).scalars().all()
+        msgs = (
+            (
+                await s.execute(
+                    select(ChatMessage)
+                    .where(ChatMessage.session_id == session_id, ChatMessage.tenant_id == tenant_id)
+                    .order_by(ChatMessage.created_at)
+                    .limit(limit)
+                    .offset(offset)
+                )
+            )
+            .scalars()
+            .all()
+        )
     return [chat_message_response(m) for m in msgs]
 
 
@@ -146,12 +165,16 @@ async def add_message(
     tenant_id: TenantID,
 ) -> ChatMessageSchema:
     async with tenant_session(tenant_id) as s:
-        sess = (await s.execute(
-            select(ChatSession).where(ChatSession.id == session_id, ChatSession.tenant_id == tenant_id)
-        )).scalar_one_or_none()
+        sess = (
+            await s.execute(
+                select(ChatSession).where(
+                    ChatSession.id == session_id, ChatSession.tenant_id == tenant_id
+                )
+            )
+        ).scalar_one_or_none()
         if sess is None:
             raise HTTPException(status_code=404, detail="session not found")
-        sess.updated_at = datetime.now(timezone.utc)
+        sess.updated_at = datetime.now(UTC)
         msg = ChatMessage(
             session_id=session_id,
             tenant_id=tenant_id,

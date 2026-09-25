@@ -118,7 +118,9 @@ async def test_validate_fetch_url_rejects_private_dns(monkeypatch) -> None:
         await validate_fetch_url("https://docs.example.com/page")
 
 
-async def test_validate_fetch_url_allows_host_docker_internal_only_for_local_e2e(monkeypatch) -> None:
+async def test_validate_fetch_url_allows_host_docker_internal_only_for_local_e2e(
+    monkeypatch,
+) -> None:
     def fake_getaddrinfo(*args, **kwargs):
         return [(None, None, None, None, ("192.168.65.2", 0))]
 
@@ -139,7 +141,9 @@ async def test_validate_fetch_url_allows_host_docker_internal_only_for_local_e2e
     )
 
 
-async def test_validate_fetch_url_rejects_host_docker_internal_outside_local_e2e(monkeypatch) -> None:
+async def test_validate_fetch_url_rejects_host_docker_internal_outside_local_e2e(
+    monkeypatch,
+) -> None:
     def fake_getaddrinfo(*args, **kwargs):
         return [(None, None, None, None, ("192.168.65.2", 0))]
 
@@ -164,7 +168,9 @@ async def test_validate_fetch_url_accepts_public_dns(monkeypatch) -> None:
 
     monkeypatch.setattr("apps.api.services.url_sources.socket.getaddrinfo", fake_getaddrinfo)
 
-    assert await validate_fetch_url("https://docs.example.com/page") == "https://docs.example.com/page"
+    assert (
+        await validate_fetch_url("https://docs.example.com/page") == "https://docs.example.com/page"
+    )
 
 
 async def test_validate_fetch_url_enforces_allowlist_for_public_ip(monkeypatch) -> None:
@@ -262,7 +268,9 @@ def test_url_image_sidecar_payload_is_stable_json() -> None:
         )
     ]
 
-    assert url_image_sidecar_key("tenant/doc/Example.txt") == "tenant/doc/Example.txt.url-images.json"
+    assert (
+        url_image_sidecar_key("tenant/doc/Example.txt") == "tenant/doc/Example.txt.url-images.json"
+    )
     assert url_image_sidecar_payload(sources) == (
         b'{"images":[{"url":"https://docs.example.com/diagram.png",'
         b'"alt":"Flow","title":"Payment flow"}]}'
@@ -270,8 +278,14 @@ def test_url_image_sidecar_payload_is_stable_json() -> None:
 
 
 def test_safe_url_filename_uses_title_or_path() -> None:
-    assert safe_url_filename("https://example.com/docs/guide.html", "Product Guide", "text/html") == "Product_Guide.txt"
-    assert safe_url_filename("https://example.com/files/spec.pdf", None, "application/pdf") == "spec.pdf"
+    assert (
+        safe_url_filename("https://example.com/docs/guide.html", "Product Guide", "text/html")
+        == "Product_Guide.txt"
+    )
+    assert (
+        safe_url_filename("https://example.com/files/spec.pdf", None, "application/pdf")
+        == "spec.pdf"
+    )
 
 
 async def test_fetch_url_source_sends_project_user_agent(monkeypatch) -> None:
@@ -336,9 +350,7 @@ async def test_fetch_github_blob_source_uses_raw_file_without_github_api(monkeyp
     monkeypatch.setattr(url_sources, "validate_fetch_url", fake_validate)
     monkeypatch.setattr(url_sources.httpx, "AsyncClient", FakeAsyncClient)
 
-    fetched = await url_sources.fetch_url_source(
-        "https://github.com/acme/docs/blob/main/README.md"
-    )
+    fetched = await url_sources.fetch_url_source("https://github.com/acme/docs/blob/main/README.md")
     text = fetched.data.decode()
 
     assert requested_urls == ["https://raw.githubusercontent.com/acme/docs/main/README.md"]
@@ -382,9 +394,7 @@ async def test_fetch_github_blob_collects_markdown_image_sources(monkeypatch) ->
     monkeypatch.setattr(url_sources, "validate_fetch_url", fake_validate)
     monkeypatch.setattr(url_sources.httpx, "AsyncClient", FakeAsyncClient)
 
-    fetched = await url_sources.fetch_url_source(
-        "https://github.com/acme/docs/blob/main/README.md"
-    )
+    fetched = await url_sources.fetch_url_source("https://github.com/acme/docs/blob/main/README.md")
 
     assert fetched.image_sources == [
         UrlImageSource(
@@ -419,8 +429,7 @@ async def test_fetch_github_blob_resolves_root_relative_html_images(monkeypatch)
                 200,
                 headers={"content-type": "text/plain; charset=utf-8"},
                 content=(
-                    b"# Project docs\n\n"
-                    b'<img src="/img/tutorial/payment.png" alt="Payment flow">'
+                    b'# Project docs\n\n<img src="/img/tutorial/payment.png" alt="Payment flow">'
                 ),
                 request=httpx.Request("GET", url),
             )
@@ -470,9 +479,7 @@ async def test_fetch_github_blob_ignores_unsupported_raw_svg_images(monkeypatch)
     monkeypatch.setattr(url_sources, "validate_fetch_url", fake_validate)
     monkeypatch.setattr(url_sources.httpx, "AsyncClient", FakeAsyncClient)
 
-    fetched = await url_sources.fetch_url_source(
-        "https://github.com/acme/docs/blob/main/README.md"
-    )
+    fetched = await url_sources.fetch_url_source("https://github.com/acme/docs/blob/main/README.md")
 
     assert fetched.image_sources == [
         UrlImageSource(
@@ -528,9 +535,7 @@ async def test_fetch_github_tree_source_filters_archive_path_and_noise(monkeypat
     monkeypatch.setattr(url_sources, "validate_fetch_url", fake_validate)
     monkeypatch.setattr(url_sources.httpx, "AsyncClient", FakeAsyncClient)
 
-    fetched = await url_sources.fetch_url_source(
-        "https://github.com/acme/docs/tree/main/docs"
-    )
+    fetched = await url_sources.fetch_url_source("https://github.com/acme/docs/tree/main/docs")
     text = fetched.data.decode()
 
     assert requested_urls == ["https://codeload.github.com/acme/docs/zip/refs/heads/main"]
@@ -548,7 +553,7 @@ async def test_fetch_github_tree_collects_markdown_image_sources(monkeypatch) ->
         {
             "docs-main/docs/install.md": (
                 b"# Install\n"
-                b"![Network diagram](../assets/network.png \"Topology\")\n"
+                b'![Network diagram](../assets/network.png "Topology")\n'
                 b".. image:: ../assets/rst-flow.jpg\n"
             ),
             "docs-main/assets/network.png": b"not indexed as text",
@@ -581,9 +586,7 @@ async def test_fetch_github_tree_collects_markdown_image_sources(monkeypatch) ->
     monkeypatch.setattr(url_sources, "validate_fetch_url", fake_validate)
     monkeypatch.setattr(url_sources.httpx, "AsyncClient", FakeAsyncClient)
 
-    fetched = await url_sources.fetch_url_source(
-        "https://github.com/acme/docs/tree/main/docs"
-    )
+    fetched = await url_sources.fetch_url_source("https://github.com/acme/docs/tree/main/docs")
 
     assert fetched.image_sources == [
         UrlImageSource(
@@ -603,8 +606,7 @@ async def test_fetch_github_repo_indexes_architecture_diagram_sources(monkeypatc
     archive = _zip_bytes(
         {
             "repo-main/README.md": (
-                b"# Project\n\n"
-                b"Architecture docs live in docs/architecture/c4.\n"
+                b"# Project\n\nArchitecture docs live in docs/architecture/c4.\n"
             ),
             "repo-main/docs/architecture/c4/L1 - System Context/docs.md": (
                 b"# C4 docs\n\n![System context](L1_system_context.png)\n"
@@ -650,7 +652,10 @@ async def test_fetch_github_repo_indexes_architecture_diagram_sources(monkeypatc
     fetched = await url_sources.fetch_url_source("https://github.com/acme/repo")
     text = fetched.data.decode()
 
-    assert "docs/architecture/c4/L1 - System Context/L1_system_context.puml" in fetched.discovered_files
+    assert (
+        "docs/architecture/c4/L1 - System Context/L1_system_context.puml"
+        in fetched.discovered_files
+    )
     assert "--- FILE: docs/architecture/c4/L1 - System Context/L1_system_context.puml ---" in text
     assert 'System(api, "Crypto Sentiment Pulse API")' in text
     assert 'Rel(user, api, "Reads market sentiment")' in text
@@ -704,13 +709,13 @@ async def test_fetch_github_tree_keeps_more_architecture_images(monkeypatch) -> 
     )
 
 
-async def test_fetch_github_tree_skips_paired_diagram_images_when_source_is_indexed(monkeypatch) -> None:
+async def test_fetch_github_tree_skips_paired_diagram_images_when_source_is_indexed(
+    monkeypatch,
+) -> None:
     archive = _zip_bytes(
         {
             "repo-main/docs/architecture/c4/L2_container.puml": (
-                b"@startuml\n"
-                b'Container(api, "Backend API")\n'
-                b"@enduml\n"
+                b'@startuml\nContainer(api, "Backend API")\n@enduml\n'
             ),
             "repo-main/docs/architecture/c4/L2_container.png": b"paired rendered diagram",
             "repo-main/docs/architecture/c4/logo.png": b"nearby noise without diagram source",
@@ -753,8 +758,7 @@ async def test_fetch_github_tree_resolves_root_relative_images_from_tree_root(mo
     archive = _zip_bytes(
         {
             "docs-main/docs/guide.md": (
-                b"# Guide\n"
-                b'<img src="/img/tutorial/payment.png" alt="Payment flow">'
+                b'# Guide\n<img src="/img/tutorial/payment.png" alt="Payment flow">'
             ),
         }
     )
@@ -783,9 +787,7 @@ async def test_fetch_github_tree_resolves_root_relative_images_from_tree_root(mo
     monkeypatch.setattr(url_sources, "validate_fetch_url", fake_validate)
     monkeypatch.setattr(url_sources.httpx, "AsyncClient", FakeAsyncClient)
 
-    fetched = await url_sources.fetch_url_source(
-        "https://github.com/acme/docs/tree/main/docs"
-    )
+    fetched = await url_sources.fetch_url_source("https://github.com/acme/docs/tree/main/docs")
 
     assert fetched.image_sources == [
         UrlImageSource(
@@ -850,7 +852,9 @@ async def test_fetch_github_repo_root_tries_main_then_master(monkeypatch) -> Non
     assert "skip built artifact" not in text
 
 
-async def test_fetch_github_tree_allows_large_archive_when_filtered_text_is_small(monkeypatch) -> None:
+async def test_fetch_github_tree_allows_large_archive_when_filtered_text_is_small(
+    monkeypatch,
+) -> None:
     requested_urls: list[str] = []
     archive = _zip_bytes(
         {
@@ -885,9 +889,7 @@ async def test_fetch_github_tree_allows_large_archive_when_filtered_text_is_smal
     monkeypatch.setattr(url_sources, "validate_fetch_url", fake_validate)
     monkeypatch.setattr(url_sources.httpx, "AsyncClient", FakeAsyncClient)
 
-    fetched = await url_sources.fetch_url_source(
-        "https://github.com/example/repo/tree/main/docs"
-    )
+    fetched = await url_sources.fetch_url_source("https://github.com/example/repo/tree/main/docs")
     text = fetched.data.decode()
 
     assert requested_urls == ["https://codeload.github.com/example/repo/zip/refs/heads/main"]
@@ -1006,6 +1008,7 @@ async def test_add_url_document_persists_metadata_and_starts_ingestion(monkeypat
         "put",
         lambda key, data, content_type: stored_objects.append((key, data, content_type)),
     )
+
     async def fake_invalidate(*args, **kwargs) -> None:
         return None
 
@@ -1026,8 +1029,7 @@ async def test_add_url_document_persists_metadata_and_starts_ingestion(monkeypat
     assert stored_objects[0][2] == "text/plain; charset=utf-8"
     assert stored_objects[1][0] == f"{stored_objects[0][0]}.url-images.json"
     assert stored_objects[1][1] == (
-        b'{"images":[{"url":"https://example.com/diagram.png",'
-        b'"alt":"Payment flow","title":""}]}'
+        b'{"images":[{"url":"https://example.com/diagram.png","alt":"Payment flow","title":""}]}'
     )
     assert stored_objects[1][2] == "application/json"
     assert temporal.started

@@ -65,10 +65,7 @@ def _replace_placeholders(value: Any, replacements: dict[str, str]) -> Any:
     if isinstance(value, list):
         return [_replace_placeholders(item, replacements) for item in value]
     if isinstance(value, dict):
-        return {
-            key: _replace_placeholders(item, replacements)
-            for key, item in value.items()
-        }
+        return {key: _replace_placeholders(item, replacements) for key, item in value.items()}
     return value
 
 
@@ -113,11 +110,9 @@ def evaluate_case(case: dict[str, Any], chunks: list[EvalChunk]) -> CaseResult:
     case_id = str(case["id"])
     query = str(case["query"])
     failures: list[str] = []
-    found_source_ids = _unique([
-        chunk.source_id or chunk.filename
-        for chunk in chunks
-        if chunk.source_id or chunk.filename
-    ])
+    found_source_ids = _unique(
+        [chunk.source_id or chunk.filename for chunk in chunks if chunk.source_id or chunk.filename]
+    )
     matched_substrings: list[str] = []
 
     if case.get("expect_no_results") is True:
@@ -157,7 +152,8 @@ def evaluate_case(case: dict[str, Any], chunks: list[EvalChunk]) -> CaseResult:
         found_pages = {
             chunk.page
             for chunk in chunks
-            if chunk.page is not None and (not expected_source_ids or chunk.source_id in expected_source_ids)
+            if chunk.page is not None
+            and (not expected_source_ids or chunk.source_id in expected_source_ids)
         }
         for page in expected_pages:
             if page not in found_pages:
@@ -220,11 +216,13 @@ def generate_fixture_files(output_dir: Path) -> dict[str, FixtureArtifact]:
 
 def _write_linux_text(path: Path) -> FixtureArtifact:
     path.write_text(
-        "\n".join([
-            "Golden Linux command notes.",
-            "GOLDEN_LINUX_PWD: команда pwd показывает текущую директорию shell.",
-            "Команда cd меняет каталог, а ls показывает файлы.",
-        ]),
+        "\n".join(
+            [
+                "Golden Linux command notes.",
+                "GOLDEN_LINUX_PWD: команда pwd показывает текущую директорию shell.",
+                "Команда cd меняет каталог, а ls показывает файлы.",
+            ]
+        ),
         encoding="utf-8",
     )
     return FixtureArtifact("linux_text", path, "file", "text/plain")
@@ -232,11 +230,13 @@ def _write_linux_text(path: Path) -> FixtureArtifact:
 
 def _write_vim_text(path: Path) -> FixtureArtifact:
     path.write_text(
-        "\n".join([
-            "Golden Vim notes.",
-            "GOLDEN_VIM_VISUAL: клавиша v включает visual mode в Vim.",
-            "Клавиша V включает line visual mode, а Ctrl+v включает block visual mode.",
-        ]),
+        "\n".join(
+            [
+                "Golden Vim notes.",
+                "GOLDEN_VIM_VISUAL: клавиша v включает visual mode в Vim.",
+                "Клавиша V включает line visual mode, а Ctrl+v включает block visual mode.",
+            ]
+        ),
         encoding="utf-8",
     )
     return FixtureArtifact("vim_text", path, "file", "text/plain")
@@ -262,11 +262,13 @@ def _png_with_lines(lines: list[str], *, size: tuple[int, int] = (1400, 900)) ->
 
 
 def _write_scan_pdf(path: Path) -> FixtureArtifact:
-    image_bytes = _png_with_lines([
-        "СКАН МАЯК 42",
-        "Проверка OCR русского текста",
-        "Документ без текстового слоя",
-    ])
+    image_bytes = _png_with_lines(
+        [
+            "СКАН МАЯК 42",
+            "Проверка OCR русского текста",
+            "Документ без текстового слоя",
+        ]
+    )
     doc = fitz.open()
     page = doc.new_page(width=595, height=842)
     page.insert_image(page.rect, stream=image_bytes)
@@ -365,11 +367,16 @@ def _write_table_pdf(path: Path) -> FixtureArtifact:
 
 def _write_url_image_fixture(output_dir: Path) -> FixtureArtifact:
     image_path = output_dir / "golden_url_image.png"
-    image_path.write_bytes(_png_with_lines([
-        "URL_IMAGE_GOLDEN",
-        "restart router",
-        "hidden page image should be searchable",
-    ], size=(1400, 640)))
+    image_path.write_bytes(
+        _png_with_lines(
+            [
+                "URL_IMAGE_GOLDEN",
+                "restart router",
+                "hidden page image should be searchable",
+            ],
+            size=(1400, 640),
+        )
+    )
     html_path = output_dir / "golden_url_image.html"
     html_path.write_text(
         (

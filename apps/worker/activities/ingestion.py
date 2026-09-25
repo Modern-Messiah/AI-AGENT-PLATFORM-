@@ -25,16 +25,12 @@ from packages.storage import (
 )
 from temporalio import activity
 
-from apps.worker.activities.heartbeat import heartbeat_safe
-from apps.worker.activities.ingestion_types import (
-    ChunkBatch,
-    IngestionInput as IngestionInput,
-    ParsedDoc,
-    VisualBatchInput as VisualBatchInput,
-    VisualBatchRef,
-    VisualManifest,
-    VisualPageAnalysis,
+from apps.worker.activities.document_chunks import (
+    build_chunk_batch,
+    parse_original_document,
+    store_chunk_batch,
 )
+from apps.worker.activities.heartbeat import heartbeat_safe
 from apps.worker.activities.ingestion_status import (
     invalidate_notebook_insights_for_document,
     mark_document_done,
@@ -42,13 +38,23 @@ from apps.worker.activities.ingestion_status import (
     mark_document_processing,
     mark_visual_document_embedding,
 )
-from apps.worker.activities.document_chunks import (
-    build_chunk_batch,
-    parse_original_document,
-    store_chunk_batch,
+from apps.worker.activities.ingestion_types import (
+    ChunkBatch,
+    ParsedDoc,
+    VisualBatchRef,
+    VisualManifest,
+    VisualPageAnalysis,
+)
+from apps.worker.activities.ingestion_types import (
+    IngestionInput as IngestionInput,
+)
+from apps.worker.activities.ingestion_types import (
+    VisualBatchInput as VisualBatchInput,
 )
 from apps.worker.activities.visual_analysis import (
     analyze_visual_page,
+)
+from apps.worker.activities.visual_analysis import (
     await_with_heartbeat as _await_with_heartbeat,
 )
 from apps.worker.activities.visual_storage import (
@@ -104,8 +110,7 @@ async def process_visual_batch(batch: VisualBatchInput) -> VisualBatchRef:
         )
         asset_kind = "page" if input.filename.lower().endswith(".pdf") else "image"
         preview_key = (
-            f"{input.tenant_id}/{input.document_id}/assets/"
-            f"{asset_kind}-{page.page_number}.webp"
+            f"{input.tenant_id}/{input.document_id}/assets/{asset_kind}-{page.page_number}.webp"
         )
         await asyncio.to_thread(
             object_store.put,
@@ -150,11 +155,9 @@ async def process_visual_batch(batch: VisualBatchInput) -> VisualBatchRef:
                 analysis.vision_description,
             )
             segments.extend(
-                {"text": text, "metadata": metadata}
-                for text in page_segments
-                if text.strip()
+                {"text": text, "metadata": metadata} for text in page_segments if text.strip()
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             if analysis is None or not analysis.text.strip():
                 unrecognized_pages += 1
             warning = f"page {page.page_number}: {exc}"
@@ -294,7 +297,7 @@ async def finalize_visual_document(
     for reference in batches:
         try:
             await asyncio.to_thread(object_store.delete, reference.object_key)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             log.warning("visual batch cleanup failed | key=%s error=%s", reference.object_key, exc)
     return written
 

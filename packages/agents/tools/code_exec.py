@@ -16,6 +16,13 @@ Two execution modes:
    docker inspect). Still not a VM — but it removes the whole
    "hardened subprocess runs on the host" class of risk.
 
+   REQUIREMENT: the executing process needs the docker CLI and access to
+   the daemon socket. The compose worker container has NEITHER — this mode
+   currently works only when the worker runs on the host (make worker).
+   Mounting /var/run/docker.sock into the worker would enable it inside
+   compose but hands the worker effective root on the host — weigh that
+   against your threat model, or run a dedicated dind sidecar.
+
 Neither mode is a substitute for a dedicated VM sandbox for genuinely
 untrusted code; the docker mode is the recommended deployment posture.
 """

@@ -56,17 +56,21 @@ async def invalidate_notebook_insights_for_document(
     document_id: uuid.UUID,
 ) -> int:
     notebooks = (
-        await session.execute(
-            select(Notebook)
-            .join(NotebookDocument, NotebookDocument.notebook_id == Notebook.id)
-            .where(
-                Notebook.tenant_id == tenant_id,
-                NotebookDocument.tenant_id == tenant_id,
-                NotebookDocument.document_id == document_id,
+        (
+            await session.execute(
+                select(Notebook)
+                .join(NotebookDocument, NotebookDocument.notebook_id == Notebook.id)
+                .where(
+                    Notebook.tenant_id == tenant_id,
+                    NotebookDocument.tenant_id == tenant_id,
+                    NotebookDocument.document_id == document_id,
+                )
+                .order_by(Notebook.created_at)
             )
-            .order_by(Notebook.created_at)
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     if not notebooks:
         return 0
 

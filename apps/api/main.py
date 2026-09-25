@@ -94,6 +94,7 @@ from apps.api.services.notebooks import (
     load_notebook_insight_sources,
     load_tenant_documents,
 )
+from apps.api.services.session_retention import retention_loop
 
 # Backward-compatible names imported by existing tests and scripts.
 _document_response = document_response
@@ -114,9 +115,20 @@ log = logging.getLogger(__name__)
 
 # ── App lifecycle ─────────────────────────────────────────────────────────────
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     setup_tracing("aap-api")
+    weak_provider = settings.weak_model.split("/", 1)[0]
+    weak_key = {"moonshot": settings.moonshot_api_key, "deepseek": settings.deepseek_api_key}.get(
+        weak_provider
+    )
+    if not weak_key:
+        log.warning(
+            "weak model %s has no API key: condensation, query expansion and LLM "
+            "summaries will silently fall back to their degraded paths",
+            settings.weak_model,
+        )
     log.info("warming up embedding model...")
     try:
         await embed_texts(["warmup"])
@@ -127,8 +139,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         settings.temporal_address, namespace=settings.temporal_namespace
     )
     revocation_task = asyncio.create_task(revocation_listener())
+    retention_task = asyncio.create_task(retention_loop())
     yield
     revocation_task.cancel()
+    retention_task.cancel()
 
 
 app = FastAPI(title="AI Agent Platform", lifespan=lifespan)

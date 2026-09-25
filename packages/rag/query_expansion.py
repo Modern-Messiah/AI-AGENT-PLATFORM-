@@ -95,7 +95,10 @@ async def expand_query(
             if isinstance(translation, str) and translation.strip():
                 variants.append(translation.strip())
     except Exception as exc:
-        log.info("query expansion failed | error=%s", type(exc).__name__)
+        log.warning(
+            "LLM feature degraded: query expansion fell back to the original query | error=%s",
+            type(exc).__name__,
+        )
         return [query]
 
     # cap the paraphrases, then keep the translation even when the cap

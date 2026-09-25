@@ -332,6 +332,9 @@ async function clearScope() {
 
 async function handleRegenerate() {
   // Re-ask the last user question: a fresh answer (new retrieval, new docs).
+  // The superseded answer is dropped from the local view (server history
+  // keeps it — regenerate is a client-side view operation).
+  chat.dropLastAgentMessage()
   for (let i = chat.messages.length - 1; i >= 0; i--) {
     if (chat.messages[i].role === 'user' && chat.messages[i].text?.trim()) {
       await handleSend(chat.messages[i].text.trim())
