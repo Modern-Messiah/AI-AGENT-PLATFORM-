@@ -60,7 +60,7 @@ def _merge_sources(
     return merged
 
 
-async def _collect_child_results(child_handles: Sequence[Awaitable[_T]]) -> list[_T]:
+async def _collect_child_results(child_handles: Sequence[Awaitable[_T]]) -> list[_T]:  # noqa: UP047 — mypy <1.14 cannot parse PEP 695 syntax
     import asyncio
 
     return list(await asyncio.gather(*child_handles))
