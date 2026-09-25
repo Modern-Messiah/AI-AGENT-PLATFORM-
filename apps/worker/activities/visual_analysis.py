@@ -87,7 +87,7 @@ async def await_with_heartbeat(
     details: dict[str, object],
     interval_seconds: float = 20.0,
 ) -> VisualPageAnalysis:
-    task = asyncio.create_task(awaitable)
+    task: asyncio.Task[VisualPageAnalysis] = asyncio.ensure_future(awaitable)
     while not task.done():
         heartbeat_safe(details)
         try:
@@ -97,4 +97,4 @@ async def await_with_heartbeat(
             )
         except TimeoutError:
             continue
-    return await task
+    return await task  # typed via ensure_future above

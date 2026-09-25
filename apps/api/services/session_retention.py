@@ -34,7 +34,7 @@ async def delete_stale_sessions(cutoff: datetime) -> int:
     """Delete sessions not updated since the cutoff. Returns deleted count."""
     async with async_session() as session, session.begin():
         result = await session.execute(delete(ChatSession).where(ChatSession.updated_at < cutoff))
-    return int(result.rowcount or 0)
+    return int(getattr(result, "rowcount", 0) or 0)
 
 
 async def retention_loop() -> None:

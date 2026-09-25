@@ -97,11 +97,8 @@ jobs:
           uv run ruff check .
           uv run ruff format --check .
 
-      # Non-blocking until packages/apps reach zero (currently ~100, mostly
-      # test-adjacent typing). Flip continue-on-error to false when it does.
-      - name: Mypy packages+apps (non-blocking)
+      - name: Mypy packages+apps (blocking)
         run: uv run mypy packages apps
-        continue-on-error: true
 
   retrieval-evals:
     name: Retrieval quality evals

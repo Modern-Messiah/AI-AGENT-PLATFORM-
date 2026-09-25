@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
+from typing import cast
 
 from openai import APIStatusError, AsyncOpenAI
 from pydantic_ai.models import openai as pai_openai
@@ -44,7 +45,7 @@ def _resolve_model(model_name: str | None = None) -> tuple[str, str, str, str]:
     return provider_key, model_id, base_url, api_key
 
 
-def _provider_extra_body(provider_key: str, model_id: str) -> dict | None:
+def _provider_extra_body(provider_key: str, model_id: str) -> dict[str, object] | None:
     if provider_key == "moonshot" and "kimi" in model_id:
         return {"thinking": {"type": "disabled"}}
     if provider_key == "deepseek" and model_id in {"deepseek-v4-pro", "deepseek-v4-flash"}:
@@ -101,7 +102,7 @@ class ProviderCompatOpenAIModel(OpenAIModel):
         *,
         provider: OpenAIProvider,
         provider_key: str = "",
-        extra_body: dict | None = None,
+        extra_body: dict[str, object] | None = None,
         force_tool_choice_auto: bool = False,
     ) -> None:
         super().__init__(model_id, provider=provider)
@@ -132,7 +133,7 @@ class ProviderCompatOpenAIModel(OpenAIModel):
             async for msg in self._map_message(m):
                 openai_messages.append(msg)
 
-        extra: dict = {}
+        extra: dict[str, object] = {}
         if self._extra_body is not None:
             extra["extra_body"] = self._extra_body
 
@@ -212,7 +213,7 @@ async def stream_chat_text(
     provider_key, model_id, base_url, api_key = _resolve_model(model_name)
     client = AsyncOpenAI(base_url=base_url, api_key=api_key or "not-set")
 
-    extra: dict = {}
+    extra: dict[str, object] = {}
     extra_body = _provider_extra_body(provider_key, model_id)
     if extra_body is not None:
         extra["extra_body"] = extra_body
@@ -229,7 +230,7 @@ async def stream_chat_text(
         params["temperature"] = temperature
 
     try:
-        stream = await client.chat.completions.create(**params)  # type: ignore[arg-type]
+        stream = await client.chat.completions.create(**params)
     except APIStatusError as exc:
         raise RuntimeError(
             _provider_error_message(provider_key, exc.status_code, exc.body)
@@ -260,7 +261,7 @@ async def complete_chat_json(
     provider_key, model_id, base_url, api_key = _resolve_model(model_name)
     client = AsyncOpenAI(base_url=base_url, api_key=api_key or "not-set")
 
-    extra: dict = {}
+    extra: dict[str, object] = {}
     extra_body = _provider_extra_body(provider_key, model_id)
     if extra_body is not None:
         extra["extra_body"] = extra_body
@@ -268,7 +269,7 @@ async def complete_chat_json(
     try:
         response = await client.chat.completions.create(
             model=model_id,
-            messages=messages,  # type: ignore[arg-type]
+            messages=messages,
             response_format={"type": "json_object"},
             max_tokens=max_tokens,
             timeout=settings.llm_timeout_seconds if settings.llm_timeout_seconds > 0 else None,
@@ -282,7 +283,7 @@ async def complete_chat_json(
     content = response.choices[0].message.content if response.choices else None
     if not content:
         raise RuntimeError("LLM provider returned an empty JSON response")
-    return content
+    return cast(str, content)
 
 
 async def complete_vision_text(
@@ -297,7 +298,7 @@ async def complete_vision_text(
     client = AsyncOpenAI(base_url=base_url, api_key=api_key or "not-set")
     encoded = base64.b64encode(image_bytes).decode("ascii")
 
-    extra: dict = {}
+    extra: dict[str, object] = {}
     extra_body = _provider_extra_body(provider_key, model_id)
     if extra_body is not None:
         extra["extra_body"] = extra_body
@@ -331,4 +332,4 @@ async def complete_vision_text(
     content = response.choices[0].message.content if response.choices else None
     if not content:
         raise RuntimeError("Vision provider returned an empty response")
-    return content.strip()
+    return cast(str, content.strip())

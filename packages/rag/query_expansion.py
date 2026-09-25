@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import uuid
 from collections.abc import Awaitable, Callable, Sequence
 
 from sqlalchemy import select
@@ -127,8 +128,8 @@ async def retrieve_chunks_with_expansion(
     *,
     k: int | None = None,
     max_distance: float | None = None,
-    document_id: str | None = None,
-    document_ids: Sequence[str] | None = None,
+    document_id: str | uuid.UUID | None = None,
+    document_ids: Sequence[str | uuid.UUID] | None = None,
     corpus_langs: Sequence[str | None] = (),
 ) -> list[RetrievedChunk]:
     """retrieve_chunks, escalating to variant search when results look weak.

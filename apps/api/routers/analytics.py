@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import cast
+
 from fastapi import APIRouter, HTTPException, Query
 from packages.analytics.clickhouse import ch_client
 
@@ -12,7 +14,7 @@ router = APIRouter()
 async def get_usage(
     tenant_id: TenantID,
     days: int = Query(default=30, ge=1, le=365),
-) -> dict:
+) -> dict[str, object]:
     """Aggregate LLM cost and token usage for the authenticated tenant over N days."""
     sql = """
         SELECT
@@ -49,7 +51,7 @@ async def get_usage(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"ClickHouse error: {e}") from e
 
-    total_cost = sum(r.get("total_cost_usd") or 0 for r in rows)
+    total_cost = sum(cast(float, r.get("total_cost_usd") or 0) for r in rows)
     return {
         "tenant_id": tenant_id,
         "days": days,

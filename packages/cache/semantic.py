@@ -46,8 +46,9 @@ class SemanticCache:
 
         # Fetch the newest _MAX_SCAN entries (highest scores = most recent timestamps).
         entry_ids = [
-            eid.decode() if isinstance(eid, bytes) else eid
+            decoded
             for eid in await r.zrange(idx_key, 0, _MAX_SCAN - 1, desc=True)
+            if isinstance(decoded := eid.decode() if isinstance(eid, bytes) else eid, str)
         ]
         if not entry_ids:
             return None
@@ -144,8 +145,9 @@ class SemanticCache:
         r = get_redis()
         idx_key = self._idx_key(tenant_id)
         entry_ids = [
-            eid.decode() if isinstance(eid, bytes) else eid
+            decoded
             for eid in await r.zrange(idx_key, 0, -1)
+            if isinstance(decoded := eid.decode() if isinstance(eid, bytes) else eid, str)
         ]
 
         pipe = r.pipeline(transaction=False)

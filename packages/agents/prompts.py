@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 from functools import lru_cache
+from typing import Any, cast
 
 log = logging.getLogger(__name__)
 
@@ -53,7 +54,7 @@ If a retrieved chunk was not helpful, do not include its filename. Never invent 
 
 
 @lru_cache(maxsize=1)
-def _langfuse():  # type: ignore[return]
+def _langfuse() -> Any:
     from langfuse import Langfuse
 
     from packages.core import settings
@@ -81,7 +82,7 @@ def get_system_prompt(
 
     try:
         prompt = _langfuse().get_prompt(name, label=label, fallback=FALLBACK_SYSTEM_PROMPT)
-        return prompt.compile()
+        return cast(str, prompt.compile())
     except Exception as exc:
         log.warning("Langfuse prompt fetch failed (%s) — using fallback", exc)
         return FALLBACK_SYSTEM_PROMPT

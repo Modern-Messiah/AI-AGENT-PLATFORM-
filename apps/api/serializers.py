@@ -63,7 +63,9 @@ def document_response(doc: Document) -> DocumentResponse:
         source_url=getattr(doc, "source_url", None),
         source_title=getattr(doc, "source_title", None),
         source_checked_at=(
-            doc.source_checked_at.isoformat() if getattr(doc, "source_checked_at", None) else None
+            checked_at.isoformat()
+            if (checked_at := getattr(doc, "source_checked_at", None))
+            else None
         ),
         summary=doc.summary,
         suggested_questions=doc.suggested_questions or [],
@@ -123,7 +125,7 @@ def metadata_page(metadata: dict[str, object]) -> int | None:
     if isinstance(page, bool) or page is None:
         return None
     try:
-        parsed = int(page)
+        parsed = int(str(page))
     except (TypeError, ValueError):
         return None
     return parsed if parsed > 0 else None

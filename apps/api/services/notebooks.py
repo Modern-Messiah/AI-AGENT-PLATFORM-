@@ -6,6 +6,7 @@ from fastapi import HTTPException
 from packages.rag import NotebookInsightSource
 from packages.storage import Chunk, Document, Notebook, NotebookDocument
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 def dedupe_uuid_list(ids: list[uuid.UUID]) -> list[uuid.UUID]:
@@ -27,7 +28,7 @@ def clean_notebook_title(title: str) -> str:
 
 
 async def load_tenant_documents(
-    db,
+    db: AsyncSession,
     tenant_id: str,
     document_ids: list[uuid.UUID],
 ) -> list[Document]:
@@ -50,8 +51,10 @@ async def load_tenant_documents(
     return [by_id[doc_id] for doc_id in document_ids]
 
 
-async def load_notebook_documents(db, tenant_id: str, notebook_id: uuid.UUID) -> list[Document]:
-    return (
+async def load_notebook_documents(
+    db: AsyncSession, tenant_id: str, notebook_id: uuid.UUID
+) -> list[Document]:
+    return list(
         (
             await db.execute(
                 select(Document)
@@ -70,7 +73,7 @@ async def load_notebook_documents(db, tenant_id: str, notebook_id: uuid.UUID) ->
 
 
 async def load_notebooks_with_documents(
-    db,
+    db: AsyncSession,
     *,
     tenant_id: str,
     limit: int,
@@ -120,7 +123,7 @@ async def load_notebooks_with_documents(
 
 
 async def load_notebook_insight_sources(
-    db,
+    db: AsyncSession,
     *,
     tenant_id: str,
     documents: list[Document],

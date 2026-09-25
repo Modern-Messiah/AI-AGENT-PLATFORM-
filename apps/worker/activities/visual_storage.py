@@ -49,15 +49,15 @@ async def upsert_document_asset(
         "status": status,
         "error": error,
     }
-    statement = pg_insert(DocumentAsset).values(**values)
-    statement = statement.on_conflict_do_update(
+    insert_stmt = pg_insert(DocumentAsset).values(**values)
+    statement = insert_stmt.on_conflict_do_update(
         index_elements=[
             DocumentAsset.document_id,
             DocumentAsset.page_number,
             DocumentAsset.asset_kind,
         ],
         set_={
-            key: getattr(statement.excluded, key)
+            key: getattr(insert_stmt.excluded, key)
             for key in values
             if key not in {"tenant_id", "document_id", "page_number", "asset_kind"}
         },
