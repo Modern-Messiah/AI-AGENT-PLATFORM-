@@ -5,7 +5,6 @@ import time
 import uuid
 
 from fastapi import HTTPException
-
 from packages.cache.redis import get_redis
 from packages.core import settings
 
@@ -71,6 +70,19 @@ async def enforce_agent_limits(tenant_id: str, query: str, route: str) -> str:
         await check_agent_rate_limit(get_redis(), tenant_id, limit=limit)
     except HTTPException:
         raise
-    except Exception as exc:  # noqa: BLE001
-        log.warning("rate limit check failed open | tenant=%s route=%s error=%s", tenant_id, route, exc)
+    except Exception as exc:
+        if settings.rate_limit_fail_closed:
+            log.warning(
+                "rate limit check failed CLOSED | tenant=%s route=%s error=%s",
+                tenant_id,
+                route,
+                exc,
+            )
+            raise HTTPException(
+                status_code=503,
+                detail="rate limiter unavailable and RATE_LIMIT_FAIL_CLOSED=true",
+            ) from exc
+        log.warning(
+            "rate limit check failed open | tenant=%s route=%s error=%s", tenant_id, route, exc
+        )
     return query

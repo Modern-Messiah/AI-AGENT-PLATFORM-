@@ -74,6 +74,10 @@ class Settings(BaseSettings):
     # Interactive agent guardrails.
     agent_query_max_chars: int = 12_000
     agent_rate_limit_per_minute: int = 20
+    # Fail-open preserves chat availability when Redis is down (default).
+    # Set true to reject agent requests instead (503) when the limiter
+    # cannot be consulted.
+    rate_limit_fail_closed: bool = False
     llm_timeout_seconds: float = 60.0
 
     # Conversation memory for the streaming chat: rewrite follow-up questions

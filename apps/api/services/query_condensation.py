@@ -65,5 +65,5 @@ async def condense_query(history: list[tuple[str, str]], query: str) -> str:
         log.info("query condensed | original=%r standalone=%r", query[:80], standalone[:80])
         return standalone[:_MAX_STANDALONE_CHARS]
     except Exception as exc:  # condensation must never break the chat
-        log.info("query condensation failed, using raw query | error=%s", type(exc).__name__)
+        log.warning("LLM feature degraded: query condensation fell back to the raw query | error=%s", type(exc).__name__)
         return query

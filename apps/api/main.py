@@ -114,9 +114,20 @@ log = logging.getLogger(__name__)
 
 # ── App lifecycle ─────────────────────────────────────────────────────────────
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     setup_tracing("aap-api")
+    weak_provider = settings.weak_model.split("/", 1)[0]
+    weak_key = {"moonshot": settings.moonshot_api_key, "deepseek": settings.deepseek_api_key}.get(
+        weak_provider
+    )
+    if not weak_key:
+        log.warning(
+            "weak model %s has no API key: condensation, query expansion and LLM "
+            "summaries will silently fall back to their degraded paths",
+            settings.weak_model,
+        )
     log.info("warming up embedding model...")
     try:
         await embed_texts(["warmup"])

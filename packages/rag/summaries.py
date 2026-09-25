@@ -219,8 +219,8 @@ async def generate_document_insights(
         )
         generated = _GeneratedDocumentInsights.model_validate_json(raw)
     except Exception as exc:  # noqa: BLE001 - summary generation is best-effort
-        log.info(
-            "LLM document insights fell back to heuristic | file=%s error=%s",
+        log.warning(
+            "LLM feature degraded: document insights fell back to heuristic | file=%s error=%s",
             filename,
             type(exc).__name__,
         )
