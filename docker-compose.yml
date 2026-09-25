@@ -58,7 +58,12 @@ services:
       retries: 15
 
   minio:
-    image: minio/minio:latest
+    # MinIO removed the server image from Docker Hub and gated quay.io
+    # (2025). The Bitnami legacy archive is the last freely pullable
+    # build with the same binary/API; for production consider a pinned
+    # self-hosted mirror or MinIO's gated releases with credentials.
+    image: bitnamilegacy/minio:latest
+    user: root
     container_name: aap-minio
     command: ["server", "/data", "--console-address", ":9001"]
     environment:
