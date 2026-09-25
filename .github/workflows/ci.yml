@@ -69,6 +69,40 @@ jobs:
         working-directory: apps/ui
         run: npm run build
 
+  lint:
+    name: Lint and types
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+          enable-cache: true
+
+      - name: Install Python dependencies
+        run: uv sync --frozen
+
+      - name: Ruff (blocking)
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+
+      # Non-blocking until packages/apps reach zero (currently ~100, mostly
+      # test-adjacent typing). Flip continue-on-error to false when it does.
+      - name: Mypy packages+apps (non-blocking)
+        run: uv run mypy packages apps
+        continue-on-error: true
+
   retrieval-evals:
     name: Retrieval quality evals
     runs-on: ubuntu-latest

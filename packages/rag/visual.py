@@ -78,10 +78,7 @@ def merge_visual_text(ocr_text: str, vision_description: str) -> str:
     ocr_text = ocr_text.strip()
     vision_description = vision_description.strip()
     if ocr_text and vision_description:
-        return (
-            f"Recognized text:\n{ocr_text}\n\n"
-            f"Visual description:\n{vision_description}"
-        )
+        return f"Recognized text:\n{ocr_text}\n\nVisual description:\n{vision_description}"
     if ocr_text:
         return ocr_text
     if vision_description:
@@ -105,9 +102,7 @@ def split_visual_sections(ocr_text: str, vision_description: str) -> list[str]:
         heading = match.group(1)
         if not _MEANINGFUL_VISUAL_HEADING.search(heading):
             continue
-        end = matches[index + 1].start() if index + 1 < len(matches) else len(
-            vision_description
-        )
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(vision_description)
         block = vision_description[match.start() : end].strip()
         if block:
             visual_sections.append(block)
@@ -117,6 +112,8 @@ def split_visual_sections(ocr_text: str, vision_description: str) -> list[str]:
     else:
         sections.append(f"Visual description:\n{vision_description}")
     return sections
+
+
 def _paddle_payload(item: object) -> dict[str, Any]:
     if isinstance(item, dict):
         payload = item

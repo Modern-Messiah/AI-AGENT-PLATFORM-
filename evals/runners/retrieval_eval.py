@@ -40,9 +40,7 @@ async def run(tenant_id: str, k: int, examples: list[dict]) -> float:
     rr_total = 0.0
 
     for ex in examples:
-        results = await retrieve_chunks_with_expansion(
-            query=ex["query"], tenant_id=tenant_id, k=k
-        )
+        results = await retrieve_chunks_with_expansion(query=ex["query"], tenant_id=tenant_id, k=k)
         contents = [r.content for r in results]
         rank = _hit_rank(contents, ex["expected_doc_substrings"])
         if rank is not None:

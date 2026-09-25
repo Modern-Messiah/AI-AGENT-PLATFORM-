@@ -30,14 +30,10 @@ def chat_session_response(sess: ChatSession, message_count: int = 0) -> ChatSess
         model=sess.model,
         scope_type=getattr(sess, "scope_type", None),
         document_id=(
-            str(sess.document_id)
-            if getattr(sess, "document_id", None) is not None
-            else None
+            str(sess.document_id) if getattr(sess, "document_id", None) is not None else None
         ),
         notebook_id=(
-            str(sess.notebook_id)
-            if getattr(sess, "notebook_id", None) is not None
-            else None
+            str(sess.notebook_id) if getattr(sess, "notebook_id", None) is not None else None
         ),
         created_at=sess.created_at.isoformat(),
         updated_at=sess.updated_at.isoformat(),
@@ -67,9 +63,7 @@ def document_response(doc: Document) -> DocumentResponse:
         source_url=getattr(doc, "source_url", None),
         source_title=getattr(doc, "source_title", None),
         source_checked_at=(
-            doc.source_checked_at.isoformat()
-            if getattr(doc, "source_checked_at", None)
-            else None
+            doc.source_checked_at.isoformat() if getattr(doc, "source_checked_at", None) else None
         ),
         summary=doc.summary,
         suggested_questions=doc.suggested_questions or [],
@@ -117,9 +111,7 @@ def notebook_response(
         suggested_questions=notebook.suggested_questions or [],
         key_topics=notebook.key_topics or [],
         insights_updated_at=(
-            notebook.insights_updated_at.isoformat()
-            if notebook.insights_updated_at
-            else None
+            notebook.insights_updated_at.isoformat() if notebook.insights_updated_at else None
         ),
         created_at=notebook.created_at.isoformat() if notebook.created_at else None,
         updated_at=notebook.updated_at.isoformat() if notebook.updated_at else None,

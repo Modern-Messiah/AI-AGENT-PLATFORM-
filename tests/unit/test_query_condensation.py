@@ -27,7 +27,7 @@ async def test_condense_query_resolves_followup_with_history(
 
     result = await condense_query(
         [("user", "Расскажи про документы"), ("agent", "Вот обзор двух документов…")],
-        "а подробнее про второй?",  # noqa: RUF001
+        "а подробнее про второй?",
     )
 
     assert result == "Какие ограничения во втором документе?"

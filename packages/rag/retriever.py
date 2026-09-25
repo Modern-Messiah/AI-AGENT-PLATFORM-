@@ -6,6 +6,7 @@ import re
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
+from itertools import pairwise
 from typing import Any
 
 from sqlalchemy import ColumnElement, func, or_, select
@@ -132,8 +133,8 @@ def _lexical_relevance(query: str, content: str) -> float:
     content_set = set(content_terms)
     term_coverage = len(query_set & content_set) / len(query_set)
 
-    query_pairs = set(zip(query_terms, query_terms[1:], strict=False))
-    content_pairs = set(zip(content_terms, content_terms[1:], strict=False))
+    query_pairs = set(pairwise(query_terms))
+    content_pairs = set(pairwise(content_terms))
     pair_coverage = len(query_pairs & content_pairs) / len(query_pairs) if query_pairs else 0.0
     return min(1.0, term_coverage * 0.8 + pair_coverage * 0.2)
 

@@ -81,9 +81,8 @@ def _provider_error_message(provider_key: str, status_code: int, body: object) -
             "or expired. Update .env with a valid provider key."
             + (f" Provider said: {provider_message}" if provider_message else "")
         )
-    return (
-        f"{provider_name} request failed with HTTP {status_code}."
-        + (f" Provider said: {provider_message}" if provider_message else "")
+    return f"{provider_name} request failed with HTTP {status_code}." + (
+        f" Provider said: {provider_message}" if provider_message else ""
     )
 
 
@@ -161,7 +160,9 @@ class ProviderCompatOpenAIModel(OpenAIModel):
                 presence_penalty=model_settings.get("presence_penalty", pai_openai.NOT_GIVEN),
                 frequency_penalty=model_settings.get("frequency_penalty", pai_openai.NOT_GIVEN),
                 logit_bias=model_settings.get("logit_bias", pai_openai.NOT_GIVEN),
-                reasoning_effort=model_settings.get("openai_reasoning_effort", pai_openai.NOT_GIVEN),
+                reasoning_effort=model_settings.get(
+                    "openai_reasoning_effort", pai_openai.NOT_GIVEN
+                ),
                 user=model_settings.get("openai_user", pai_openai.NOT_GIVEN),
                 extra_headers={"User-Agent": pai_openai.get_user_agent()},
                 **extra,
@@ -292,9 +293,7 @@ async def complete_vision_text(
     model_name: str | None = None,
 ) -> str:
     """Describe one image using the configured OpenAI-compatible vision model."""
-    provider_key, model_id, base_url, api_key = _resolve_model(
-        model_name or settings.vision_model
-    )
+    provider_key, model_id, base_url, api_key = _resolve_model(model_name or settings.vision_model)
     client = AsyncOpenAI(base_url=base_url, api_key=api_key or "not-set")
     encoded = base64.b64encode(image_bytes).decode("ascii")
 
@@ -321,9 +320,7 @@ async def complete_vision_text(
                 }
             ],
             max_tokens=1200,
-            timeout=settings.llm_timeout_seconds
-            if settings.llm_timeout_seconds > 0
-            else None,
+            timeout=settings.llm_timeout_seconds if settings.llm_timeout_seconds > 0 else None,
             **extra,
         )
     except APIStatusError as exc:

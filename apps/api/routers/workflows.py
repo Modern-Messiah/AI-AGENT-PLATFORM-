@@ -3,11 +3,10 @@ from __future__ import annotations
 import asyncio
 
 from fastapi import APIRouter, HTTPException, Request
-from temporalio.client import Client
-from temporalio.service import RPCError
-
 from packages.agents import AgentRunOutput
 from packages.core.tenant_utils import check_workflow_tenant
+from temporalio.client import Client
+from temporalio.service import RPCError
 
 from apps.api.deps import TenantID
 from apps.api.schemas import AgentRunApiResponse, WorkflowSignalResponse
@@ -34,9 +33,9 @@ async def get_workflow_result(
             sources=result.sources,
             workflow_id=workflow_id,
         )
-    except asyncio.TimeoutError:
+    except TimeoutError:
         return AgentRunApiResponse(workflow_id=workflow_id, pending_approval=True)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 

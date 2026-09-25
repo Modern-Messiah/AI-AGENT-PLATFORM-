@@ -14,17 +14,16 @@ from __future__ import annotations
 # {model_short_name: {input_usd_per_1m, output_usd_per_1m}}
 _PRICING: dict[str, dict[str, float]] = {
     # ── Moonshot / Kimi ──────────────────────────────────────────────────────
-    "kimi-k2.6":             {"input": 0.60, "output": 2.50},
-    "kimi-k2.5":             {"input": 0.60, "output": 2.50},
+    "kimi-k2.6": {"input": 0.60, "output": 2.50},
+    "kimi-k2.5": {"input": 0.60, "output": 2.50},
     "kimi-k2-turbo-preview": {"input": 0.60, "output": 2.50},
-    "kimi-k2-0711-preview":  {"input": 0.60, "output": 2.50},
-
+    "kimi-k2-0711-preview": {"input": 0.60, "output": 2.50},
     # ── DeepSeek ─────────────────────────────────────────────────────────────
     # Current official V4-Pro rates: cache-miss input $0.435 / output $0.87.
-    "deepseek-v4-pro":       {"input": 0.435, "output": 0.87},
-    "deepseek-v4-flash":     {"input": 0.14,  "output": 0.28},
-    "deepseek-chat":         {"input": 0.14,  "output": 0.28},  # aliases to v4-flash
-    "deepseek-reasoner":     {"input": 0.55,  "output": 2.19},  # deepseek-r1
+    "deepseek-v4-pro": {"input": 0.435, "output": 0.87},
+    "deepseek-v4-flash": {"input": 0.14, "output": 0.28},
+    "deepseek-chat": {"input": 0.14, "output": 0.28},  # aliases to v4-flash
+    "deepseek-reasoner": {"input": 0.55, "output": 2.19},  # deepseek-r1
 }
 _DEFAULT = {"input": 0.50, "output": 1.50}
 

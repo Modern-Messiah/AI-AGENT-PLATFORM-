@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from packages.analytics.clickhouse import ch_client
 from packages.analytics.pricing import cost_usd
@@ -35,13 +35,13 @@ class UsageEvent:
     tenant_id: str
     workflow_id: str
     run_id: str
-    model: str          # full name, e.g. "moonshot/kimi-k2-turbo-preview"
+    model: str  # full name, e.g. "moonshot/kimi-k2-turbo-preview"
     prompt_tokens: int
     completion_tokens: int
     latency_ms: int
     status: str = "ok"
     error: str = ""
-    event_time: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    event_time: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     @property
     def provider(self) -> str:
@@ -63,25 +63,27 @@ class UsageEvent:
 
 async def record_usage(event: UsageEvent) -> None:
     """Insert one usage row into ClickHouse; log a warning if cost exceeds threshold."""
-    row = [[
-        event.event_time,
-        event.tenant_id,
-        event.workflow_id,
-        event.run_id,
-        event.model_short,
-        event.provider,
-        event.prompt_tokens,
-        event.completion_tokens,
-        event.total_tokens,
-        event.cost,
-        event.latency_ms,
-        event.status,
-        event.error,
-    ]]
+    row = [
+        [
+            event.event_time,
+            event.tenant_id,
+            event.workflow_id,
+            event.run_id,
+            event.model_short,
+            event.provider,
+            event.prompt_tokens,
+            event.completion_tokens,
+            event.total_tokens,
+            event.cost,
+            event.latency_ms,
+            event.status,
+            event.error,
+        ]
+    ]
 
     try:
         await ch_client.insert(_TABLE, row, column_names=_COLUMNS)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         # Never let analytics failure crash the agent activity.
         log.warning("ClickHouse insert failed: %s", exc)
 

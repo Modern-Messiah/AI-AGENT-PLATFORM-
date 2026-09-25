@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import time
@@ -192,9 +193,7 @@ async def agent_stream(body: AgentStreamRequest, tenant_id: TenantID) -> Streami
                 cached = await semantic_cache.get(retrieval_query, tenant_id)
             except Exception:
                 cached = None
-            agent_cache_requests_total.labels(
-                result="hit" if cached is not None else "miss"
-            ).inc()
+            agent_cache_requests_total.labels(result="hit" if cached is not None else "miss").inc()
             log.info(
                 "agent_stream cache lookup | tenant=%s hit=%s latency_ms=%d",
                 tenant_id,
@@ -316,9 +315,11 @@ async def agent_stream(body: AgentStreamRequest, tenant_id: TenantID) -> Streami
 
             if prompt_tokens or completion_tokens:
                 agent_tokens_total.labels(model=model_name, kind="prompt").inc(prompt_tokens)
-                agent_tokens_total.labels(model=model_name, kind="completion").inc(completion_tokens)
+                agent_tokens_total.labels(model=model_name, kind="completion").inc(
+                    completion_tokens
+                )
 
-            try:
+            with contextlib.suppress(Exception):
                 await record_usage(
                     UsageEvent(
                         tenant_id=tenant_id,
@@ -330,14 +331,10 @@ async def agent_stream(body: AgentStreamRequest, tenant_id: TenantID) -> Streami
                         latency_ms=latency_ms,
                     )
                 )
-            except Exception:
-                pass
 
             if not scoped:
-                try:
+                with contextlib.suppress(Exception):
                     await semantic_cache.set(retrieval_query, tenant_id, output)
-                except Exception:
-                    pass
 
         except Exception as exc:
             log.exception("agent_stream error | tenant=%s", tenant_id)

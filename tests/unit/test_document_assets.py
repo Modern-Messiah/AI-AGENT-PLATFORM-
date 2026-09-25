@@ -34,10 +34,7 @@ def test_document_assets_are_deleted_with_the_document() -> None:
 
 def test_visual_assets_migration_enables_tenant_rls() -> None:
     migration = (
-        Path(__file__).parents[2]
-        / "migrations"
-        / "versions"
-        / "0010_document_assets.py"
+        Path(__file__).parents[2] / "migrations" / "versions" / "0010_document_assets.py"
     ).read_text()
 
     assert 'down_revision: str | None = "0009_notebook_insights"' in migration

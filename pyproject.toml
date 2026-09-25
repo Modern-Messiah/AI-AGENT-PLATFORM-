@@ -72,6 +72,19 @@ ignore = ["E501"]
 [tool.ruff.lint.per-file-ignores]
 # Russian fixture strings in tests are intentional, not homoglyph accidents.
 "tests/**" = ["RUF001", "RUF002", "RUF003"]
+# Same for eval fixtures and RU-language product strings (answers, prompts,
+# stemmer suffix lists): Cyrillic there is the point, not a typo.
+"evals/**" = ["RUF001", "RUF002", "RUF003", "SIM102", "RUF005"]
+"packages/rag/retriever.py" = ["RUF001"]
+"packages/rag/summaries.py" = ["RUF001", "RUF002"]
+"packages/rag/citations.py" = ["RUF001"]
+"apps/api/routers/agent.py" = ["RUF001", "RUF002"]
+# FastAPI canonical patterns: File() in defaults, str-Enum mixins.
+"apps/api/routers/documents.py" = ["B008"]
+"apps/api/routers/notebooks.py" = ["B008"]
+"packages/storage/models.py" = ["UP042"]
+# Alembic revision scripts follow their own header conventions.
+"migrations/versions/*" = ["E402"]
 # Backward-compatible re-exports consumed by tests and scripts — not unused.
 "apps/api/main.py" = ["F401"]
 

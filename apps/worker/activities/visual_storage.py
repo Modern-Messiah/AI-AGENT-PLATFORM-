@@ -4,7 +4,12 @@ import asyncio
 import logging
 import uuid
 
-from packages.rag.visual import VisualPage, build_page_batches, is_visual_filename, visual_page_count
+from packages.rag.visual import (
+    VisualPage,
+    build_page_batches,
+    is_visual_filename,
+    visual_page_count,
+)
 from packages.storage import Chunk, Document, DocumentAsset, DocumentAssetStatus, object_store
 from packages.storage.db import tenant_session
 from sqlalchemy import delete, func, select, update
@@ -98,13 +103,17 @@ async def prepare_visual_manifest(input: IngestionInput) -> VisualManifest:
     document_id = uuid.UUID(input.document_id)
     async with tenant_session(input.tenant_id) as session:
         previous_assets = (
-            await session.execute(
-                select(DocumentAsset).where(
-                    DocumentAsset.document_id == document_id,
-                    DocumentAsset.tenant_id == input.tenant_id,
+            (
+                await session.execute(
+                    select(DocumentAsset).where(
+                        DocumentAsset.document_id == document_id,
+                        DocumentAsset.tenant_id == input.tenant_id,
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         await session.execute(
             delete(DocumentAsset).where(
                 DocumentAsset.document_id == document_id,
@@ -136,8 +145,10 @@ async def prepare_visual_manifest(input: IngestionInput) -> VisualManifest:
     for asset in previous_assets:
         try:
             await asyncio.to_thread(object_store.delete, asset.preview_object_key)
-        except Exception as exc:  # noqa: BLE001
-            log.warning("stale asset cleanup failed | key=%s error=%s", asset.preview_object_key, exc)
+        except Exception as exc:
+            log.warning(
+                "stale asset cleanup failed | key=%s error=%s", asset.preview_object_key, exc
+            )
 
     return VisualManifest(
         is_visual=True,

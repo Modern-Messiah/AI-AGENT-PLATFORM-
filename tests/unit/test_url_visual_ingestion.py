@@ -1,5 +1,3 @@
-# ruff: noqa: RUF001
-
 from __future__ import annotations
 
 import logging
@@ -8,7 +6,10 @@ from types import SimpleNamespace
 from apps.api.services.url_sources import UrlImageSource, url_image_sidecar_payload
 from apps.worker.activities import url_visuals
 from apps.worker.activities.ingestion_types import IngestionInput, VisualPageAnalysis
-from apps.worker.activities.url_visuals import _url_image_summary_warning, append_url_visual_segments
+from apps.worker.activities.url_visuals import (
+    _url_image_summary_warning,
+    append_url_visual_segments,
+)
 from packages.rag.parser import ParsedSegment
 from packages.rag.visual import VisualPage
 
@@ -79,12 +80,18 @@ async def test_url_visual_segments_are_hidden_from_ui_but_searchable(monkeypatch
         previews.append((preview_object_key, page.preview_bytes, analysis.ocr_text))
         return "asset-123"
 
-    monkeypatch.setattr("apps.worker.activities.url_visuals._clear_url_image_assets", fake_clear_assets)
+    monkeypatch.setattr(
+        "apps.worker.activities.url_visuals._clear_url_image_assets", fake_clear_assets
+    )
     monkeypatch.setattr("apps.worker.activities.url_visuals._fetch_url_image", fake_fetch_image)
     monkeypatch.setattr("apps.worker.activities.url_visuals.render_visual_pages", fake_render)
     monkeypatch.setattr("apps.worker.activities.url_visuals.analyze_visual_page", fake_analyze)
-    monkeypatch.setattr("apps.worker.activities.url_visuals._upsert_url_image_asset", fake_upsert_asset)
-    monkeypatch.setattr("apps.worker.activities.url_visuals.object_store.put", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        "apps.worker.activities.url_visuals._upsert_url_image_asset", fake_upsert_asset
+    )
+    monkeypatch.setattr(
+        "apps.worker.activities.url_visuals.object_store.put", lambda *args, **kwargs: None
+    )
 
     segments = await append_url_visual_segments(
         input,
@@ -151,10 +158,13 @@ async def test_multiple_url_images_get_distinct_asset_indexes(monkeypatch) -> No
         "apps.worker.activities.url_visuals._load_url_image_sources",
         lambda _object_key: sources,
     )
+
     async def fake_clear_assets(_input: IngestionInput) -> None:
         return None
 
-    monkeypatch.setattr("apps.worker.activities.url_visuals._clear_url_image_assets", fake_clear_assets)
+    monkeypatch.setattr(
+        "apps.worker.activities.url_visuals._clear_url_image_assets", fake_clear_assets
+    )
 
     async def fake_fetch_image(candidate: UrlImageSource):
         return f"{candidate.url}-bytes".encode(), "image/png", "image.png"
@@ -192,7 +202,9 @@ async def test_multiple_url_images_get_distinct_asset_indexes(monkeypatch) -> No
     monkeypatch.setattr("apps.worker.activities.url_visuals._fetch_url_image", fake_fetch_image)
     monkeypatch.setattr("apps.worker.activities.url_visuals.render_visual_pages", fake_render)
     monkeypatch.setattr("apps.worker.activities.url_visuals.analyze_visual_page", fake_analyze)
-    monkeypatch.setattr("apps.worker.activities.url_visuals._upsert_url_image_asset", fake_upsert_asset)
+    monkeypatch.setattr(
+        "apps.worker.activities.url_visuals._upsert_url_image_asset", fake_upsert_asset
+    )
     monkeypatch.setattr("apps.worker.activities.url_visuals.object_store.put", lambda *args: None)
 
     segments = await append_url_visual_segments(input, [])
@@ -256,11 +268,15 @@ async def test_url_visual_ingestion_logs_summary_counters(monkeypatch, caplog) -
     ) -> str:
         return f"asset-{page.page_number}"
 
-    monkeypatch.setattr("apps.worker.activities.url_visuals._clear_url_image_assets", fake_clear_assets)
+    monkeypatch.setattr(
+        "apps.worker.activities.url_visuals._clear_url_image_assets", fake_clear_assets
+    )
     monkeypatch.setattr("apps.worker.activities.url_visuals._fetch_url_image", fake_fetch_image)
     monkeypatch.setattr("apps.worker.activities.url_visuals.render_visual_pages", fake_render)
     monkeypatch.setattr("apps.worker.activities.url_visuals.analyze_visual_page", fake_analyze)
-    monkeypatch.setattr("apps.worker.activities.url_visuals._upsert_url_image_asset", fake_upsert_asset)
+    monkeypatch.setattr(
+        "apps.worker.activities.url_visuals._upsert_url_image_asset", fake_upsert_asset
+    )
     monkeypatch.setattr("apps.worker.activities.url_visuals.object_store.put", lambda *args: None)
 
     with caplog.at_level(logging.INFO, logger="apps.worker.activities.url_visuals"):
@@ -291,13 +307,15 @@ def test_url_image_summary_warning_keeps_partial_skip_summary() -> None:
 
 
 def test_url_image_sidecar_payload_fixture_matches_worker_contract() -> None:
-    payload = url_image_sidecar_payload([
-        UrlImageSource(
-            url="https://docs.example.com/payment-flow.png",
-            alt="Payment flow",
-            title="Payment diagram",
-        )
-    ])
+    payload = url_image_sidecar_payload(
+        [
+            UrlImageSource(
+                url="https://docs.example.com/payment-flow.png",
+                alt="Payment flow",
+                title="Payment diagram",
+            )
+        ]
+    )
 
     assert payload == (
         b'{"images":[{"url":"https://docs.example.com/payment-flow.png",'
@@ -346,10 +364,12 @@ async def test_url_image_asset_cleanup_removes_old_rows_and_previews(monkeypatch
         object_key="tenant-a/url-source.txt",
         filename="Example Page.txt",
     )
-    session = _AssetCleanupSession([
-        SimpleNamespace(preview_object_key="tenant-a/doc/assets/url-image-1.webp"),
-        SimpleNamespace(preview_object_key="tenant-a/doc/assets/url-image-2.webp"),
-    ])
+    session = _AssetCleanupSession(
+        [
+            SimpleNamespace(preview_object_key="tenant-a/doc/assets/url-image-1.webp"),
+            SimpleNamespace(preview_object_key="tenant-a/doc/assets/url-image-2.webp"),
+        ]
+    )
     deleted: list[str] = []
 
     monkeypatch.setattr(

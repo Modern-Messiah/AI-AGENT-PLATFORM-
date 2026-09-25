@@ -11,16 +11,16 @@ signal via POST /workflows/{id}/approve or /reject.
 
 from __future__ import annotations
 
-import asyncio
 from datetime import timedelta
 
 from temporalio import workflow
 from temporalio.common import RetryPolicy
 
 with workflow.unsafe.imports_passed_through():
+    from packages.agents import AgentRunInput, AgentRunOutput
+
     from apps.worker.activities.agent_step import run_agent_step
     from apps.worker.activities.human_approval import request_human_approval
-    from packages.agents import AgentRunInput, AgentRunOutput
 
 _RETRY = RetryPolicy(
     initial_interval=timedelta(seconds=2),
@@ -70,7 +70,7 @@ class AgentRunWorkflow:
                 lambda: self._decision is not None,
                 timeout=timedelta(hours=24),
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             result.answer = f"[APPROVAL TIMED OUT]\n\n{result.answer}"
             return result
 

@@ -2,16 +2,15 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile
-from sqlalchemy import delete, select, update
-from temporalio.client import Client
-
 from packages.core import settings
 from packages.rag import generate_notebook_insights
 from packages.storage import Document, DocumentStatus, Notebook, NotebookDocument, object_store
 from packages.storage.db import tenant_session
+from sqlalchemy import delete, select, update
+from temporalio.client import Client
 
 from apps.api.deps import TenantID, read_with_limit
 from apps.api.schemas import (
@@ -132,7 +131,7 @@ async def replace_notebook_documents(
                 for document_id in document_ids
             ]
         )
-        notebook.updated_at = datetime.now(timezone.utc)
+        notebook.updated_at = datetime.now(UTC)
         notebook.summary = None
         notebook.suggested_questions = []
         notebook.key_topics = []
@@ -142,7 +141,9 @@ async def replace_notebook_documents(
     return response
 
 
-@router.post("/notebooks/{notebook_id}/documents/upload", response_model=DocumentResponse, status_code=202)
+@router.post(
+    "/notebooks/{notebook_id}/documents/upload", response_model=DocumentResponse, status_code=202
+)
 async def upload_notebook_document(
     notebook_id: uuid.UUID,
     request: Request,
@@ -151,7 +152,10 @@ async def upload_notebook_document(
 ) -> DocumentResponse:
     cl = request.headers.get("content-length")
     if cl and int(cl) > settings.max_upload_bytes * 2:
-        raise HTTPException(status_code=413, detail=f"file exceeds {settings.max_upload_bytes // (1024 * 1024)} MB limit")
+        raise HTTPException(
+            status_code=413,
+            detail=f"file exceeds {settings.max_upload_bytes // (1024 * 1024)} MB limit",
+        )
 
     data = await read_with_limit(file, settings.max_upload_bytes)
     if not data:
@@ -170,7 +174,9 @@ async def upload_notebook_document(
         if notebook is None:
             raise HTTPException(status_code=404, detail="notebook not found")
 
-        object_store.put(object_key, data, content_type=file.content_type or "application/octet-stream")
+        object_store.put(
+            object_key, data, content_type=file.content_type or "application/octet-stream"
+        )
         doc = Document(
             id=document_id,
             tenant_id=tenant_id,
@@ -181,11 +187,13 @@ async def upload_notebook_document(
             status=DocumentStatus.pending,
         )
         s.add(doc)
-        s.add(NotebookDocument(
-            notebook_id=notebook_id,
-            document_id=document_id,
-            tenant_id=tenant_id,
-        ))
+        s.add(
+            NotebookDocument(
+                notebook_id=notebook_id,
+                document_id=document_id,
+                tenant_id=tenant_id,
+            )
+        )
         notebook.summary = None
         notebook.suggested_questions = []
         notebook.key_topics = []
@@ -193,7 +201,9 @@ async def upload_notebook_document(
         await s.flush()
         response = document_response(doc)
 
-    await invalidate_semantic_cache(tenant_id, f"notebook-document-upload:{notebook_id}:{document_id}")
+    await invalidate_semantic_cache(
+        tenant_id, f"notebook-document-upload:{notebook_id}:{document_id}"
+    )
 
     client: Client = request.app.state.temporal
     try:
@@ -276,16 +286,14 @@ async def rebuild_notebook_insights(
             raise HTTPException(status_code=404, detail="notebook not found")
 
         documents = await load_notebook_documents(s, tenant_id, notebook_id)
-        current_ready_ids = {
-            doc.id for doc in documents if doc.status == DocumentStatus.done
-        }
+        current_ready_ids = {doc.id for doc in documents if doc.status == DocumentStatus.done}
         if current_ready_ids != ready_document_ids:
             raise HTTPException(
                 status_code=409,
                 detail="notebook sources changed while the overview was generated; retry",
             )
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         notebook.summary = insights.summary
         notebook.suggested_questions = insights.suggested_questions
         notebook.key_topics = insights.key_topics

@@ -193,7 +193,8 @@ async def test_chunk_and_embed_preserves_segment_metadata(monkeypatch) -> None:
     assert len(batch.contents) > 1
     assert len(batch.contents) == len(batch.embeddings) == len(batch.metadata)
     assert all(
-        metadata == {
+        metadata
+        == {
             "page": 4,
             "embedding_model": ingestion.settings.embedding_model,
             "lang": detect_language(content),
@@ -274,8 +275,7 @@ async def test_build_chunk_batch_batches_embeddings_and_heartbeats(monkeypatch) 
 
     parsed = ParsedDoc(
         segments=[
-            {"text": f"Segment text content block {i} " * 20, "metadata": {}}
-            for i in range(70)
+            {"text": f"Segment text content block {i} " * 20, "metadata": {}} for i in range(70)
         ],
         summary="Test summary",
         suggested_questions=[],
@@ -291,10 +291,29 @@ async def test_build_chunk_batch_batches_embeddings_and_heartbeats(monkeypatch) 
 
     assert len(batch.contents) == 70
     assert embedder_calls == [32, 32, 6]
-    assert heartbeats[0] == {"stage": "embedding-start", "total_chunks": 70, "document_id": "doc-123"}
-    assert heartbeats[1] == {"stage": "embedding", "embedded_chunks": 32, "total_chunks": 70, "document_id": "doc-123"}
-    assert heartbeats[2] == {"stage": "embedding", "embedded_chunks": 64, "total_chunks": 70, "document_id": "doc-123"}
-    assert heartbeats[3] == {"stage": "embedding", "embedded_chunks": 70, "total_chunks": 70, "document_id": "doc-123"}
+    assert heartbeats[0] == {
+        "stage": "embedding-start",
+        "total_chunks": 70,
+        "document_id": "doc-123",
+    }
+    assert heartbeats[1] == {
+        "stage": "embedding",
+        "embedded_chunks": 32,
+        "total_chunks": 70,
+        "document_id": "doc-123",
+    }
+    assert heartbeats[2] == {
+        "stage": "embedding",
+        "embedded_chunks": 64,
+        "total_chunks": 70,
+        "document_id": "doc-123",
+    }
+    assert heartbeats[3] == {
+        "stage": "embedding",
+        "embedded_chunks": 70,
+        "total_chunks": 70,
+        "document_id": "doc-123",
+    }
 
 
 async def test_build_chunk_batch_invalid_batch_size() -> None:

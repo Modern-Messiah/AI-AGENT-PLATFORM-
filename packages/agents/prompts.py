@@ -82,6 +82,6 @@ def get_system_prompt(
     try:
         prompt = _langfuse().get_prompt(name, label=label, fallback=FALLBACK_SYSTEM_PROMPT)
         return prompt.compile()
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         log.warning("Langfuse prompt fetch failed (%s) — using fallback", exc)
         return FALLBACK_SYSTEM_PROMPT

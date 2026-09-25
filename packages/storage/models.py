@@ -62,12 +62,8 @@ class Document(Base):
         DateTime(timezone=True), nullable=True
     )
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
-    suggested_questions: Mapped[list[str]] = mapped_column(
-        JSONB, default=list, nullable=False
-    )
-    processing_stage: Mapped[str] = mapped_column(
-        String(32), default="queued", nullable=False
-    )
+    suggested_questions: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+    processing_stage: Mapped[str] = mapped_column(String(32), default="queued", nullable=False)
     processed_pages: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     total_pages: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     warnings: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
@@ -97,17 +93,13 @@ class Document(Base):
         back_populates="document", cascade="all, delete-orphan"
     )
 
-    __table_args__ = (
-        Index("ix_documents_tenant_source_type", "tenant_id", "source_type"),
-    )
+    __table_args__ = (Index("ix_documents_tenant_source_type", "tenant_id", "source_type"),)
 
 
 class DocumentAsset(Base):
     __tablename__ = "document_assets"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[str] = mapped_column(String(64), nullable=False)
     document_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
@@ -158,9 +150,7 @@ class Notebook(Base):
     title: Mapped[str] = mapped_column(String(256), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
-    suggested_questions: Mapped[list[str]] = mapped_column(
-        JSONB, default=list, nullable=False
-    )
+    suggested_questions: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
     key_topics: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
     insights_updated_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
@@ -220,9 +210,7 @@ class Chunk(Base):
     chunk_idx: Mapped[int] = mapped_column(Integer, nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     embedding: Mapped[list[float]] = mapped_column(Vector(settings.embedding_dim), nullable=False)
-    chunk_metadata: Mapped[dict] = mapped_column(
-        "metadata", JSONB, default=dict, nullable=False
-    )
+    chunk_metadata: Mapped[dict] = mapped_column("metadata", JSONB, default=dict, nullable=False)
     # Stored generated column maintained by PostgreSQL (migration 0016):
     # 'simple' keeps exact tokens/identifiers, 'russian' adds morphology.
     tsv: Mapped[object] = mapped_column(
@@ -236,7 +224,9 @@ class Chunk(Base):
     document: Mapped[Document] = relationship(back_populates="chunks")
 
     __table_args__ = (
-        UniqueConstraint("tenant_id", "document_id", "chunk_idx", name="uq_chunks_tenant_doc_chunk_idx"),
+        UniqueConstraint(
+            "tenant_id", "document_id", "chunk_idx", name="uq_chunks_tenant_doc_chunk_idx"
+        ),
     )
 
 
@@ -258,10 +248,16 @@ class ChatSession(Base):
         ForeignKey("notebooks.id", ondelete="SET NULL"),
         nullable=True,
     )
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
 
-    messages: Mapped[list[ChatMessage]] = relationship(back_populates="session", cascade="all, delete-orphan", order_by="ChatMessage.created_at")
+    messages: Mapped[list[ChatMessage]] = relationship(
+        back_populates="session", cascade="all, delete-orphan", order_by="ChatMessage.created_at"
+    )
 
     __table_args__ = (
         CheckConstraint(
@@ -280,13 +276,20 @@ class ChatMessage(Base):
     __tablename__ = "chat_messages"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    session_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("chat_sessions.id", ondelete="CASCADE"), nullable=False, index=True)
+    session_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("chat_sessions.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     tenant_id: Mapped[str] = mapped_column(String(64), nullable=False)
     role: Mapped[str] = mapped_column(String(16), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     sources: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
     cached: Mapped[bool] = mapped_column(default=False, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
 
     session: Mapped[ChatSession] = relationship(back_populates="messages")
 
@@ -320,6 +323,4 @@ class ApiKey(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
-    last_used_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

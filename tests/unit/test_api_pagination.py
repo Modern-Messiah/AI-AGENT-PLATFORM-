@@ -94,13 +94,17 @@ async def test_list_sessions_applies_limit_and_offset(monkeypatch) -> None:
 
 
 async def test_list_notebooks_batches_document_loading_in_two_queries(monkeypatch) -> None:
-    session = _FakeSession([
-        _Result([
-            _notebook("5ef2d843-ddaf-4ae3-a73d-d25f27fb8621"),
-            _notebook("318056a5-81b3-445c-bcb0-850b56fbce8f"),
-        ]),
-        _Result(rows=[]),
-    ])
+    session = _FakeSession(
+        [
+            _Result(
+                [
+                    _notebook("5ef2d843-ddaf-4ae3-a73d-d25f27fb8621"),
+                    _notebook("318056a5-81b3-445c-bcb0-850b56fbce8f"),
+                ]
+            ),
+            _Result(rows=[]),
+        ]
+    )
     _patch_tenant_session(monkeypatch, notebooks_router, session)
 
     rows = await notebooks_router.list_notebooks("tenant-a", limit=50, offset=0)
@@ -130,10 +134,12 @@ async def test_get_messages_applies_limit_and_offset(monkeypatch) -> None:
 
 async def test_list_document_assets_applies_limit_and_offset(monkeypatch) -> None:
     document_id = UUID("809f7e7e-1852-4ab3-b710-eec7f70ae7e6")
-    session = _FakeSession([
-        _Result([SimpleNamespace(id=document_id)]),
-        _Result([]),
-    ])
+    session = _FakeSession(
+        [
+            _Result([SimpleNamespace(id=document_id)]),
+            _Result([]),
+        ]
+    )
     _patch_tenant_session(monkeypatch, documents_router, session)
 
     rows = await documents_router.list_document_assets(
@@ -151,10 +157,12 @@ async def test_list_document_assets_applies_limit_and_offset(monkeypatch) -> Non
 
 async def test_list_document_chunks_applies_limit_and_offset(monkeypatch) -> None:
     document_id = UUID("809f7e7e-1852-4ab3-b710-eec7f70ae7e6")
-    session = _FakeSession([
-        _Result([SimpleNamespace(id=document_id)]),
-        _Result([]),
-    ])
+    session = _FakeSession(
+        [
+            _Result([SimpleNamespace(id=document_id)]),
+            _Result([]),
+        ]
+    )
     _patch_tenant_session(monkeypatch, documents_router, session)
 
     rows = await documents_router.list_document_chunks(

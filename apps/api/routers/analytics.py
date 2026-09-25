@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query
-
 from packages.analytics.clickhouse import ch_client
 
 from apps.api.deps import TenantID
@@ -47,7 +46,7 @@ async def get_usage(
     try:
         rows = await ch_client.query(sql, {"tenant_id": tenant_id, "days": days})
         daily_rows = await ch_client.query(daily_sql, {"tenant_id": tenant_id, "days": days})
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         raise HTTPException(status_code=500, detail=f"ClickHouse error: {e}") from e
 
     total_cost = sum(r.get("total_cost_usd") or 0 for r in rows)

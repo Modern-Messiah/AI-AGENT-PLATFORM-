@@ -5,7 +5,6 @@ from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
-
 from packages.auth import api_keys
 
 
@@ -57,10 +56,7 @@ async def test_require_tenant_collapses_concurrent_same_key_lookups(monkeypatch)
     factory = FakeSessionFactory()
     monkeypatch.setattr(api_keys, "async_session", factory)
 
-    tenants = await asyncio.gather(*[
-        api_keys.require_tenant("raw-test-key")
-        for _ in range(20)
-    ])
+    tenants = await asyncio.gather(*[api_keys.require_tenant("raw-test-key") for _ in range(20)])
 
     assert tenants == ["tenant-a"] * 20
     assert factory.select_count == 1

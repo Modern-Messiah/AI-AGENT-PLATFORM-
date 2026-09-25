@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-from temporalio.exceptions import ActivityError
-
 from apps.worker.workflows.ingestion import _activity_root_cause_message
+from temporalio.exceptions import ActivityError
 
 
 def _activity_error(message: str = "Activity task failed") -> ActivityError:

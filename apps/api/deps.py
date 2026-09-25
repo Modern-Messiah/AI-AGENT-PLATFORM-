@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, UploadFile
-
 from packages.auth import require_tenant
 
 TenantID = Annotated[str, Depends(require_tenant)]

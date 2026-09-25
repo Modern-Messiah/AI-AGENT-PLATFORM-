@@ -18,8 +18,7 @@ def upgrade() -> None:
     op.execute("DELETE FROM chunks")
     op.execute("ALTER TABLE chunks ALTER COLUMN embedding TYPE vector(384)")
     op.execute(
-        "CREATE INDEX ix_chunks_embedding_hnsw ON chunks "
-        "USING hnsw (embedding vector_cosine_ops)"
+        "CREATE INDEX ix_chunks_embedding_hnsw ON chunks USING hnsw (embedding vector_cosine_ops)"
     )
 
 
@@ -28,6 +27,5 @@ def downgrade() -> None:
     op.execute("DELETE FROM chunks")
     op.execute("ALTER TABLE chunks ALTER COLUMN embedding TYPE vector(1024)")
     op.execute(
-        "CREATE INDEX ix_chunks_embedding_hnsw ON chunks "
-        "USING hnsw (embedding vector_cosine_ops)"
+        "CREATE INDEX ix_chunks_embedding_hnsw ON chunks USING hnsw (embedding vector_cosine_ops)"
     )

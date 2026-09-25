@@ -36,9 +36,9 @@ _FROM_JOIN_RE = re.compile(r"\b(?:FROM|JOIN)\s+([a-z_][a-z0-9_]*)", re.IGNORECAS
 # Detects old-style comma joins after paren-collapsing:
 #   FROM t1 [alias],   or   FROM () [alias],  (the () form catches collapsed subqueries)
 _COMMA_JOIN_RE = re.compile(
-    r"\bFROM\s+(?:[a-z_][a-z0-9_]*|\(\))"   # FROM identifier  or  FROM ()
-    r"(?:\s+(?:AS\s+)?[a-z_][a-z0-9_]*)?"   # optional alias
-    r"\s*,",                                  # trailing comma
+    r"\bFROM\s+(?:[a-z_][a-z0-9_]*|\(\))"  # FROM identifier  or  FROM ()
+    r"(?:\s+(?:AS\s+)?[a-z_][a-z0-9_]*)?"  # optional alias
+    r"\s*,",  # trailing comma
     re.IGNORECASE,
 )
 
@@ -47,10 +47,10 @@ _MAX_ROWS = 500
 
 def _strip_literals(sql: str) -> str:
     """Remove comments and quoted strings so table-name checks can't be fooled."""
-    sql = re.sub(r"--[^\n]*", " ", sql)                      # -- line comments
-    sql = re.sub(r"/\*.*?\*/", " ", sql, flags=re.DOTALL)     # /* block comments */
-    sql = re.sub(r"'(?:[^'\\]|\\.)*'", "''", sql)             # 'string literals'
-    sql = re.sub(r'"(?:[^"\\]|\\.)*"', '""', sql)             # "quoted identifiers"
+    sql = re.sub(r"--[^\n]*", " ", sql)  # -- line comments
+    sql = re.sub(r"/\*.*?\*/", " ", sql, flags=re.DOTALL)  # /* block comments */
+    sql = re.sub(r"'(?:[^'\\]|\\.)*'", "''", sql)  # 'string literals'
+    sql = re.sub(r'"(?:[^"\\]|\\.)*"', '""', sql)  # "quoted identifiers"
     return sql
 
 
@@ -128,15 +128,23 @@ def register_sql_tool(agent: Agent[AgentDeps, object]) -> None:
         # Block old-style comma joins (FROM t1, t2) which bypass the FROM/JOIN regex.
         # _collapse_parens hides subquery internals so FROM () alias, bad_table is also caught.
         if _COMMA_JOIN_RE.search(_collapse_parens(stripped)):
-            return [{"error": "Comma-separated table lists are not allowed; use explicit JOIN syntax"}]
+            return [
+                {"error": "Comma-separated table lists are not allowed; use explicit JOIN syntax"}
+            ]
 
         # Only accept table names that appear after FROM/JOIN — not in comments or strings.
         from_tables = {t.lower() for t in _FROM_JOIN_RE.findall(stripped)}
         if not from_tables:
-            return [{"error": f"Query must SELECT from one of: {', '.join(sorted(_ALLOWED_TABLES))}"}]
+            return [
+                {"error": f"Query must SELECT from one of: {', '.join(sorted(_ALLOWED_TABLES))}"}
+            ]
         disallowed = from_tables - _ALLOWED_TABLES
         if disallowed:
-            return [{"error": f"Query references disallowed table(s): {', '.join(sorted(disallowed))}. Allowed: {', '.join(sorted(_ALLOWED_TABLES))}"}]
+            return [
+                {
+                    "error": f"Query references disallowed table(s): {', '.join(sorted(disallowed))}. Allowed: {', '.join(sorted(_ALLOWED_TABLES))}"
+                }
+            ]
 
         safe_query = query.replace("{tenant_id}", ctx.deps.tenant_id)
 

@@ -150,7 +150,7 @@ class Settings(BaseSettings):
     max_upload_bytes: int = 50 * 1024 * 1024  # 50 MB per file
 
     # Maximum total body across ALL files in a single POST /documents/bulk request.
-    # Prevents memory exhaustion from 20 × 50 MB = 1 GB bulk uploads.
+    # Prevents memory exhaustion from 20 x 50 MB = 1 GB bulk uploads.
     max_bulk_total_bytes: int = 200 * 1024 * 1024  # 200 MB
 
     # Maximum bytes fetched from a URL source before it is stored as a document.

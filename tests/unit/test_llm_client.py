@@ -19,9 +19,7 @@ def test_deepseek_v4_uses_official_openai_compatible_base_url() -> None:
 
 
 def test_deepseek_v4_disables_thinking_for_compatibility() -> None:
-    assert _provider_extra_body("deepseek", "deepseek-v4-pro") == {
-        "thinking": {"type": "disabled"}
-    }
+    assert _provider_extra_body("deepseek", "deepseek-v4-pro") == {"thinking": {"type": "disabled"}}
 
 
 def test_deepseek_auth_errors_point_to_provider_key() -> None:
@@ -43,11 +41,7 @@ async def test_complete_chat_json_uses_deepseek_json_mode(monkeypatch) -> None:
         async def create(self, **kwargs):
             captured.update(kwargs)
             return SimpleNamespace(
-                choices=[
-                    SimpleNamespace(
-                        message=SimpleNamespace(content='{"summary":"ok"}')
-                    )
-                ]
+                choices=[SimpleNamespace(message=SimpleNamespace(content='{"summary":"ok"}'))]
             )
 
     class FakeAsyncOpenAI:
@@ -102,7 +96,5 @@ async def test_complete_vision_text_sends_image_to_kimi(monkeypatch) -> None:
     message = captured["messages"][0]
     assert message["content"][0] == {"type": "text", "text": "Describe the image."}
     assert message["content"][1]["type"] == "image_url"
-    assert message["content"][1]["image_url"]["url"].startswith(
-        "data:image/webp;base64,"
-    )
+    assert message["content"][1]["image_url"]["url"].startswith("data:image/webp;base64,")
     assert captured["extra_body"] == {"thinking": {"type": "disabled"}}

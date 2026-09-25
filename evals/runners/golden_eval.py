@@ -26,7 +26,6 @@ import sys
 import threading
 import time
 import uuid
-from dataclasses import asdict
 from datetime import UTC, datetime
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -39,10 +38,10 @@ from packages.storage import ApiKey, async_session
 from sqlalchemy import delete
 
 from evals.golden.suite import (
+    GITHUB_DATASET_PATH,
     CaseResult,
     EvalChunk,
     FixtureArtifact,
-    GITHUB_DATASET_PATH,
     evaluate_case,
     generate_fixture_files,
     load_golden_cases,
@@ -68,7 +67,7 @@ class FixtureServer:
     def url_for(self, path: Path) -> str:
         return f"http://host.docker.internal:{self.server.server_port}/{path.name}"
 
-    def __enter__(self) -> "FixtureServer":
+    def __enter__(self) -> FixtureServer:
         self.thread.start()
         return self
 
@@ -292,16 +291,13 @@ async def run_golden_retrieval_eval(
 
     manifest = _load_manifest(output_dir)
     source_by_document_id = {
-        str(payload["document_id"]): source_id
-        for source_id, payload in manifest["sources"].items()
+        str(payload["document_id"]): source_id for source_id, payload in manifest["sources"].items()
     }
     results: list[CaseResult] = []
 
     extra_paths = [GITHUB_DATASET_PATH] if include_github else []
     replacements = (
-        {"{{GITHUB_EXPECTED_SUBSTRING}}": github_expected_substring}
-        if include_github
-        else None
+        {"{{GITHUB_EXPECTED_SUBSTRING}}": github_expected_substring} if include_github else None
     )
 
     for case in load_golden_cases(extra_paths=extra_paths, replacements=replacements):
@@ -335,12 +331,22 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--tenant", default="", help="Tenant id to use; generated when omitted")
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("--prepare", action="store_true", help="Generate/upload golden sources")
-    parser.add_argument("--run", action="store_true", help="Run retrieval eval against prepared corpus")
+    parser.add_argument(
+        "--run", action="store_true", help="Run retrieval eval against prepared corpus"
+    )
     parser.add_argument("--top-k", type=int, default=8)
     parser.add_argument("--timeout-seconds", type=int, default=300)
-    parser.add_argument("--cleanup-keys", action="store_true", help="Delete eval tenant API keys after run")
-    parser.add_argument("--include-github", action="store_true", help="Include the optional GitHub source eval case")
-    parser.add_argument("--github-url", default="", help="GitHub repo/blob/tree URL uploaded as source_id=github_source")
+    parser.add_argument(
+        "--cleanup-keys", action="store_true", help="Delete eval tenant API keys after run"
+    )
+    parser.add_argument(
+        "--include-github", action="store_true", help="Include the optional GitHub source eval case"
+    )
+    parser.add_argument(
+        "--github-url",
+        default="",
+        help="GitHub repo/blob/tree URL uploaded as source_id=github_source",
+    )
     parser.add_argument(
         "--github-expected-substring",
         default="",

@@ -39,9 +39,7 @@ _NOISE_IMAGE_RE = re.compile(
     r"(avatar|badge|button|captcha|favicon|icon|logo|pixel|sprite|tracking)",
     re.IGNORECASE,
 )
-_MARKDOWN_IMAGE_RE = re.compile(
-    r"!\[([^\]]*)\]\(\s*([^)\s]+)(?:\s+['\"]([^'\"]*)['\"])?\s*\)"
-)
+_MARKDOWN_IMAGE_RE = re.compile(r"!\[([^\]]*)\]\(\s*([^)\s]+)(?:\s+['\"]([^'\"]*)['\"])?\s*\)")
 _RST_IMAGE_RE = re.compile(r"(?im)^\s*\.\.\s+(?:image|figure)::\s+(\S+)\s*$")
 _SUPPORTED_SUFFIX_TYPES = {
     ".html": "text/html",
@@ -219,11 +217,13 @@ class _ImageSourceParser(HTMLParser):
         if url in self._seen:
             return
         self._seen.add(url)
-        self.sources.append(UrlImageSource(
-            url=url,
-            alt=attr.get("alt", "").strip()[:500],
-            title=attr.get("title", "").strip()[:500],
-        ))
+        self.sources.append(
+            UrlImageSource(
+                url=url,
+                alt=attr.get("alt", "").strip()[:500],
+                title=attr.get("title", "").strip()[:500],
+            )
+        )
 
 
 class _ImageRefParser(HTMLParser):
@@ -240,11 +240,13 @@ class _ImageRefParser(HTMLParser):
         raw_url = _image_attr_url(attr)
         if not raw_url:
             return
-        self.refs.append((
-            raw_url.strip(),
-            attr.get("alt", "").strip(),
-            attr.get("title", "").strip(),
-        ))
+        self.refs.append(
+            (
+                raw_url.strip(),
+                attr.get("alt", "").strip(),
+                attr.get("title", "").strip(),
+            )
+        )
 
 
 def extract_html_title(data: bytes) -> str | None:
@@ -337,8 +339,7 @@ def url_image_sidecar_payload(sources: list[UrlImageSource]) -> bytes:
     return json.dumps(
         {
             "images": [
-                {"url": source.url, "alt": source.alt, "title": source.title}
-                for source in sources
+                {"url": source.url, "alt": source.alt, "title": source.title} for source in sources
             ]
         },
         ensure_ascii=False,
@@ -443,7 +444,9 @@ def _allowlist_error(host: str) -> str | None:
     normalized_host = host.rstrip(".").lower()
     for domain in settings.http_fetch_allowed_domains:
         normalized_domain = domain.strip().rstrip(".").lower()
-        if normalized_host == normalized_domain or normalized_host.endswith(f".{normalized_domain}"):
+        if normalized_host == normalized_domain or normalized_host.endswith(
+            f".{normalized_domain}"
+        ):
             return None
     return f"domain '{host}' is not in HTTP_FETCH_ALLOWED_DOMAINS"
 
@@ -481,7 +484,9 @@ async def validate_fetch_url(url: str) -> str:
     host_is_ip = False
     try:
         if _is_blocked_ip(host):
-            raise UrlSourceError("requests to private or internal network addresses are not allowed")
+            raise UrlSourceError(
+                "requests to private or internal network addresses are not allowed"
+            )
         host_is_ip = True
     except ValueError:
         pass
@@ -510,7 +515,9 @@ async def validate_fetch_url(url: str) -> str:
     for _, _, _, _, sockaddr in infos:
         ip = sockaddr[0]
         if _is_blocked_ip(ip):
-            raise UrlSourceError("requests to private or internal network addresses are not allowed")
+            raise UrlSourceError(
+                "requests to private or internal network addresses are not allowed"
+            )
 
     return normalized
 
@@ -545,7 +552,9 @@ async def _get_with_redirects(
             raise UrlSourceError(f"URL request failed: {exc}") from exc
 
         if 300 <= response.status_code < 400 and response.headers.get("location"):
-            current_url = await validate_fetch_url(urljoin(current_url, response.headers["location"]))
+            current_url = await validate_fetch_url(
+                urljoin(current_url, response.headers["location"])
+            )
             continue
 
         if response.status_code in allowed_statuses:
@@ -589,7 +598,9 @@ def _with_source_header(text: str, *, url: str, title: str | None) -> bytes:
 def _github_raw_url(source: _GitHubSourceUrl) -> str:
     if not source.ref or not source.path:
         raise UrlSourceError("GitHub file URL must include a ref and path")
-    return f"https://raw.githubusercontent.com/{source.owner}/{source.repo}/{source.ref}/{source.path}"
+    return (
+        f"https://raw.githubusercontent.com/{source.owner}/{source.repo}/{source.ref}/{source.path}"
+    )
 
 
 def _github_raw_file_url(source: _GitHubSourceUrl, ref: str, path: str) -> str:
@@ -706,7 +717,7 @@ def _github_raw_image_path(source: _GitHubSourceUrl, *, ref: str, url: str) -> s
     prefix = f"https://raw.githubusercontent.com/{source.owner}/{source.repo}/{ref}/"
     if not url.startswith(prefix):
         return None
-    path = unquote(url[len(prefix):]).split("#", 1)[0].split("?", 1)[0]
+    path = unquote(url[len(prefix) :]).split("#", 1)[0].split("?", 1)[0]
     return path.strip("/") or None
 
 

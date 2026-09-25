@@ -6,13 +6,12 @@ import logging
 import time
 from functools import lru_cache
 
-from pydantic_ai import Agent
-from temporalio import activity
-
 from packages.agents import AgentDeps, AgentRunInput, AgentRunOutput, build_research_agent
 from packages.analytics.events import UsageEvent, record_usage
 from packages.cache.semantic import semantic_cache
 from packages.core import settings
+from pydantic_ai import Agent
+from temporalio import activity
 
 log = logging.getLogger(__name__)
 
@@ -29,16 +28,18 @@ async def run_agent_step(payload: AgentRunInput) -> AgentRunOutput:
     # ── Semantic cache lookup ────────────────────────────────────────────────
     cached = await semantic_cache.get(payload.user_query, payload.tenant_id)
     if cached is not None:
-        await record_usage(UsageEvent(
-            tenant_id=payload.tenant_id,
-            workflow_id=info.workflow_id,
-            run_id=info.workflow_run_id,
-            model=payload.model or settings.strong_model,
-            prompt_tokens=0,
-            completion_tokens=0,
-            latency_ms=0,
-            status="cache_hit",
-        ))
+        await record_usage(
+            UsageEvent(
+                tenant_id=payload.tenant_id,
+                workflow_id=info.workflow_id,
+                run_id=info.workflow_run_id,
+                model=payload.model or settings.strong_model,
+                prompt_tokens=0,
+                completion_tokens=0,
+                latency_ms=0,
+                status="cache_hit",
+            )
+        )
         return cached.model_copy(update={"cached": True})
 
     # ── LLM call ─────────────────────────────────────────────────────────────
@@ -65,15 +66,17 @@ async def run_agent_step(payload: AgentRunInput) -> AgentRunOutput:
             cached_tokens,
         )
 
-    await record_usage(UsageEvent(
-        tenant_id=payload.tenant_id,
-        workflow_id=info.workflow_id,
-        run_id=info.workflow_run_id,
-        model=resolved_model,
-        prompt_tokens=usage.request_tokens or 0,
-        completion_tokens=usage.response_tokens or 0,
-        latency_ms=latency_ms,
-    ))
+    await record_usage(
+        UsageEvent(
+            tenant_id=payload.tenant_id,
+            workflow_id=info.workflow_id,
+            run_id=info.workflow_run_id,
+            model=resolved_model,
+            prompt_tokens=usage.request_tokens or 0,
+            completion_tokens=usage.response_tokens or 0,
+            latency_ms=latency_ms,
+        )
+    )
 
     # Store result for future semantic cache hits.
     output = result.data
