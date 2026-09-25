@@ -364,6 +364,15 @@ export const useChatStore = defineStore('chat', () => {
     return streamMsg
   }
 
+  function dropLastAgentMessage() {
+    for (let i = messages.value.length - 1; i >= 0; i--) {
+      if (messages.value[i].role === 'agent') {
+        messages.value.splice(i, 1)
+        return
+      }
+    }
+  }
+
   function cancelStreaming(options = {}) {
     const { removePartial = false } = options
     if (activeStreamController.value) {
@@ -449,6 +458,6 @@ export const useChatStore = defineStore('chat', () => {
     sessions, activeId, messages, loading, loadingSessionId, sessLoading, loadedKey, streamTick,
     isStreaming,
     reset, loadSessions, selectSession, newChat, deleteSession,
-    sendMessage, cancelStreaming, isActiveSessionLoading, approveHitl, rejectHitl
+    sendMessage, cancelStreaming, dropLastAgentMessage, isActiveSessionLoading, approveHitl, rejectHitl
   }
 })

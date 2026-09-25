@@ -21,7 +21,17 @@
            :class="{ active: chat.activeId === s.id }"
            @click="chat.selectSession(s.id)">
         <div style="flex: 1; min-width: 0">
-          <div class="session-title">{{ sessionTitle(s) }}</div>
+          <input
+            v-if="renamingId === s.id"
+            v-model="renameValue"
+            class="session-rename-input"
+            :placeholder="t('chat.renamePlaceholder')"
+            @keydown.enter.prevent="commitRename(s)"
+            @keydown.esc.prevent="renamingId = null"
+            @click.stop
+            @blur="commitRename(s)"
+          />
+          <div v-else class="session-title">{{ sessionTitle(s) }}</div>
           <div v-if="sessionMeta(s)" class="session-scope">
             <span :class="['session-scope-badge', `is-${sessionMeta(s).type}`]">
               {{ sessionMeta(s).badge }}
@@ -30,6 +40,10 @@
           </div>
           <div class="session-meta">{{ s.updated_at ? formatLocaleDate(s.updated_at, locale) : '' }}</div>
         </div>
+        <button class="btn btn-ghost btn-sm del-btn" style="padding: 2px 5px; flex-shrink: 0"
+                @click.stop="startRename(s)" :title="t('chat.rename')">
+          <AppIcon name="copy" :size="11" />
+        </button>
         <button class="btn btn-ghost btn-sm del-btn" style="padding: 2px 5px; flex-shrink: 0"
                 @click.stop="askDelete(s)" :title="t('chat.deleteTitle')">
           <AppIcon name="trash" :size="11" />
@@ -70,6 +84,32 @@ const props = defineProps({
 const emit = defineEmits(['toast'])
 
 const chat = useChatStore()
+
+const renamingId = ref(null)
+const renameValue = ref('')
+
+function startRename(session) {
+  renamingId.value = session.id
+  renameValue.value = session.title || ''
+}
+
+async function commitRename(session) {
+  if (renamingId.value !== session.id) return
+  const title = renameValue.value.trim()
+  renamingId.value = null
+  if (!title || title === session.title) return
+  const { apiFetch } = useApi()
+  try {
+    await apiFetch(`/sessions/${session.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title }),
+    })
+    chat.sessions = chat.sessions.map(x => (x.id === session.id ? { ...x, title } : x))
+  } catch (e) {
+    emit('toast', { msg: title, type: 'error', error: e.message })
+  }
+}
 const settings = useSettingsStore()
 const { locale, t } = useI18n()
 

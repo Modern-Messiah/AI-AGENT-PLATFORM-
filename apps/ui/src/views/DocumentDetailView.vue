@@ -101,9 +101,13 @@
         </div>
         <div class="detail-card-body">
           <div class="asset-gallery">
-            <ProtectedAssetImage
+            <div
               v-for="asset in previewAssets"
               :key="asset.id"
+              :id="assetDomId(asset)"
+              :class="['asset-gallery-item', { 'is-target': isTargetAsset(asset) }]"
+            >
+            <ProtectedAssetImage
               :document-id="documentId"
               :asset-id="asset.id"
               :page-number="asset.page_number"
@@ -112,6 +116,7 @@
                 : t('documentDetail.imagePreviewAlt')"
               compact
             />
+            </div>
           </div>
         </div>
       </div>
@@ -284,6 +289,7 @@ async function loadDocument(options = {}) {
     scheduleDocumentRefresh(doc)
     await nextTick()
     scrollToTargetChunk()
+    scrollToTargetAsset()
   } catch (e) {
     clearDocumentRefresh()
     document.value = null
@@ -297,6 +303,20 @@ async function loadDocument(options = {}) {
 
 function chunkDomId(chunk) {
   return `chunk-${chunk.chunk_id}`
+}
+
+function assetDomId(asset) {
+  return `asset-${asset.id}`
+}
+
+function isTargetAsset(asset) {
+  return Boolean(route.query.asset && asset.id === route.query.asset)
+}
+
+function scrollToTargetAsset() {
+  if (!route.query.asset) return
+  const el = document.getElementById(assetDomId({ id: route.query.asset }))
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
 }
 
 function isTargetChunk(chunk) {
@@ -406,6 +426,11 @@ function openDocumentChat() {
   display: grid;
   grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
   gap: 14px;
+}
+.asset-gallery-item.is-target {
+  outline: 2px solid color-mix(in oklch, var(--accent) 60%, transparent);
+  outline-offset: 3px;
+  border-radius: 12px;
 }
 .asset-gallery {
   display: grid;
