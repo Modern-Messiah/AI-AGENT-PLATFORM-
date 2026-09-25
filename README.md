@@ -14,6 +14,14 @@ content, and ask questions against that private knowledge base. The assistant ca
 the sources it used, stream answers in real time, and restrict retrieval to a single
 document or a notebook of selected documents.
 
+Retrieval is hybrid: multilingual embeddings (pgvector HNSW) fused with PostgreSQL
+full-text matches via reciprocal-rank fusion, with query expansion (paraphrases and
+cross-lingual translation) for weak first hits. The streaming chat has conversation
+memory — follow-ups are condensed into standalone questions — and answers carry a
+calibrated confidence badge with per-source citations. See
+[docs/runbooks/upgrade-2026-09.md](docs/runbooks/upgrade-2026-09.md) for the current
+feature set and upgrade notes.
+
 Long-running work such as file ingestion, OCR, Vision analysis, embedding generation,
 and human approval is handled by Temporal workflows. Interactive chat uses FastAPI
 streaming so the browser can show text as it is generated.
