@@ -22,8 +22,20 @@ log = logging.getLogger(__name__)
 
 _TIMEOUT = 10.0
 _MAX_REDIRECTS = 3
+# Browser-like request headers: a large class of sites rejects requests
+# with non-browser User-Agents outright (403 before any content). We do not
+# try to defeat real bot protection — just not to be blocked for looking
+# like a script while fetching ordinary public pages.
 URL_SOURCE_HEADERS = {
-    "User-Agent": "AI-Agent-Platform/1.0 (self-hosted URL source fetcher)",
+    "User-Agent": (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+    ),
+    "Accept": (
+        "text/html,application/xhtml+xml,application/xml;q=0.9,"
+        "text/plain;q=0.8,application/pdf,*/*;q=0.7"
+    ),
+    "Accept-Language": "ru,en;q=0.8",
 }
 _HTML_TYPES = {"text/html", "application/xhtml+xml"}
 _TEXT_TYPES = {
@@ -249,8 +261,48 @@ class _ImageRefParser(HTMLParser):
         )
 
 
-def extract_html_title(data: bytes) -> str | None:
-    text = data[:200_000].decode("utf-8", errors="ignore")
+_META_CHARSET_RE_BYTES = re.compile(
+    rb"<meta[^>]+charset=[\x22\x27]?([a-zA-Z0-9_-]+)", re.IGNORECASE
+)
+
+
+def decode_html_bytes(data: bytes, content_type_header: str = "") -> str:
+    """Decode HTML honoring the declared charset.
+
+    Many RU sites still ship windows-1251; decoding them as UTF-8 with
+    errors ignored turns the text into mojibake that retrieval can never
+    match. Order: Content-Type header charset -> <meta charset> -> UTF-8
+    -> windows-1251 when UTF-8 decoding produces replacement characters.
+    """
+    header_charset = ""
+    match = re.search(r"charset=([a-zA-Z0-9_\-]+)", content_type_header or "")
+    if match:
+        header_charset = match.group(1)
+
+    for charset in (header_charset, *_meta_charsets(data)):
+        if not charset:
+            continue
+        try:
+            return data.decode(charset)
+        except (UnicodeDecodeError, LookupError):
+            continue
+
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError:
+        return data.decode("windows-1251", errors="replace")
+
+
+def _meta_charsets(data: bytes) -> list[str]:
+    # meta charset must be scanned on raw bytes: the encoding is unknown yet
+    return [
+        charset.decode("ascii", errors="ignore")
+        for charset in _META_CHARSET_RE_BYTES.findall(data[:200_000])
+    ]
+
+
+def extract_html_title(data: bytes, content_type_header: str = "") -> str | None:
+    text = decode_html_bytes(data[:200_000], content_type_header)
     match = re.search(r"<title[^>]*>(.*?)</title>", text, flags=re.IGNORECASE | re.DOTALL)
     if not match:
         return None
@@ -258,9 +310,9 @@ def extract_html_title(data: bytes) -> str | None:
     return html_lib.unescape(title)[:512] or None
 
 
-def html_to_text(data: bytes) -> str:
+def html_to_text(data: bytes, content_type_header: str = "") -> str:
     parser = _ReadableTextParser()
-    parser.feed(data.decode("utf-8", errors="ignore"))
+    parser.feed(decode_html_bytes(data, content_type_header))
     return parser.text()
 
 
@@ -563,8 +615,20 @@ async def _get_with_redirects(
         try:
             response.raise_for_status()
         except httpx.HTTPStatusError as exc:
+            status = exc.response.status_code
+            if status in {401, 403}:
+                raise UrlSourceError(
+                    "the site blocks automated access (HTTP 403/401): "
+                    "it requires a login or bot protection the fetcher cannot pass",
+                    status_code=400,
+                ) from exc
+            if status == 429:
+                raise UrlSourceError(
+                    "the site is rate-limiting automated requests (HTTP 429): try again later",
+                    status_code=400,
+                ) from exc
             raise UrlSourceError(
-                f"URL returned HTTP {exc.response.status_code}",
+                f"URL returned HTTP {status}",
                 status_code=400,
             ) from exc
 
@@ -1050,14 +1114,20 @@ async def fetch_url_source(url: str) -> FetchedUrlSource:
         response.headers.get("content-type", ""),
         current_url,
     )
-    title = extract_html_title(data) if original_type in _HTML_TYPES else None
+    content_type_header = response.headers.get("content-type", "")
+    title = extract_html_title(data, content_type_header) if original_type in _HTML_TYPES else None
     image_sources: list[UrlImageSource] = []
 
     if original_type in _HTML_TYPES:
         image_sources = extract_html_image_sources(data, current_url)
-        text = html_to_text(data)
+        text = html_to_text(data, content_type_header)
         if not text.strip():
-            raise UrlSourceError("HTML page has no readable text")
+            raise UrlSourceError(
+                "the page has no readable text in its HTML — it likely renders "
+                "content with JavaScript, which the fetcher cannot execute; "
+                "try a direct link to the content or the print version",
+                status_code=400,
+            )
         data = _with_source_header(text, url=current_url, title=title)
         content_type = "text/plain; charset=utf-8"
     elif original_type in _TEXT_TYPES:
