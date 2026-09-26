@@ -15,6 +15,9 @@ class FakeResult:
     def scalar_one_or_none(self) -> object | None:
         return self.row
 
+    def first(self) -> object | None:
+        return self.row
+
 
 class FakeSession:
     def __init__(self, factory: FakeSessionFactory) -> None:
@@ -35,7 +38,7 @@ class FakeSession:
         if statement_text.startswith("SELECT"):
             self.factory.select_count += 1
             await asyncio.sleep(0)
-            return FakeResult(SimpleNamespace(tenant_id="tenant-a"))
+            return FakeResult((SimpleNamespace(tenant_id="tenant-a"), None))
         self.factory.update_count += 1
         return FakeResult()
 

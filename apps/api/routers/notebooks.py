@@ -3,8 +3,10 @@ from __future__ import annotations
 import logging
 import uuid
 from datetime import UTC, datetime
+from typing import Annotated
 
-from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
+from packages.auth import Actor, require_actor, require_destroy_permission
 from packages.core import settings
 from packages.rag import generate_notebook_insights
 from packages.storage import Document, DocumentStatus, Notebook, NotebookDocument, object_store
@@ -305,7 +307,11 @@ async def rebuild_notebook_insights(
 
 
 @router.delete("/notebooks/{notebook_id}", status_code=204)
-async def delete_notebook(notebook_id: uuid.UUID, tenant_id: TenantID) -> None:
+async def delete_notebook(
+    notebook_id: uuid.UUID, actor: Annotated[Actor, Depends(require_actor)]
+) -> None:
+    require_destroy_permission(actor)
+    tenant_id = actor.tenant_id
     async with tenant_session(tenant_id) as s:
         notebook = (
             await s.execute(

@@ -4,8 +4,10 @@ import asyncio
 import logging
 import uuid
 from datetime import UTC, datetime
+from typing import Annotated
 
-from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
+from packages.auth import Actor, require_actor, require_destroy_permission
 from packages.core import settings
 from packages.storage import Chunk, Document, DocumentAsset, DocumentStatus, object_store
 from packages.storage.db import tenant_session
@@ -557,7 +559,11 @@ async def reindex_document(
 
 
 @router.delete("/documents/{document_id}", status_code=204)
-async def delete_document(document_id: uuid.UUID, tenant_id: TenantID) -> None:
+async def delete_document(
+    document_id: uuid.UUID, actor: Annotated[Actor, Depends(require_actor)]
+) -> None:
+    require_destroy_permission(actor)
+    tenant_id = actor.tenant_id
     object_key = ""
     preview_object_keys: list[str] = []
     async with tenant_session(tenant_id) as s:
