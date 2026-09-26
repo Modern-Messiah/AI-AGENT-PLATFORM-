@@ -53,6 +53,18 @@ mirror for production.
   (X-Admin-Secret). Revocation evicts the in-process cache via Redis pub/sub
   within milliseconds; reissue via POST is the rotation path.
 
+## Role enforcement
+
+API keys bound to a user (POST /auth/keys with user_id) now carry that
+user's role into every request:
+- **unbound keys and role `admin`** keep full access (tenant-level keys —
+  backward compatible);
+- **role `member`** is rejected with 403 on destructive operations
+  (DELETE /documents/{id}, DELETE /notebooks/{id}).
+
+Deleting a user still does not revoke their keys (user_id becomes NULL —
+the keys fall back to unbound = full access; revoke keys explicitly).
+
 ## Behaviour changes worth knowing
 
 - **Chat has memory**: the UI sends `session_id`; follow-ups are condensed
