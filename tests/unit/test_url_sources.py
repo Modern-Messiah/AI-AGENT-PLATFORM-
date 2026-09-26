@@ -188,7 +188,7 @@ def test_html_helpers_extract_readable_text_and_title() -> None:
     </html>
     """
 
-    assert extract_html_title(html) == "Example & Docs"
+    assert extract_html_title(html, "text/html; charset=utf-8") == "Example & Docs"
     assert "Hello" in html_to_text(html)
     assert "Readable content." in html_to_text(html)
     assert "alert" not in html_to_text(html)
@@ -317,8 +317,11 @@ async def test_fetch_url_source_sends_project_user_agent(monkeypatch) -> None:
 
     fetched = await url_sources.fetch_url_source("https://docs.example.com/page")
 
-    user_agent = (captured.get("headers") or {}).get("User-Agent", "")
-    assert user_agent.startswith("AI-Agent-Platform/")
+    headers = captured.get("headers") or {}
+    user_agent = headers.get("User-Agent", "")
+    # browser-like UA (not the old bot-flagged project UA)
+    assert user_agent.startswith("Mozilla/5.0")
+    assert "text/html" in headers.get("Accept", "")
     assert "Hello from docs." in fetched.data.decode()
 
 
@@ -1036,3 +1039,62 @@ async def test_add_url_document_persists_metadata_and_starts_ingestion(monkeypat
     assert temporal.started[0][1].filename == "Example_Docs.txt"
     assert fake_session.added[0].source_type == "url"
     assert fake_session.added[0].source_checked_at.replace(tzinfo=UTC) <= datetime.now(UTC)
+
+
+def test_decode_html_bytes_handles_windows_1251_without_meta() -> None:
+    from apps.api.services.url_sources import decode_html_bytes
+
+    cp1251 = "Тестовая страница на windows-1251 без меты".encode("windows-1251")
+    assert decode_html_bytes(cp1251) == "Тестовая страница на windows-1251 без меты"
+
+
+def test_decode_html_bytes_prefers_header_charset() -> None:
+    from apps.api.services.url_sources import decode_html_bytes as decode
+
+    payload = "привет".encode("windows-1251")
+    assert decode(payload, "text/html; charset=windows-1251") == "привет"
+
+
+def test_decode_html_bytes_reads_meta_charset() -> None:
+    from apps.api.services.url_sources import decode_html_bytes as decode
+
+    payload = "<html><head><meta charset='windows-1251'></head><body>мир</body></html>".encode(
+        "windows-1251"
+    )
+    assert decode(payload).endswith("мир</body></html>")
+
+
+async def test_fetch_reports_bot_blockade_clearly(monkeypatch) -> None:
+    import httpx
+
+    async def fake_validate(url: str) -> str:
+        return url
+
+    class FakeAsyncClient:
+        def __init__(self, **kwargs) -> None:
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args) -> None:
+            return None
+
+        async def get(self, url: str):
+            return httpx.Response(
+                403,
+                headers={"content-type": "text/html"},
+                content=b"<html><body>blocked</body></html>",
+                request=httpx.Request("GET", url),
+            )
+
+    monkeypatch.setattr(url_sources, "validate_fetch_url", fake_validate)
+    monkeypatch.setattr(url_sources.httpx, "AsyncClient", FakeAsyncClient)
+
+    try:
+        await url_sources.fetch_url_source("https://blocked.example.com/")
+        raised = None
+    except url_sources.UrlSourceError as exc:
+        raised = exc
+    assert raised is not None
+    assert "blocks automated access" in str(raised)
