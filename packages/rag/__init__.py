@@ -10,6 +10,7 @@ from packages.rag.citations import (
 )
 from packages.rag.embedder import embed_queries, embed_texts
 from packages.rag.lang import detect_language
+from packages.rag.multilang_ocr import run_multilang_ocr, select_best_ocr
 from packages.rag.parser import parse_to_segments, parse_to_text
 from packages.rag.query_expansion import expand_query, retrieve_chunks_with_expansion
 from packages.rag.retriever import retrieve_chunks
@@ -46,6 +47,8 @@ __all__ = [
     "parse_to_text",
     "retrieve_chunks",
     "retrieve_chunks_with_expansion",
+    "run_multilang_ocr",
     "select_answer_sources",
+    "select_best_ocr",
     "select_diverse_chunks",
 ]

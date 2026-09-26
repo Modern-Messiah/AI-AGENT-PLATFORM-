@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import platform
 import re
 import threading
@@ -22,6 +23,7 @@ _BATCH_SIZE = 4
 _MIN_USEFUL_TEXT_CHARS = 80
 _MIN_OCR_CONFIDENCE = 0.72
 _OCR_LOCK = threading.Lock()
+log = logging.getLogger(__name__)
 _VISUAL_SECTION_HEADING = re.compile(r"(?m)^(#{2,4}\s+.+)$")
 _MEANINGFUL_VISUAL_HEADING = re.compile(
     r"(schema|diagram|flow|table|chart|схем|диаграм|таблиц|граф)",
@@ -167,9 +169,21 @@ def _paddle_ocr() -> Any:
     from paddleocr import PaddleOCR
 
     return PaddleOCR(
-        lang=settings.ocr_language,
+        lang=_primary_ocr_language(),
         **_paddle_ocr_options(),
     )
+
+
+@lru_cache(maxsize=4)
+def _paddle_ocr_for(lang: str) -> Any:
+    from paddleocr import PaddleOCR
+
+    return PaddleOCR(lang=lang, **_paddle_ocr_options())
+
+
+def _primary_ocr_language() -> str:
+    """First entry of the (possibly comma-separated) OCR_LANGUAGE setting."""
+    return settings.ocr_language.split(",")[0].strip() or "ru"
 
 
 def run_paddle_ocr(image_bytes: bytes) -> OCRResult:
@@ -180,6 +194,31 @@ def run_paddle_ocr(image_bytes: bytes) -> OCRResult:
         with _OCR_LOCK:
             results = list(_paddle_ocr().predict(input=np.asarray(image)))
     return extract_paddle_ocr_result(results)
+
+
+def run_paddle_ocr_multilang(image_bytes: bytes, languages: list[str]) -> list[OCRResult]:
+    """Run one OCR engine per language over the same image.
+
+    Engines are heavy — every language is initialized once per process and
+    reused. Failures of a secondary language degrade to its empty result
+    instead of failing the page.
+    """
+    import numpy as np
+
+    with Image.open(BytesIO(image_bytes)) as source:
+        image = ImageOps.exif_transpose(source).convert("RGB")
+        pixels = np.asarray(image)
+
+    results: list[OCRResult] = []
+    for lang in languages:
+        try:
+            with _OCR_LOCK:
+                raw = list(_paddle_ocr_for(lang).predict(input=pixels))
+            results.append(extract_paddle_ocr_result(raw))
+        except Exception as exc:
+            log.warning("ocr engine for %s failed | error=%s", lang, type(exc).__name__)
+            results.append(OCRResult(text="", confidence=None))
+    return results
 
 
 def visual_page_count(data: bytes, filename: str) -> int:

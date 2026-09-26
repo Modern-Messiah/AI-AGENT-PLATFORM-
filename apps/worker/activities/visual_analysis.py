@@ -5,12 +5,12 @@ import time
 from collections.abc import Awaitable, Callable
 
 from packages.llm import complete_vision_text
+from packages.rag.multilang_ocr import run_multilang_ocr
 from packages.rag.visual import (
     OCRResult,
     VisualPage,
     merge_visual_text,
     needs_vision_analysis,
-    run_paddle_ocr,
 )
 
 from apps.worker.activities.heartbeat import heartbeat_safe
@@ -20,7 +20,7 @@ from apps.worker.activities.ingestion_types import VisualPageAnalysis
 async def analyze_visual_page(
     page: VisualPage,
     *,
-    ocr_reader: Callable[[bytes], OCRResult] = run_paddle_ocr,
+    ocr_reader: Callable[[bytes], OCRResult] = run_multilang_ocr,
     vision_reader: Callable[..., Awaitable[str]] = complete_vision_text,
 ) -> VisualPageAnalysis:
     text_layer = page.text_layer.strip()
