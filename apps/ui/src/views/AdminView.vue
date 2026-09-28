@@ -1,7 +1,7 @@
 <template>
   <div class="screen-body admin-screen">
     <!-- Secret gate: the panel needs the deployment-wide admin secret -->
-    <div v-if="!settings.hasAdminSecret" class="card secret-gate">
+    <div v-if="!settings.hasAdminSecret && !session.isAdmin" class="card secret-gate">
       <div class="card-header">
         <div>
           <div class="card-title">{{ t('admin.title') }}</div>
@@ -42,7 +42,11 @@
           <div v-if="loading" class="spinner"></div>
           <AppIcon v-else name="refresh" :size="13" />
         </button>
-        <span class="secret-pill" :class="{ invalid: settings.isAdminInvalid }">
+        <span
+          v-if="!session.isAdmin"
+          class="secret-pill"
+          :class="{ invalid: settings.isAdminInvalid }"
+        >
           {{ settings.isAdminInvalid ? t('admin.invalidSecret') : `admin: ${settings.adminMasked}` }}
         </span>
       </div>
@@ -208,7 +212,12 @@
         <div class="card">
           <div class="card-header">
             <div class="card-title">{{ t('admin.usersTitle') }}</div>
-            <span v-if="users" class="badge badge-muted">{{ users.length }}</span>
+            <div class="keys-header-actions">
+              <span v-if="users" class="badge badge-muted">{{ users.length }}</span>
+              <button class="btn btn-primary btn-sm" @click="userFormOpen = true">
+                {{ t('admin.addUser') }}
+              </button>
+            </div>
           </div>
           <div v-if="users && !users.length" class="empty compact-empty">
             <div class="empty-title">{{ t('admin.noUsers') }}</div>
@@ -217,18 +226,19 @@
             <thead>
               <tr>
                 <th>{{ t('admin.user') }}</th>
+                <th>{{ t('login.email') }}</th>
                 <th>{{ t('admin.tenant') }}</th>
                 <th>{{ t('admin.role') }}</th>
                 <th>{{ t('admin.keys') }}</th>
                 <th>{{ t('admin.queriesTotal') }}</th>
                 <th>{{ t('admin.queries7d') }}</th>
                 <th>{{ t('admin.lastQuery') }}</th>
-                <th></th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="user in users" :key="user.id">
                 <td class="file-name">{{ user.name }}</td>
+                <td class="td-mono">{{ user.email || '—' }}</td>
                 <td class="td-mono">{{ user.tenant_id }}</td>
                 <td>
                   <span :class="['badge', user.role === 'admin' ? 'badge-purple' : 'badge-blue']">
@@ -239,78 +249,153 @@
                 <td class="td-mono">{{ user.queries_total }}</td>
                 <td class="td-mono">{{ user.queries_7d }}</td>
                 <td class="td-mono">{{ fmtDateTime(user.last_query_at) }}</td>
-                <td>
-                  <button class="btn btn-ghost btn-sm" @click="openCreateKey(user)">
-                    {{ t('admin.issueKey') }}
-                  </button>
-                </td>
               </tr>
             </tbody>
           </table>
         </div>
       </template>
 
-      <!-- ── Keys ─────────────────────────────────────────────────── -->
-      <template v-if="activeTab === 'keys'">
+      <!-- Add user modal -->
+      <div v-if="userFormOpen" class="modal-overlay" @click.self="userFormOpen = false">
+        <div class="modal key-modal">
+          <div class="modal-title">{{ t('admin.addUser') }}</div>
+          <div class="modal-sub">{{ t('admin.addUserSub') }}</div>
+          <div class="form-group">
+            <label class="form-label">{{ t('login.email') }}</label>
+            <input v-model="userForm.email" type="email" class="form-input" placeholder="name@example.com" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">{{ t('admin.keyName') }}</label>
+            <input v-model="userForm.name" class="form-input" :placeholder="t('login.namePlaceholder')" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">{{ t('login.password') }}</label>
+            <input v-model="userForm.password" type="password" class="form-input" :placeholder="t('login.passwordPlaceholder')" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">{{ t('admin.role') }}</label>
+            <select v-model="userForm.role" class="form-input">
+              <option value="member">member</option>
+              <option value="admin">admin</option>
+            </select>
+          </div>
+          <div v-if="userFormError" class="admin-error">{{ userFormError }}</div>
+          <div class="form-actions">
+            <button class="btn btn-ghost" :disabled="userSaving" @click="userFormOpen = false">
+              {{ t('common.cancel') }}
+            </button>
+            <button
+              class="btn btn-primary"
+              :disabled="userSaving || !userForm.email.trim() || userForm.password.length < 8"
+              @click="saveUser"
+            >
+              {{ userSaving ? t('settings.validating') : t('common.create') }}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── LLM provider keys ────────────────────────────────────── -->
+      <template v-if="activeTab === 'llm'">
         <div class="card">
           <div class="card-header">
-            <div class="card-title">{{ t('admin.keysTitle') }}</div>
+            <div class="card-title">{{ t('admin.llmKeysTitle') }}</div>
             <div class="keys-header-actions">
-              <label class="revoked-toggle">
-                <input type="checkbox" v-model="showRevokedKeys" />
-                <span>{{ t('admin.showRevoked') }}</span>
-              </label>
-              <span v-if="keys" class="badge badge-muted">{{ visibleKeys.length }}</span>
-              <button class="btn btn-primary btn-sm" @click="openCreateKey()">
-                {{ t('admin.createKey') }}
+              <span v-if="llmKeys" class="badge badge-muted">{{ llmKeys.length }}</span>
+              <button class="btn btn-primary btn-sm" @click="llmFormOpen = true">
+                {{ t('admin.addLlmKey') }}
               </button>
             </div>
           </div>
 
-          <div v-if="keys && !visibleKeys.length" class="empty compact-empty">
-            <div class="empty-title">{{ t('admin.noKeys') }}</div>
-            <div class="empty-sub">{{ t('admin.noKeysSub') }}</div>
+          <div v-if="llmKeys && !llmKeys.length" class="empty compact-empty">
+            <div class="empty-title">{{ t('admin.noLlmKeys') }}</div>
+            <div class="empty-sub">{{ t('admin.noLlmKeysSub') }}</div>
           </div>
-          <table v-if="keys && visibleKeys.length">
+          <table v-if="llmKeys && llmKeys.length">
             <thead>
               <tr>
+                <th>{{ t('admin.provider') }}</th>
                 <th>{{ t('admin.keyName') }}</th>
-                <th>{{ t('admin.tenant') }}</th>
-                <th>{{ t('admin.user') }}</th>
+                <th>{{ t('admin.keyValue') }}</th>
                 <th>{{ t('admin.keyStatus') }}</th>
-                <th>{{ t('admin.queriesTotal') }}</th>
-                <th>{{ t('admin.queries7d') }}</th>
+                <th>{{ t('admin.requests') }}</th>
                 <th>{{ t('admin.lastUsed') }}</th>
-                <th>{{ t('admin.lastQuery') }}</th>
+                <th>{{ t('admin.created') }}</th>
+                <th>{{ t('admin.keyTestCol') }}</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
-              <tr v-for="key in visibleKeys" :key="key.id">
-                <td class="file-name">{{ keyDisplayName(key) }}</td>
-                <td class="td-mono">{{ key.tenant_id }}</td>
-                <td>{{ keyUserLabel(key, settings.locale) }}</td>
+              <tr v-for="key in llmKeys" :key="key.id">
+                <td><span class="tag">{{ key.provider }}</span></td>
+                <td class="file-name">{{ key.name }}</td>
+                <td class="td-mono">{{ key.key_preview }}</td>
                 <td>
-                  <span :class="['badge', key.is_active ? 'badge-green' : 'badge-red']">
-                    {{ key.is_active ? t('admin.keyActive') : t('admin.keyRevoked') }}
+                  <span :class="['badge', key.is_active ? 'badge-green' : 'badge-muted']">
+                    {{ key.is_active ? t('admin.keyActive') : t('admin.rotatedOut') }}
                   </span>
                 </td>
-                <td class="td-mono">{{ key.queries_total }}</td>
-                <td class="td-mono">{{ key.queries_7d }}</td>
+                <td class="td-mono">{{ key.requests_count }}</td>
                 <td class="td-mono">{{ fmtDateTime(key.last_used_at) }}</td>
-                <td class="td-mono">{{ fmtDateTime(key.last_query_at) }}</td>
+                <td class="td-mono">{{ fmtDateTime(key.created_at) }}</td>
                 <td>
-                  <button
-                    v-if="key.is_active"
-                    class="btn btn-danger btn-sm"
-                    @click="revokeTarget = key"
-                  >
-                    {{ t('admin.revoke') }}
+                  <span v-if="llmTestResults[key.id]" :class="['badge', llmTestResults[key.id].ok ? 'badge-green' : 'badge-red']">
+                    {{ llmTestResults[key.id].ok ? t('admin.keyWorks') : t('admin.keyFails') }}
+                  </span>
+                  <span
+                    v-if="!llmTestResults[key.id]?.ok && llmTestResults[key.id]?.error"
+                    class="doc-error"
+                    :title="llmTestResults[key.id].error"
+                  >{{ llmTestResults[key.id].error }}</span>
+                </td>
+                <td class="llm-row-actions">
+                  <button class="btn btn-ghost btn-sm" :disabled="llmTesting[key.id]" @click="testLlmKey(key)">
+                    {{ llmTesting[key.id] ? '…' : t('admin.testKey') }}
+                  </button>
+                  <button class="btn btn-danger btn-sm" @click="deleteLlmKey(key)">
+                    {{ llmDeleteTarget?.id === key.id ? t('admin.confirmDelete') : t('common.delete') }}
                   </button>
                 </td>
               </tr>
             </tbody>
           </table>
+        </div>
+
+        <div v-if="llmFormOpen" class="modal-overlay" @click.self="llmFormOpen = false">
+          <div class="modal key-modal">
+            <div class="modal-title">{{ t('admin.addLlmKey') }}</div>
+            <div class="modal-sub">{{ t('admin.addLlmKeySub') }}</div>
+            <div class="form-group">
+              <label class="form-label">{{ t('admin.provider') }}</label>
+              <select v-model="llmForm.provider" class="form-input">
+                <option value="moonshot">moonshot (Kimi)</option>
+                <option value="deepseek">deepseek</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">{{ t('admin.keyName') }}</label>
+              <input v-model="llmForm.name" class="form-input" :placeholder="t('admin.keyNamePlaceholder')" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">{{ t('admin.keyValue') }}</label>
+              <input v-model="llmForm.key" type="password" class="form-input" placeholder="sk-…" />
+              <div class="language-hint">{{ t('admin.llmKeyHint') }}</div>
+            </div>
+            <div v-if="llmFormError" class="admin-error">{{ llmFormError }}</div>
+            <div class="form-actions">
+              <button class="btn btn-ghost" :disabled="llmSaving" @click="llmFormOpen = false">
+                {{ t('common.cancel') }}
+              </button>
+              <button
+                class="btn btn-primary"
+                :disabled="llmSaving || !llmForm.name.trim() || llmForm.key.trim().length < 8"
+                @click="saveLlmKey"
+              >
+                {{ llmSaving ? t('settings.validating') : t('common.save') }}
+              </button>
+            </div>
+          </div>
         </div>
       </template>
 
@@ -545,101 +630,21 @@
       </div>
     </div>
 
-    <!-- Create key modal -->
-    <div v-if="createKeyOpen" class="modal-overlay" @click.self="createKeyOpen = false">
-      <div class="modal key-modal">
-        <div class="modal-title">{{ t('admin.createKey') }}</div>
-        <div class="modal-sub">{{ t('admin.createKeySub') }}</div>
-
-        <div class="form-group">
-          <label class="form-label">{{ t('admin.tenant') }}</label>
-          <input
-            v-model="keyForm.tenantId"
-            class="form-input"
-            :placeholder="t('admin.tenantPlaceholder')"
-            @input="onKeyFormTenantInput"
-          />
-        </div>
-        <div class="form-group">
-          <label class="form-label">{{ t('admin.keyName') }}</label>
-          <input
-            v-model="keyForm.name"
-            class="form-input"
-            :placeholder="t('admin.keyNamePlaceholder')"
-          />
-        </div>
-        <div class="form-group">
-          <label class="form-label">{{ t('admin.keyUser') }}</label>
-          <select v-model="keyForm.userId" class="form-input">
-            <option value="">{{ t('admin.noUser') }}</option>
-            <option v-for="user in keyFormUsers" :key="user.id" :value="user.id">
-              {{ user.name }} ({{ user.role }})
-            </option>
-          </select>
-          <div class="language-hint">{{ t('admin.keyUserHint') }}</div>
-        </div>
-
-        <div v-if="createKeyError" class="admin-error">{{ createKeyError }}</div>
-
-        <div class="form-actions">
-          <button class="btn btn-ghost" :disabled="creatingKey" @click="createKeyOpen = false">
-            {{ t('common.cancel') }}
-          </button>
-          <button
-            class="btn btn-primary"
-            :disabled="creatingKey || !keyForm.tenantId.trim() || !keyForm.name.trim()"
-            @click="createKey"
-          >
-            {{ creatingKey ? t('settings.validating') : t('admin.createKey') }}
-          </button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Created key: raw_key shown once -->
-    <div v-if="createdKey" class="modal-overlay" @click.self="createdKey = null">
-      <div class="modal key-modal">
-        <div class="modal-title">{{ t('admin.keyCreated') }}</div>
-        <div class="modal-sub">{{ t('admin.keyCreatedHint') }}</div>
-        <div class="raw-key-row">
-          <code class="raw-key">{{ createdKey.raw_key }}</code>
-          <button class="btn btn-ghost btn-sm" @click="copyRawKey">
-            {{ rawKeyCopied ? t('chat.copied') : t('chat.copy') }}
-          </button>
-        </div>
-        <div class="language-hint">{{ t('admin.keyCreatedWarning') }}</div>
-        <div class="form-actions">
-          <button class="btn btn-primary" @click="createdKey = null">{{ t('common.close') }}</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Revoke confirmation -->
-    <ConfirmModal
-      v-if="revokeTarget"
-      :title="`${revokeTarget.name || revokeTarget.id}`"
-      :heading="t('admin.revokeKeyTitle')"
-      :warning="t('admin.revokeKeyWarning')"
-      :confirm-label="t('admin.revoke')"
-      @confirm="revokeKey"
-      @cancel="revokeTarget = null"
-    />
   </div>
 </template>
 
 <script setup>
 import { ref, computed, watch } from 'vue'
 import { useApi } from '@/composables/useApi'
+import { useSessionStore } from '@/stores/session'
 import { useSettingsStore } from '@/stores/settings'
 import { useI18n } from '@/composables/useI18n'
 import AppIcon from '@/components/AppIcon.vue'
 import TrendChart from '@/components/TrendChart.vue'
-import ConfirmModal from '@/components/ConfirmModal.vue'
 import { formatTokens, formatMs } from '@/utils/analytics'
 import {
   PROMPT_MODES,
   PROMPT_STATUSES,
-  buildCreateKeyPayload,
   buildPromptQueryParams,
   buildQueryTrend,
   buildUsageTrend,
@@ -656,13 +661,14 @@ import {
 
 const { apiAdminFetch } = useApi()
 const settings = useSettingsStore()
+const session = useSessionStore()
 const { t } = useI18n()
 
 const tabs = [
   { id: 'overview', labelKey: 'admin.tabOverview' },
   { id: 'prompts', labelKey: 'admin.tabPrompts' },
   { id: 'users', labelKey: 'admin.tabUsers' },
-  { id: 'keys', labelKey: 'admin.tabKeys' },
+  { id: 'llm', labelKey: 'admin.tabLlm' },
   { id: 'documents', labelKey: 'admin.tabDocuments' },
   { id: 'usage', labelKey: 'admin.tabUsage' },
   { id: 'health', labelKey: 'admin.tabHealth' },
@@ -675,21 +681,25 @@ const error = ref(null)
 const overview = ref(null)
 const tenants = ref([])
 const users = ref(null)
-const keys = ref(null)
-const showRevokedKeys = ref(false)
 const docs = ref(null)
 const usage = ref(null)
 const health = ref(null)
 const detail = ref(null)
 
-const createKeyOpen = ref(false)
-const creatingKey = ref(false)
-const createKeyError = ref('')
-const keyForm = ref({ tenantId: '', name: '', userId: '' })
-const keyFormUsers = ref([])
-const createdKey = ref(null)
-const rawKeyCopied = ref(false)
-const revokeTarget = ref(null)
+
+const llmKeys = ref(null)
+const llmFormOpen = ref(false)
+const llmSaving = ref(false)
+const llmFormError = ref('')
+const llmForm = ref({ provider: 'moonshot', name: '', key: '' })
+const llmDeleteTarget = ref(null)
+
+const userFormOpen = ref(false)
+const userSaving = ref(false)
+const userFormError = ref('')
+const userForm = ref({ email: '', name: '', password: '', role: 'member' })
+const llmTesting = ref({})
+const llmTestResults = ref({})
 
 const filters = ref({ q: '', tenantId: '', mode: '', status: '', days: 30 })
 const prompts = ref(null)
@@ -730,8 +740,82 @@ function loadTenants() {
 function loadUsers() {
   return _call('/admin/users', (data) => { users.value = data })
 }
-function loadKeys() {
-  return _call('/admin/keys', (data) => { keys.value = data })
+function loadLlmKeys() {
+  return _call('/admin/llm-keys', (data) => { llmKeys.value = data })
+}
+
+async function saveUser() {
+  userSaving.value = true
+  userFormError.value = ''
+  try {
+    await apiAdminFetch('/admin/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: userForm.value.email.trim(),
+        name: userForm.value.name.trim(),
+        password: userForm.value.password,
+        role: userForm.value.role,
+      }),
+    })
+    userFormOpen.value = false
+    userForm.value = { email: '', name: '', password: '', role: 'member' }
+    loadUsers()
+  } catch (e) {
+    userFormError.value = e.message
+  } finally {
+    userSaving.value = false
+  }
+}
+
+async function saveLlmKey() {
+  llmSaving.value = true
+  llmFormError.value = ''
+  try {
+    await apiAdminFetch('/admin/llm-keys', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        provider: llmForm.value.provider,
+        name: llmForm.value.name.trim(),
+        key: llmForm.value.key.trim(),
+      }),
+    })
+    llmFormOpen.value = false
+    llmForm.value = { provider: llmForm.value.provider, name: '', key: '' }
+    loadLlmKeys()
+  } catch (e) {
+    llmFormError.value = e.message
+  } finally {
+    llmSaving.value = false
+  }
+}
+
+async function testLlmKey(key) {
+  llmTesting.value = { ...llmTesting.value, [key.id]: true }
+  try {
+    const result = await apiAdminFetch(`/admin/llm-keys/${key.id}/test`, { method: 'POST' })
+    llmTestResults.value = { ...llmTestResults.value, [key.id]: result }
+  } catch (e) {
+    llmTestResults.value = { ...llmTestResults.value, [key.id]: { ok: false, error: e.message } }
+  } finally {
+    llmTesting.value = { ...llmTesting.value, [key.id]: false }
+  }
+}
+
+async function deleteLlmKey(key) {
+  if (llmDeleteTarget.value?.id === key.id) {
+    llmDeleteTarget.value = null
+    try {
+      await apiAdminFetch(`/admin/llm-keys/${key.id}`, { method: 'DELETE' })
+    } catch (e) {
+      error.value = e.message
+    }
+    loadLlmKeys()
+    return
+  }
+  llmDeleteTarget.value = key
+  setTimeout(() => { if (llmDeleteTarget.value?.id === key.id) llmDeleteTarget.value = null }, 3000)
 }
 function loadPrompts() {
   const params = buildPromptQueryParams(filters.value, { limit: 50, offset: promptsOffset.value })
@@ -753,11 +837,11 @@ function loadHealth() {
 }
 
 function load() {
-  if (!settings.hasAdminSecret) return
+  if (!settings.hasAdminSecret && !session.isAdmin) return
   if (activeTab.value === 'overview') { loadOverview(); loadTenants() }
   else if (activeTab.value === 'prompts') loadPrompts()
   else if (activeTab.value === 'users') loadUsers()
-  else if (activeTab.value === 'keys') loadKeys()
+  else if (activeTab.value === 'llm') loadLlmKeys()
   else if (activeTab.value === 'documents') loadDocuments()
   else if (activeTab.value === 'usage') loadUsage()
   else if (activeTab.value === 'health') loadHealth()
@@ -768,7 +852,7 @@ function refresh() {
     overview.value = null; tenants.value = []
   } else if (activeTab.value === 'prompts') prompts.value = null
   else if (activeTab.value === 'users') users.value = null
-  else if (activeTab.value === 'keys') keys.value = null
+  else if (activeTab.value === 'llm') llmKeys.value = null
   else if (activeTab.value === 'documents') docs.value = null
   else if (activeTab.value === 'usage') usage.value = null
   else if (activeTab.value === 'health') health.value = null
@@ -779,87 +863,10 @@ function openPrompt(id) {
   _call(`/admin/prompts/${id}`, (data) => { detail.value = data })
 }
 
-const visibleKeys = computed(() => {
-  if (!keys.value) return []
-  return showRevokedKeys.value ? keys.value : keys.value.filter((k) => k.is_active)
-})
-
-async function openCreateKey(user = null) {
-  createKeyError.value = ''
-  rawKeyCopied.value = false
-  keyForm.value = {
-    tenantId: user?.tenant_id || '',
-    name: user ? `${user.name}-key` : '',
-    userId: user?.id || '',
-  }
-  keyFormUsers.value = []
-  createKeyOpen.value = true
-  if (keyForm.value.tenantId) await refreshKeyFormUsers()
-}
-
-async function refreshKeyFormUsers() {
-  const tenant = keyForm.value.tenantId.trim()
-  if (!tenant) { keyFormUsers.value = []; return }
-  try {
-    keyFormUsers.value = await apiAdminFetch(`/admin/users?tenant_id=${encodeURIComponent(tenant)}`)
-  } catch {
-    keyFormUsers.value = []
-  }
-}
-
-let tenantInputTimer = null
-function onKeyFormTenantInput() {
-  keyForm.value.userId = ''
-  clearTimeout(tenantInputTimer)
-  tenantInputTimer = setTimeout(refreshKeyFormUsers, 400)
-}
-
-async function createKey() {
-  creatingKey.value = true
-  createKeyError.value = ''
-  try {
-    createdKey.value = await apiAdminFetch('/auth/keys', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(buildCreateKeyPayload(keyForm.value)),
-    })
-    createKeyOpen.value = false
-    loadKeys()
-    if (activeTab.value === 'users') loadUsers()
-  } catch (e) {
-    createKeyError.value = e.message
-  } finally {
-    creatingKey.value = false
-  }
-}
-
-async function revokeKey() {
-  const target = revokeTarget.value
-  revokeTarget.value = null
-  if (!target) return
-  try {
-    await apiAdminFetch(`/auth/keys/${target.id}`, { method: 'DELETE' })
-  } catch (e) {
-    error.value = e.message
-  }
-  loadKeys()
-  if (activeTab.value === 'users') loadUsers()
-}
-
-async function copyRawKey() {
-  if (!createdKey.value?.raw_key) return
-  try {
-    await navigator.clipboard.writeText(createdKey.value.raw_key)
-    rawKeyCopied.value = true
-  } catch {
-    rawKeyCopied.value = false
-  }
-}
-
 watch(activeTab, load, { immediate: true })
 watch(usageDays, loadUsage)
 watch(() => settings.adminSecret, () => {
-  overview.value = null; tenants.value = []; users.value = null; keys.value = null
+  overview.value = null; tenants.value = []; users.value = null; llmKeys.value = null
   prompts.value = null; docs.value = null; usage.value = null; health.value = null
   load()
 })
@@ -1176,5 +1183,14 @@ function docBadge(status) {
   .usage-grid { grid-template-columns: 1fr; }
   .prompt-modal { width: calc(100vw - 24px); }
   .secret-pill { display: none; }
+}
+</style>
+
+<style scoped>
+.llm-row-actions {
+  white-space: nowrap;
+}
+.llm-row-actions .btn + .btn {
+  margin-left: 6px;
 }
 </style>

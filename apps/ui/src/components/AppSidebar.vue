@@ -36,6 +36,30 @@
 
     <div class="sidebar-bottom">
       <div
+        v-if="session.isAuthenticated"
+        class="tenant-pill session-pill"
+        :title="session.user?.email || session.displayName"
+      >
+        <div class="tenant-dot session"></div>
+        <div class="tenant-info">
+          <div class="tenant-name">{{ session.displayName }}</div>
+          <div class="tenant-key">
+            {{ session.isAdmin ? t('app.roleAdmin') : t('app.roleMember') }}
+            · {{ session.user?.tenant_id }}
+          </div>
+        </div>
+        <button
+          class="logout-btn"
+          type="button"
+          :aria-label="t('login.logout')"
+          :title="t('login.logout')"
+          @click.stop="session.logout()"
+        >
+          <AppIcon name="stop" :size="12" />
+        </button>
+      </div>
+      <div
+        v-else
         class="tenant-pill"
         @click="$emit('openSettings')"
         :title="settings.isKeyManagedByEnv ? t('app.envKeyTitle') : t('app.changeKeyTitle')"
@@ -54,6 +78,7 @@
 import { computed } from 'vue'
 import { useRoute, RouterLink } from 'vue-router'
 import { useSettingsStore } from '@/stores/settings'
+import { useSessionStore } from '@/stores/session'
 import { useI18n } from '@/composables/useI18n'
 import AppIcon from './AppIcon.vue'
 
@@ -65,6 +90,7 @@ defineEmits(['openSettings', 'toggle'])
 
 const route = useRoute()
 const settings = useSettingsStore()
+const session = useSessionStore()
 const { t } = useI18n()
 
 const dotClass = computed(() => {
@@ -81,15 +107,47 @@ const statusLabel = computed(() => {
   return t('app.connected')
 })
 
-const nav = computed(() => [
-  { path: '/chat', label: t('app.agent'), icon: 'chat' },
-  { path: '/documents', label: t('app.knowledgeBase'), icon: 'docs' },
-  { path: '/notebooks', label: t('app.notebooks'), icon: 'docs' },
-  { path: '/analytics', label: t('app.analytics'), icon: 'analytics' },
-  { path: '/admin', label: t('app.adminPanel'), icon: 'shield' },
-])
+// The admin cabinet link appears only for admins (Google session role or
+// the classic admin secret configured in settings).
+const showAdmin = computed(() => session.isAdmin || settings.hasAdminSecret)
+
+const nav = computed(() => {
+  const items = [
+    { path: '/chat', label: t('app.agent'), icon: 'chat' },
+    { path: '/documents', label: t('app.knowledgeBase'), icon: 'docs' },
+    { path: '/notebooks', label: t('app.notebooks'), icon: 'docs' },
+    { path: '/analytics', label: t('app.analytics'), icon: 'analytics' },
+  ]
+  if (showAdmin.value) {
+    items.push({ path: '/admin', label: t('app.adminPanel'), icon: 'shield' })
+  }
+  return items
+})
 
 function isNavActive(path) {
   return route.path === path || route.path.startsWith(`${path}/`)
 }
 </script>
+
+<style scoped>
+.session-pill {
+  cursor: default;
+}
+.tenant-dot.session {
+  background: var(--green);
+}
+.logout-btn {
+  margin-left: auto;
+  padding: 5px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  line-height: 0;
+}
+.logout-btn:hover {
+  background: var(--s3);
+  color: var(--red);
+}
+</style>

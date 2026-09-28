@@ -10,13 +10,17 @@ app.admin_read flag enables the FOR SELECT RLS policies (migration 0019).
 from __future__ import annotations
 
 import asyncio
+import logging
 import uuid
 from datetime import timedelta
 from typing import Any
 
-from fastapi import APIRouter, Header, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from openai import AsyncOpenAI
 from packages.analytics.clickhouse import ch_client
+from packages.auth import hash_password
 from packages.core import settings
+from packages.llm.keyring import refresh_from_db as refresh_keyring
 from packages.storage import (
     AgentQueryLog,
     ApiKey,
@@ -25,13 +29,17 @@ from packages.storage import (
     Chunk,
     Document,
     DocumentStatus,
+    LlmApiKey,
     Notebook,
     User,
 )
 from packages.storage.db import admin_session
 from sqlalchemy import TextClause, func, or_, select, text
+from sqlalchemy import delete as sa_delete
+from sqlalchemy import update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from apps.api.deps import AdminDep
 from apps.api.routers.health import _CHECK_NAMES, _run_check
 from apps.api.schemas import (
     AdminDailyQueries,
@@ -52,19 +60,20 @@ from apps.api.schemas import (
     AdminUsageResponse,
     AdminUsageTotals,
     AdminUserInfo,
+    CreateAdminUserRequest,
+    CreateLlmKeyRequest,
+    LlmKeyInfo,
 )
+from apps.api.services.auth_rate_limit import enforce_admin_rate_limit
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(enforce_admin_rate_limit)])
+
+log = logging.getLogger(__name__)
 
 _OVERVIEW_DAILY_DAYS = 14
 _ANSWER_PREVIEW_CHARS = 240
 _MAX_TENANTS = 500
 _MAX_USERS = 500
-
-
-def _require_admin(x_admin_secret: str) -> None:
-    if x_admin_secret != settings.admin_secret:
-        raise HTTPException(status_code=403, detail="invalid admin secret")
 
 
 def _scalar(value: Any) -> int:
@@ -95,11 +104,9 @@ def _status_name(value: Any) -> str:
 
 @router.get("/admin/overview", response_model=AdminOverviewResponse)
 async def admin_overview(
-    x_admin_secret: str = Header(..., alias="X-Admin-Secret"),
+    _principal: AdminDep,
 ) -> AdminOverviewResponse:
     """Deployment-wide counters plus the last two weeks of query activity."""
-    _require_admin(x_admin_secret)
-
     async with admin_session() as db:
         tenants = _scalar(
             (
@@ -202,11 +209,9 @@ async def _tenant_group_counts(db: AsyncSession, statement: TextClause) -> dict[
 
 @router.get("/admin/tenants", response_model=list[AdminTenantSummary])
 async def admin_tenants(
-    x_admin_secret: str = Header(..., alias="X-Admin-Secret"),
+    _principal: AdminDep,
 ) -> list[AdminTenantSummary]:
     """Per-tenant activity: documents, chunks, sessions and 7-day query volume."""
-    _require_admin(x_admin_secret)
-
     async with admin_session() as db:
         users = await _tenant_group_counts(
             db, text("SELECT tenant_id, count(*) FROM users GROUP BY tenant_id")
@@ -256,12 +261,10 @@ async def admin_tenants(
 
 @router.get("/admin/users", response_model=list[AdminUserInfo])
 async def admin_users(
-    x_admin_secret: str = Header(..., alias="X-Admin-Secret"),
+    _principal: AdminDep,
     tenant_id: str | None = Query(default=None, max_length=64),
 ) -> list[AdminUserInfo]:
     """All users across tenants with key counts and query-log activity."""
-    _require_admin(x_admin_secret)
-
     async with admin_session() as db:
         users_stmt = select(User).order_by(User.created_at.desc()).limit(_MAX_USERS)
         if tenant_id:
@@ -300,6 +303,8 @@ async def admin_users(
                 id=str(user.id),
                 tenant_id=user.tenant_id,
                 name=user.name,
+                email=user.email,
+                has_password=bool(user.password_hash),
                 role=user.role,
                 created_at=user.created_at,
                 keys=keys,
@@ -312,18 +317,57 @@ async def admin_users(
     return items
 
 
+# ── User accounts (admin-managed) ────────────────────────────────────────────
+
+
+@router.post("/admin/users", response_model=AdminUserInfo, status_code=201)
+async def admin_create_user(body: CreateAdminUserRequest, _principal: AdminDep) -> AdminUserInfo:
+    """Create a full login account (email+password) with an explicit role.
+
+    Unlike open registration this can mint admins directly; the panel is
+    the only surface for that.
+    """
+    email = body.email.lower().strip()
+    async with admin_session() as db:
+        existing = (await db.execute(select(User).where(User.email == email))).scalar_one_or_none()
+        if existing is not None:
+            raise HTTPException(status_code=409, detail="email is already registered")
+        user = User(
+            id=uuid.uuid4(),
+            tenant_id=settings.default_tenant_id,
+            name=body.name.strip() or email.split("@")[0],
+            email=email,
+            password_hash=hash_password(body.password),
+            role=body.role,
+        )
+        db.add(user)
+    log.info("admin created user | email=%s role=%s", email, body.role)
+    return AdminUserInfo(
+        id=str(user.id),
+        tenant_id=user.tenant_id,
+        name=user.name,
+        email=user.email,
+        has_password=True,
+        role=user.role,
+        created_at=user.created_at,
+        keys=0,
+        active_keys=0,
+        queries_total=0,
+        queries_7d=0,
+        last_query_at=None,
+    )
+
+
 # ── API keys (access control + activity) ─────────────────────────────────────
 
 
 @router.get("/admin/keys", response_model=list[AdminKeyInfo])
 async def admin_keys(
-    x_admin_secret: str = Header(..., alias="X-Admin-Secret"),
+    _principal: AdminDep,
     tenant_id: str | None = Query(default=None, max_length=64),
 ) -> list[AdminKeyInfo]:
     """All API keys with their request activity (creation/revocation stay on
     POST /auth/keys and DELETE /auth/keys/{id} — same admin secret)."""
-    _require_admin(x_admin_secret)
-
     async with admin_session() as db:
         keys_stmt = (
             select(ApiKey, User.name)
@@ -407,7 +451,7 @@ def _prompt_item(row: AgentQueryLog, *, preview_only: bool) -> dict[str, object]
 
 @router.get("/admin/prompts", response_model=AdminPromptListResponse)
 async def admin_prompts(
-    x_admin_secret: str = Header(..., alias="X-Admin-Secret"),
+    _principal: AdminDep,
     tenant_id: str | None = Query(default=None, max_length=64),
     user_id: uuid.UUID | None = None,
     mode: str | None = Query(default=None, pattern="^(stream|run|research)$"),
@@ -418,8 +462,6 @@ async def admin_prompts(
     offset: int = Query(default=0, ge=0),
 ) -> AdminPromptListResponse:
     """Paginated agent query log with filters — the "who asked what" feed."""
-    _require_admin(x_admin_secret)
-
     filters = [
         AgentQueryLog.created_at >= func.now() - timedelta(days=days),
     ]
@@ -459,11 +501,9 @@ async def admin_prompts(
 @router.get("/admin/prompts/{log_id}", response_model=AdminPromptDetail)
 async def admin_prompt_detail(
     log_id: uuid.UUID,
-    x_admin_secret: str = Header(..., alias="X-Admin-Secret"),
+    _principal: AdminDep,
 ) -> AdminPromptDetail:
     """Full log entry: complete answer, retrieval query, cost breakdown."""
-    _require_admin(x_admin_secret)
-
     async with admin_session() as db:
         row = (
             await db.execute(select(AgentQueryLog).where(AgentQueryLog.id == log_id))
@@ -478,7 +518,7 @@ async def admin_prompt_detail(
 
 @router.get("/admin/documents", response_model=AdminDocumentListResponse)
 async def admin_documents(
-    x_admin_secret: str = Header(..., alias="X-Admin-Secret"),
+    _principal: AdminDep,
     tenant_id: str | None = Query(default=None, max_length=64),
     status: str | None = Query(default=None, pattern="^(pending|processing|done|failed)$"),
     q: str | None = Query(default=None, max_length=256),
@@ -486,8 +526,6 @@ async def admin_documents(
     offset: int = Query(default=0, ge=0),
 ) -> AdminDocumentListResponse:
     """All documents across tenants — ingestion failures and progress at a glance."""
-    _require_admin(x_admin_secret)
-
     filters = []
     if tenant_id:
         filters.append(Document.tenant_id == tenant_id)
@@ -539,12 +577,10 @@ async def admin_documents(
 
 @router.get("/admin/usage", response_model=AdminUsageResponse)
 async def admin_usage(
-    x_admin_secret: str = Header(..., alias="X-Admin-Secret"),
+    _principal: AdminDep,
     days: int = Query(default=7, ge=1, le=90),
 ) -> AdminUsageResponse:
     """LLM cost/token usage across all tenants, models and days."""
-    _require_admin(x_admin_secret)
-
     by_tenant_sql = """
         SELECT
             tenant_id,
@@ -640,12 +676,125 @@ async def admin_usage(
 @router.get("/admin/health", response_model=AdminHealthResponse)
 async def admin_health(
     request: Request,
-    x_admin_secret: str = Header(..., alias="X-Admin-Secret"),
+    _principal: AdminDep,
 ) -> AdminHealthResponse:
     """Fresh dependency checks (postgres, redis, clickhouse, minio, temporal)."""
-    _require_admin(x_admin_secret)
-
     results = await asyncio.gather(*(_run_check(name, request) for name in _CHECK_NAMES))
     checks = dict(results)
     ready = all(status == "ok" for status in checks.values())
     return AdminHealthResponse(status="ok" if ready else "unavailable", checks=checks)
+
+
+# ── LLM provider keys (admin only) ───────────────────────────────────────────
+
+
+def _mask_key(value: str) -> str:
+    if len(value) <= 8:
+        return "••••"
+    return f"{value[:3]}…{value[-4:]}"
+
+
+@router.get("/admin/llm-keys", response_model=list[LlmKeyInfo])
+async def admin_llm_keys(_principal: AdminDep) -> list[LlmKeyInfo]:
+    """Provider API keys with usage counters — values are masked."""
+    async with admin_session() as db:
+        rows = (
+            (
+                await db.execute(
+                    select(LlmApiKey).order_by(LlmApiKey.provider, LlmApiKey.created_at.desc())
+                )
+            )
+            .scalars()
+            .all()
+        )
+    return [
+        LlmKeyInfo(
+            id=str(row.id),
+            provider=row.provider,
+            name=row.name,
+            key_preview=_mask_key(row.key_value),
+            is_active=row.is_active,
+            requests_count=row.requests_count,
+            last_used_at=row.last_used_at,
+            created_at=row.created_at,
+        )
+        for row in rows
+    ]
+
+
+@router.post("/admin/llm-keys", response_model=LlmKeyInfo, status_code=201)
+async def admin_create_llm_key(body: CreateLlmKeyRequest, _principal: AdminDep) -> LlmKeyInfo:
+    """Add a provider key. It becomes THE active key; previous keys of the
+    same provider are rotated out (kept for history/activity)."""
+    row = LlmApiKey(
+        id=uuid.uuid4(),
+        provider=body.provider,
+        name=body.name.strip(),
+        key_value=body.key.strip(),
+    )
+    async with admin_session() as db:
+        await db.execute(
+            sa_update(LlmApiKey)
+            .where(LlmApiKey.provider == body.provider, LlmApiKey.is_active.is_(True))
+            .values(is_active=False)
+        )
+        db.add(row)
+    await refresh_keyring()
+    log.info("llm key added | provider=%s name=%s", body.provider, row.name)
+    return LlmKeyInfo(
+        id=str(row.id),
+        provider=row.provider,
+        name=row.name,
+        key_preview=_mask_key(row.key_value),
+        is_active=True,
+        requests_count=0,
+        last_used_at=None,
+        created_at=row.created_at,
+    )
+
+
+@router.post("/admin/llm-keys/{key_id}/test")
+async def admin_test_llm_key(key_id: uuid.UUID, _principal: AdminDep) -> dict[str, object]:
+    """Make a tiny real call with the stored key — proves it works.
+
+    Answers the classic 'I added a key, why is nothing happening' without
+    guessing: ok=true means the provider accepted THIS key.
+    """
+    async with admin_session() as db:
+        row = (
+            await db.execute(select(LlmApiKey).where(LlmApiKey.id == key_id))
+        ).scalar_one_or_none()
+        if row is None:
+            raise HTTPException(status_code=404, detail="llm key not found")
+
+    base_url = {
+        "moonshot": "https://api.moonshot.ai/v1",
+        "deepseek": "https://api.deepseek.com",
+    }.get(row.provider)
+    model = "kimi-k2.6" if row.provider == "moonshot" else "deepseek-chat"
+    if base_url is None:
+        return {"ok": False, "error": f"unknown provider {row.provider}"}
+
+    try:
+        client = AsyncOpenAI(base_url=base_url, api_key=row.key_value, timeout=20.0)
+        await client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": "ping"}],
+            max_tokens=5,
+        )
+        return {"ok": True, "model": model}
+    except Exception as e:  # provider errors are the point of this endpoint
+        return {"ok": False, "error": str(e)[:300], "model": model}
+
+
+@router.delete("/admin/llm-keys/{key_id}", status_code=204)
+async def admin_delete_llm_key(key_id: uuid.UUID, _principal: AdminDep) -> None:
+    """Remove a provider key; if it was active, the env fallback takes over."""
+    async with admin_session() as db:
+        row = (
+            await db.execute(select(LlmApiKey).where(LlmApiKey.id == key_id))
+        ).scalar_one_or_none()
+        if row is None:
+            raise HTTPException(status_code=404, detail="llm key not found")
+        await db.execute(sa_delete(LlmApiKey).where(LlmApiKey.id == key_id))
+    await refresh_keyring()

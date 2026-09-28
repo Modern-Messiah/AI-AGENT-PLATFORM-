@@ -1,8 +1,9 @@
 # AI Agent Platform
 
 Self-hosted AI knowledge-base assistant with document ingestion, OCR/Vision processing,
-RAG search, streaming chat, notebooks, tenant-scoped API keys, usage analytics, and
-durable background workflows.
+RAG search, streaming chat, notebooks, usage analytics, durable background workflows,
+email/Google sign-in with separate user and admin cabinets, and a full admin panel
+(users, tenant API keys, LLM provider keys, prompt log, spend, service health).
 
 The project is designed for private/local deployments and small self-hosted teams
 rather than public SaaS scale. It currently targets the 1-20 user range.
@@ -205,21 +206,41 @@ ai-agent-platform/
 
 ## API Overview
 
-Most endpoints require:
+Users sign in at `/login` with **email + password** (open registration by
+default; `ADMIN_EMAILS` accounts get the admin cabinet) or optionally via
+Google. Sessions are short-lived JWTs sent as `Authorization: Bearer`.
+
+Most endpoints accept either credential:
 
 ```http
 X-API-Key: <tenant-api-key>
+Authorization: Bearer <session-jwt>   # Google login (see below)
 ```
 
-Admin key creation requires:
+Admin endpoints (/admin/*, key/user management) accept an admin-role
+session or:
 
 ```http
 X-Admin-Secret: <ADMIN_SECRET>
 ```
 
+### Google login (user/admin cabinets)
+
+Set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` (OAuth Web credentials with
+redirect URI `<API base>/auth/google/callback`), `AUTH_JWT_SECRET`
+(`openssl rand -hex 32`), `ADMIN_EMAILS` and `AUTH_ALLOWED_EMAILS` in `.env`.
+Sign-in is allowlist-only: nobody can register just by having a Google
+account, and an empty allowlist disables Google login entirely. The UI then offers
+"Sign in with Google" at `/login`: emails in `ADMIN_EMAILS` land in the
+admin cabinet, everyone else in the user cabinet of `DEFAULT_TENANT_ID`.
+Without these variables the login page degrades to the API-key path.
+
 | Method | Path | Purpose |
 |---|---|---|
 | `GET` | `/health` | API health check |
+| `POST` | `/auth/register` | Email+password signup, issues a session |
+| `POST` | `/auth/login` | Email+password sign-in |
+| `POST` | `/auth/password` | Change own password (session) |
 | `POST` | `/auth/keys` | Create a tenant API key |
 | `POST` | `/agent/stream` | Interactive SSE chat with streamed tokens |
 | `POST` | `/agent/run` | Temporal-backed agent run, optionally with human approval |
@@ -249,8 +270,9 @@ X-Admin-Secret: <ADMIN_SECRET>
 | `GET` | `/analytics/usage` | Aggregate LLM usage from ClickHouse |
 | `GET` | `/admin/overview` | Deployment-wide counters (X-Admin-Secret) |
 | `GET` | `/admin/tenants` | Per-tenant activity summary |
-| `GET` | `/admin/users` | Users across tenants with key/query stats |
-| `GET` | `/admin/keys` | API keys with request activity (create/revoke via `/auth/keys`) |
+| `GET`/`POST` | `/admin/users` | User list with stats; create accounts with role |
+| `GET` | `/admin/keys` | Tenant API keys with request activity |
+| `GET`/`POST`/`DELETE` | `/admin/llm-keys` | LLM provider keys: rotation, activity, one-click test |
 | `GET` | `/admin/prompts` | Agent query log feed (who asked what, with which key) |
 | `GET` | `/admin/prompts/{id}` | Full query log entry with answer |
 | `GET` | `/admin/documents` | Cross-tenant document health |
@@ -276,7 +298,13 @@ Important variables:
 | `LANGFUSE_NEXTAUTH_SECRET`, `LANGFUSE_SALT`, `LANGFUSE_ENCRYPTION_KEY` | yes for Langfuse | Generate locally with `openssl rand` |
 | `MOONSHOT_API_KEY` | yes for Kimi | Main/vision provider key |
 | `DEEPSEEK_API_KEY` | optional but expected | Weak/cheap model provider key |
-| `ADMIN_SECRET` | yes | Protects `POST /auth/keys` |
+| `ADMIN_SECRET` | yes | Protects admin surface and key issuance |
+| `AUTH_JWT_SECRET` | for login | `openssl rand -hex 32` — signs session JWTs |
+| `ADMIN_EMAILS` | for login | Emails that get the admin cabinet |
+| `AUTH_ALLOWED_EMAILS` | no | Signup allowlist when `OPEN_REGISTRATION=false` |
+| `OPEN_REGISTRATION` | no | `true` (default): anyone can register as a member |
+| `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` | for Google | OAuth Web credentials |
+| `DEFAULT_TENANT_ID` | no | Tenant for logged-in users (`main`) |
 | `VITE_API_BASE_URL` | optional | Defaults to `/api` for the Docker UI |
 | `VITE_API_KEY` | optional | Local/private convenience only; bundled into the browser build |
 | `APP_ENV` | optional | `local` by default; non-local rejects default admin secret and wildcard CORS |
@@ -471,10 +499,16 @@ Current guardrails:
 - Upload size limits are enforced.
 - Agent prompt length and per-minute request limits are enforced.
 - Protected visual assets are served through the API instead of direct MinIO URLs.
-- The admin panel (`/admin` UI + `/admin/*` API) is gated by `X-Admin-Secret`.
-  Cross-tenant reads go through read-only RLS policies enabled by a
-  session-local flag — writes stay tenant-scoped. The query log stores
-  prompts and answers, so the admin secret must be treated as sensitive.
+- Sign-in is allowlist-free by default (`OPEN_REGISTRATION=true`); set it to
+  `false` to restrict signup to `ADMIN_EMAILS` + `AUTH_ALLOWED_EMAILS`.
+- Session JWTs expire (12h); deleting a user revokes their sessions at once.
+- LLM provider keys added in the admin panel are stored server-side, never
+  returned (masked previews only) and managed exclusively by admins.
+- The admin panel (`/admin` UI + `/admin/*` API) is gated by an admin session
+  or `X-Admin-Secret`; /auth/* and /admin/* are IP rate-limited, and the
+  secret comparison is constant-time. Cross-tenant reads go through
+  read-only RLS policies — writes stay tenant-scoped. The query log stores
+  prompts and answers, so admin credentials must be treated as sensitive.
 
 Known limitations:
 

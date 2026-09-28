@@ -3,6 +3,7 @@ import { ref, computed, watch } from 'vue'
 import { resolveApiConfig } from '@/utils/apiConfig'
 import { normalizeLocale, translate } from '@/i18n'
 import { applyTheme, AUTO_THEME, DEFAULT_THEME, normalizeTheme, persistTheme } from '@/utils/theme'
+import { useSessionStore } from '@/stores/session'
 
 export const useSettingsStore = defineStore('settings', () => {
   const apiKey = ref('')
@@ -107,7 +108,10 @@ export const useSettingsStore = defineStore('settings', () => {
   const adminMasked  = computed(() => (
     adminSecret.value ? `…${adminSecret.value.slice(-4)}` : translate(locale.value, 'settings.notSet')
   ))
-  const isConnected  = computed(() => !!apiKey.value)
+  // Session (email/Google login) counts as connected: the whole user
+  // cabinet gates on this flag, not just the legacy API-key path.
+  const _session = useSessionStore()
+  const isConnected  = computed(() => !!apiKey.value || _session.isAuthenticated)
   const hasAdminSecret = computed(() => !!adminSecret.value)
   const isAdminInvalid = computed(() => adminStatus.value === 'invalid')
   const isKeyInvalid = computed(() => keyStatus.value === 'invalid')
