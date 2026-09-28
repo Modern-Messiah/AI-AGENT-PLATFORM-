@@ -27,7 +27,7 @@ from urllib.parse import quote, urlencode, urlparse
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse
-from packages.auth import Actor, require_actor
+from packages.auth import Actor, hash_password, require_actor, verify_password
 from packages.auth.jwt_sessions import (
     AuthConfigError,
     create_oauth_state,
@@ -41,7 +41,14 @@ from packages.storage import User
 from packages.storage.db import async_session
 from sqlalchemy import select
 
-from apps.api.schemas import GoogleLoginUrlResponse, SessionInfo
+from apps.api.schemas import (
+    EmailLoginRequest,
+    EmailLoginResponse,
+    GoogleLoginUrlResponse,
+    PasswordChangeRequest,
+    RegisterRequest,
+    SessionInfo,
+)
 from apps.api.services.auth_rate_limit import enforce_auth_rate_limit
 
 log = logging.getLogger(__name__)
@@ -220,3 +227,113 @@ async def whoami(actor: Annotated[Actor, Depends(require_actor)]) -> SessionInfo
         role=actor.role,
         is_admin=actor.is_admin,
     )
+
+
+# ── Email + password authentication ─────────────────────────────────────────
+
+
+def _email_login_enabled() -> bool:
+    """Email login needs the JWT secret and an explicit allowlist."""
+    return bool(settings.auth_jwt_secret and login_allowed_emails())
+
+
+def _role_for(email: str) -> str:
+    return "admin" if email in settings.admin_emails else "member"
+
+
+def _session_response(user: User, role: str) -> EmailLoginResponse:
+    token = create_session_token(
+        user_id=user.id,
+        tenant_id=user.tenant_id,
+        email=str(user.email),
+        name=user.name,
+        role=role,
+    )
+    return EmailLoginResponse(
+        token=token,
+        tenant_id=user.tenant_id,
+        user_id=str(user.id),
+        user_name=user.name,
+        email=str(user.email),
+        role=role,
+        is_admin=role == "admin",
+    )
+
+
+@router.post("/auth/register", response_model=EmailLoginResponse, status_code=201)
+async def register(body: RegisterRequest) -> EmailLoginResponse:
+    """Create an email+password account and sign in immediately.
+
+    Registration follows the same allowlist as Google login: only
+    AUTH_ALLOWED_EMAILS / ADMIN_EMAILS may create accounts; an empty
+    allowlist keeps registration closed.
+    """
+    if not _email_login_enabled():
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "email login is not configured: set AUTH_JWT_SECRET and "
+                "AUTH_ALLOWED_EMAILS (or ADMIN_EMAILS) in .env"
+            ),
+        )
+    email = body.email.lower().strip()
+    if email not in login_allowed_emails():
+        raise HTTPException(status_code=403, detail="this email is not allowed to register")
+
+    async with async_session() as s, s.begin():
+        existing = (await s.execute(select(User).where(User.email == email))).scalar_one_or_none()
+        if existing is not None:
+            raise HTTPException(status_code=409, detail="email is already registered")
+        user = User(
+            id=uuid.uuid4(),
+            tenant_id=settings.default_tenant_id,
+            name=body.name.strip() or email.split("@")[0],
+            email=email,
+            password_hash=hash_password(body.password),
+            role=_role_for(email),
+        )
+        s.add(user)
+
+    log.info("email register | tenant=%s email=%s role=%s", user.tenant_id, email, user.role)
+    return _session_response(user, user.role)
+
+
+@router.post("/auth/login", response_model=EmailLoginResponse)
+async def login(body: EmailLoginRequest) -> EmailLoginResponse:
+    """Sign in with email + password; issues the same session JWT as Google."""
+    if not settings.auth_jwt_secret:
+        raise HTTPException(status_code=503, detail="email login is not configured")
+    email = body.email.lower().strip()
+
+    async with async_session() as s:
+        user = (await s.execute(select(User).where(User.email == email))).scalar_one_or_none()
+
+    # Uniform error: never reveal whether the email exists.
+    if user is None or not verify_password(body.password, user.password_hash):
+        raise HTTPException(status_code=401, detail="invalid email or password")
+
+    # ADMIN_EMAILS stays authoritative across logins.
+    role = _role_for(email)
+    if user.role != role:
+        async with async_session() as s, s.begin():
+            user.role = role
+            s.add(user)
+
+    log.info("email login | tenant=%s email=%s role=%s", user.tenant_id, email, role)
+    return _session_response(user, role)
+
+
+@router.post("/auth/password", status_code=204)
+async def change_password(
+    body: PasswordChangeRequest, actor: Annotated[Actor, Depends(require_actor)]
+) -> None:
+    """Set a new password for the signed-in account (session path only)."""
+    if actor.user_id is None:
+        raise HTTPException(status_code=403, detail="password is not available for API keys")
+    async with async_session() as s, s.begin():
+        user = (await s.execute(select(User).where(User.id == actor.user_id))).scalar_one_or_none()
+        if user is None:
+            raise HTTPException(status_code=404, detail="user not found")
+        user.password_hash = hash_password(body.new_password)
+        s.add(user)
+    return None
