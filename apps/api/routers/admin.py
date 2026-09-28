@@ -17,6 +17,8 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from packages.analytics.clickhouse import ch_client
+from packages.auth import hash_password
+from packages.core import settings
 from packages.llm.keyring import refresh_from_db as refresh_keyring
 from packages.storage import (
     AgentQueryLog,
@@ -57,6 +59,7 @@ from apps.api.schemas import (
     AdminUsageResponse,
     AdminUsageTotals,
     AdminUserInfo,
+    CreateAdminUserRequest,
     CreateLlmKeyRequest,
     LlmKeyInfo,
 )
@@ -299,6 +302,8 @@ async def admin_users(
                 id=str(user.id),
                 tenant_id=user.tenant_id,
                 name=user.name,
+                email=user.email,
+                has_password=bool(user.password_hash),
                 role=user.role,
                 created_at=user.created_at,
                 keys=keys,
@@ -309,6 +314,47 @@ async def admin_users(
             )
         )
     return items
+
+
+# ── User accounts (admin-managed) ────────────────────────────────────────────
+
+
+@router.post("/admin/users", response_model=AdminUserInfo, status_code=201)
+async def admin_create_user(body: CreateAdminUserRequest, _principal: AdminDep) -> AdminUserInfo:
+    """Create a full login account (email+password) with an explicit role.
+
+    Unlike open registration this can mint admins directly; the panel is
+    the only surface for that.
+    """
+    email = body.email.lower().strip()
+    async with admin_session() as db:
+        existing = (await db.execute(select(User).where(User.email == email))).scalar_one_or_none()
+        if existing is not None:
+            raise HTTPException(status_code=409, detail="email is already registered")
+        user = User(
+            id=uuid.uuid4(),
+            tenant_id=settings.default_tenant_id,
+            name=body.name.strip() or email.split("@")[0],
+            email=email,
+            password_hash=hash_password(body.password),
+            role=body.role,
+        )
+        db.add(user)
+    log.info("admin created user | email=%s role=%s", email, body.role)
+    return AdminUserInfo(
+        id=str(user.id),
+        tenant_id=user.tenant_id,
+        name=user.name,
+        email=user.email,
+        has_password=True,
+        role=user.role,
+        created_at=user.created_at,
+        keys=0,
+        active_keys=0,
+        queries_total=0,
+        queries_7d=0,
+        last_query_at=None,
+    )
 
 
 # ── API keys (access control + activity) ─────────────────────────────────────
