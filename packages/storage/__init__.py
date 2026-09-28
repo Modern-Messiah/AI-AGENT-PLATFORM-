@@ -1,5 +1,6 @@
 from packages.storage.db import async_session, engine
 from packages.storage.models import (
+    AgentQueryLog,
     ApiKey,
     Base,
     ChatMessage,
@@ -16,6 +17,7 @@ from packages.storage.models import (
 from packages.storage.object_store import object_store
 
 __all__ = [
+    "AgentQueryLog",
     "ApiKey",
     "Base",
     "ChatMessage",

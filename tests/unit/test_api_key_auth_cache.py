@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import uuid
 from types import SimpleNamespace
 
 import pytest
@@ -38,16 +39,17 @@ class FakeSession:
         if statement_text.startswith("SELECT"):
             self.factory.select_count += 1
             await asyncio.sleep(0)
-            return FakeResult((SimpleNamespace(tenant_id="tenant-a"), None))
+            return FakeResult(self.factory.select_row)
         self.factory.update_count += 1
         return FakeResult()
 
 
 class FakeSessionFactory:
-    def __init__(self) -> None:
+    def __init__(self, select_row: object | None = None) -> None:
         self.execute_count = 0
         self.select_count = 0
         self.update_count = 0
+        self.select_row = select_row or (SimpleNamespace(tenant_id="tenant-a"), None, None, None)
 
     def __call__(self) -> FakeSession:
         return FakeSession(self)
@@ -78,3 +80,35 @@ async def test_require_tenant_returns_401_for_missing_api_key(monkeypatch) -> No
     assert exc_info.value.status_code == 401
     assert exc_info.value.detail == "missing API key"
     assert factory.execute_count == 0
+
+
+async def test_require_actor_resolves_key_owner_identity(monkeypatch) -> None:
+    api_keys._AUTH_CACHE.clear()
+    api_keys._AUTH_LOCKS.clear()
+    user_id = uuid.uuid4()
+    factory = FakeSessionFactory()
+    factory.select_row = (SimpleNamespace(tenant_id="tenant-a"), user_id, "member", "alice")
+    monkeypatch.setattr(api_keys, "async_session", factory)
+
+    actor = await api_keys.require_actor("raw-test-key")
+
+    assert actor.tenant_id == "tenant-a"
+    assert actor.role == "member"
+    assert actor.user_id == user_id
+    assert actor.user_name == "alice"
+
+
+async def test_require_actor_caches_identity_with_the_tenant(monkeypatch) -> None:
+    api_keys._AUTH_CACHE.clear()
+    api_keys._AUTH_LOCKS.clear()
+    user_id = uuid.uuid4()
+    factory = FakeSessionFactory()
+    factory.select_row = (SimpleNamespace(tenant_id="tenant-b"), user_id, "admin", "bob")
+    monkeypatch.setattr(api_keys, "async_session", factory)
+
+    await api_keys.require_actor("raw-test-key")
+    actor = await api_keys.require_actor("raw-test-key")
+
+    assert actor.user_id == user_id
+    assert actor.user_name == "bob"
+    assert factory.select_count == 1
