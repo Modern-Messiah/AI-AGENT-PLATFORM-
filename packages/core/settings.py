@@ -108,6 +108,26 @@ class Settings(BaseSettings):
     # Protect POST /auth/keys — change before deploying.
     admin_secret: str = _DEFAULT_ADMIN_SECRET
 
+    # ── Google OAuth login + JWT sessions ────────────────────────────────────
+    # "Sign in with Google" for the user/admin cabinets. All four values must
+    # be set for the login flow to be enabled; when anything is missing the
+    # /auth/google/* endpoints answer 503 and the UI falls back to the raw
+    # API-key path.
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    # HMAC secret for our own session tokens (openssl rand -hex 32).
+    auth_jwt_secret: str = ""
+    # Public base URL of the API as Google sees it, for building the OAuth
+    # redirect_uri (must be registered in Google Cloud Console). Empty =
+    # derive from the incoming request. Example: https://host/api
+    oauth_api_base_url: str = ""
+    # Hours before a session token expires; users re-login afterwards.
+    auth_session_ttl_hours: int = 12
+    # Comma-separated Google emails that get the admin cabinet on login.
+    admin_emails: Annotated[list[str], NoDecode] = []
+    # Tenant every Google-logged-in user belongs to (single-deployment model).
+    default_tenant_id: str = "main"
+
     # Opt-in: run arbitrary Python (disabled by default — see code_exec.py).
     enable_code_exec: bool = False
     # Docker sandbox for code_exec: image like "python:3.12-slim". Empty =
@@ -136,6 +156,15 @@ class Settings(BaseSettings):
     # When empty, all origins are allowed only in local dev; set explicit origins
     # in non-local environments. Wildcard origins are rejected outside local.
     allowed_origins: Annotated[list[str], NoDecode] = []
+
+    @field_validator("admin_emails", mode="before")
+    @classmethod
+    def _parse_admin_emails(cls, v: object) -> object:
+        if isinstance(v, str):
+            return [e.strip().lower() for e in v.split(",") if e.strip()]
+        if isinstance(v, list):
+            return [str(e).strip().lower() for e in v if str(e).strip()]
+        return v
 
     @field_validator("http_fetch_allowed_domains", "allowed_origins", mode="before")
     @classmethod

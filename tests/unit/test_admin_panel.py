@@ -16,15 +16,19 @@ import pytest
 from apps.api.main import app
 from apps.api.routers import admin as admin_router
 from fastapi import HTTPException
+from packages.auth import Actor, AdminPrincipal, require_admin_principal
+from packages.auth.jwt_sessions import create_session_token
 from packages.core import settings
 from packages.storage import AgentQueryLog, DocumentStatus
 
 SECRET = "unit-test-admin-secret"
+_SECRET_PRINCIPAL = AdminPrincipal(via="secret", actor=None)
 
 
 @pytest.fixture(autouse=True)
 def _admin_secret(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "admin_secret", SECRET)
+    monkeypatch.setattr(settings, "auth_jwt_secret", "unit-test-jwt-secret")
 
 
 def test_admin_routes_are_registered() -> None:
@@ -44,24 +48,45 @@ def test_admin_routes_are_registered() -> None:
     assert ("/admin/health", "GET") in routes
 
 
-@pytest.mark.parametrize(
-    "endpoint",
-    [
-        lambda: admin_router.admin_overview(x_admin_secret="wrong"),
-        lambda: admin_router.admin_tenants(x_admin_secret="wrong"),
-        lambda: admin_router.admin_users(x_admin_secret="wrong"),
-        lambda: admin_router.admin_keys(x_admin_secret="wrong"),
-        lambda: admin_router.admin_prompts(x_admin_secret="wrong"),
-        lambda: admin_router.admin_prompt_detail(log_id=uuid.uuid4(), x_admin_secret="wrong"),
-        lambda: admin_router.admin_documents(x_admin_secret="wrong"),
-        lambda: admin_router.admin_usage(x_admin_secret="wrong"),
-        lambda: admin_router.admin_health(request=SimpleNamespace(), x_admin_secret="wrong"),
-    ],
-)
-async def test_admin_endpoints_reject_bad_secret(endpoint) -> None:
+async def test_admin_guard_rejects_bad_secret_and_member_sessions() -> None:
+    # The guard is a dependency now; every /admin/* endpoint uses it.
     with pytest.raises(HTTPException) as exc_info:
-        await endpoint()
+        await require_admin_principal(x_admin_secret="wrong")
     assert exc_info.value.status_code == 403
+
+    with pytest.raises(HTTPException) as exc_info:
+        await require_admin_principal(
+            authorization="Bearer "
+            + create_session_token(
+                user_id=uuid.uuid4(),
+                tenant_id="main",
+                email="member@example.com",
+                name="member",
+                role="member",
+            )
+        )
+    assert exc_info.value.status_code == 403
+    assert "admin role required" in str(exc_info.value.detail)
+
+
+async def test_admin_guard_accepts_secret_and_admin_session() -> None:
+    principal = await require_admin_principal(x_admin_secret=SECRET)
+    assert principal.via == "secret"
+
+    admin = Actor(tenant_id="main", role="admin", user_id=uuid.uuid4(), email="root@example.com")
+    principal = await require_admin_principal(
+        authorization="Bearer "
+        + create_session_token(
+            user_id=admin.user_id or uuid.uuid4(),
+            tenant_id="main",
+            email="root@example.com",
+            name="root",
+            role="admin",
+        )
+    )
+    assert principal.via == "session"
+    assert principal.actor is not None
+    assert principal.actor.is_admin
 
 
 # ── /admin/usage aggregation ─────────────────────────────────────────────────
@@ -99,7 +124,7 @@ async def test_admin_usage_aggregates_totals_from_model_rows(monkeypatch) -> Non
     fake = FakeClickHouse()
     monkeypatch.setattr(admin_router, "ch_client", fake)
 
-    response = await admin_router.admin_usage(x_admin_secret=SECRET, days=7)
+    response = await admin_router.admin_usage(_principal=_SECRET_PRINCIPAL, days=7)
 
     assert response.days == 7
     assert response.totals.cost_usd == 2.0
@@ -120,7 +145,7 @@ async def test_admin_usage_maps_clickhouse_failure_to_500(monkeypatch) -> None:
     monkeypatch.setattr(admin_router, "ch_client", BrokenClickHouse())
 
     with pytest.raises(HTTPException) as exc_info:
-        await admin_router.admin_usage(x_admin_secret=SECRET, days=7)
+        await admin_router.admin_usage(_principal=_SECRET_PRINCIPAL, days=7)
     assert exc_info.value.status_code == 500
     assert "ClickHouse error" in str(exc_info.value.detail)
 
@@ -203,7 +228,7 @@ async def test_admin_prompts_returns_paginated_feed_with_previews(monkeypatch) -
     monkeypatch.setattr(admin_router, "admin_session", lambda: session)
 
     response = await admin_router.admin_prompts(
-        x_admin_secret=SECRET,
+        _principal=_SECRET_PRINCIPAL,
         tenant_id="tenant-a",
         user_id=None,
         mode=None,
@@ -236,7 +261,7 @@ async def test_admin_prompt_detail_returns_full_answer(monkeypatch) -> None:
 
     monkeypatch.setattr(admin_router, "admin_session", lambda: FoundSession([], 1))
 
-    detail = await admin_router.admin_prompt_detail(log_id=row.id, x_admin_secret=SECRET)
+    detail = await admin_router.admin_prompt_detail(log_id=row.id, _principal=_SECRET_PRINCIPAL)
 
     assert detail.answer == "короткий ответ"
     assert detail.retrieval_query is None
@@ -251,7 +276,7 @@ async def test_admin_prompt_detail_404_for_missing_entry(monkeypatch) -> None:
     monkeypatch.setattr(admin_router, "admin_session", lambda: EmptySession([], 0))
 
     with pytest.raises(HTTPException) as exc_info:
-        await admin_router.admin_prompt_detail(log_id=uuid.uuid4(), x_admin_secret=SECRET)
+        await admin_router.admin_prompt_detail(log_id=uuid.uuid4(), _principal=_SECRET_PRINCIPAL)
     assert exc_info.value.status_code == 404
 
 
@@ -264,7 +289,9 @@ async def test_admin_health_reports_fresh_checks(monkeypatch) -> None:
 
     monkeypatch.setattr(admin_router, "_run_check", fake_check)
 
-    response = await admin_router.admin_health(request=SimpleNamespace(), x_admin_secret=SECRET)
+    response = await admin_router.admin_health(
+        request=SimpleNamespace(), _principal=_SECRET_PRINCIPAL
+    )
 
     assert response.status == "unavailable"
     assert response.checks["postgres"] == "ok"
@@ -320,7 +347,7 @@ async def test_admin_keys_merges_activity_into_key_list(monkeypatch) -> None:
     session = KeysSession([(key_row, "alice")], [stat_row])
     monkeypatch.setattr(admin_router, "admin_session", lambda: session)
 
-    keys = await admin_router.admin_keys(x_admin_secret=SECRET, tenant_id=None)
+    keys = await admin_router.admin_keys(_principal=_SECRET_PRINCIPAL, tenant_id=None)
 
     assert len(keys) == 1
     item = keys[0]
@@ -344,7 +371,7 @@ async def test_admin_keys_zero_activity_for_unused_keys(monkeypatch) -> None:
     )
     monkeypatch.setattr(admin_router, "admin_session", lambda: KeysSession([(key_row, None)], []))
 
-    keys = await admin_router.admin_keys(x_admin_secret=SECRET, tenant_id="tenant-b")
+    keys = await admin_router.admin_keys(_principal=_SECRET_PRINCIPAL, tenant_id="tenant-b")
 
     assert keys[0].queries_total == 0
     assert keys[0].queries_7d == 0
@@ -407,7 +434,7 @@ async def test_admin_overview_daily_series_uses_cast_not_postgres_cast_operator(
     session = OverviewSession()
     monkeypatch.setattr(admin_router, "admin_session", lambda: session)
 
-    response = await admin_router.admin_overview(x_admin_secret=SECRET)
+    response = await admin_router.admin_overview(_principal=_SECRET_PRINCIPAL)
 
     assert response.queries.total == 5
     assert response.daily_queries[-1].day == "2026-09-28"
