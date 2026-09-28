@@ -15,7 +15,12 @@ import jwt as pyjwt
 import pytest
 from apps.api.routers import login as login_router
 from fastapi import HTTPException
-from packages.auth import actor_from_claims, require_actor, require_admin_principal
+from packages.auth import (
+    actor_from_claims,
+    require_actor,
+    require_admin_principal,
+    require_tenant,
+)
 from packages.auth.jwt_sessions import (
     AuthConfigError,
     create_oauth_state,
@@ -352,3 +357,11 @@ async def test_whoami_reports_session_principal() -> None:
     assert info.email == "bob@example.com"
     assert info.is_admin is False
     assert info.tenant_id == "main"
+
+
+async def test_require_tenant_accepts_bearer_sessions() -> None:
+    # /documents & co. use the TenantID dependency — it must forward the
+    # Authorization header, not just the API key.
+    token = _token(role="member")
+    tenant_id = await require_tenant(authorization=f"Bearer {token}")
+    assert tenant_id == "main"
