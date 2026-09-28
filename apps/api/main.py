@@ -28,6 +28,7 @@ Endpoints:
   GET  /admin/overview               — deployment counters (X-Admin-Secret)
   GET  /admin/tenants                — per-tenant activity
   GET  /admin/users                  — users with key/query stats
+  GET  /admin/keys                   — API keys with request activity
   GET  /admin/prompts                — agent query log feed
   GET  /admin/prompts/{id}           — full query log entry
   GET  /admin/documents              — cross-tenant document health

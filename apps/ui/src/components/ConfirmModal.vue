@@ -18,7 +18,7 @@
 
         <div class="confirm-actions">
           <button ref="cancelBtn" class="btn btn-ghost" @click="$emit('cancel')">{{ t('common.cancel') }}</button>
-          <button class="btn btn-danger" @click="$emit('confirm')">{{ t('common.delete') }}</button>
+          <button class="btn btn-danger" @click="$emit('confirm')">{{ confirmLabel || t('common.delete') }}</button>
         </div>
 
       </div>
@@ -35,6 +35,7 @@ const props = defineProps({
   title:   { type: String, required: true },
   heading: { type: String, default: '' },
   warning: { type: String, default: '' },
+  confirmLabel: { type: String, default: '' },
 })
 const emit = defineEmits(['confirm', 'cancel'])
 

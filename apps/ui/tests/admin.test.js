@@ -4,6 +4,7 @@ import assert from 'node:assert/strict'
 import {
   PROMPT_MODES,
   PROMPT_STATUSES,
+  buildCreateKeyPayload,
   buildPromptQueryParams,
   buildQueryTrend,
   buildUsageTrend,
@@ -12,6 +13,9 @@ import {
   formatCost,
   formatDateTime,
   healthTone,
+  keyDisplayName,
+  keyStatusTone,
+  keyUserLabel,
   promptActor,
   promptStatusTone,
 } from '../src/utils/admin.js'
@@ -108,4 +112,35 @@ test('formatters render costs, bytes and datetimes', () => {
 test('formatDateTime renders date and time for a valid timestamp', () => {
   const value = formatDateTime('2026-09-28T12:00:00Z', 'ru')
   assert.match(value, /\d{2}\.\d{2}\.\d{4} \d{2}:\d{2}/)
+})
+
+
+test('key helpers render labels, tones and create payloads', () => {
+  const key = {
+    id: '12345678-1111-2222-3333-444444444444',
+    name: 'laptop',
+    user_name: 'alice',
+    is_active: true,
+  }
+  assert.equal(keyDisplayName(key), 'laptop')
+  assert.equal(keyDisplayName({ id: key.id }), '12345678')
+  assert.equal(keyDisplayName(null), '—')
+  assert.equal(keyUserLabel(key, 'ru'), 'alice')
+  assert.equal(keyUserLabel({ user_id: key.id }, 'ru'), '12345678')
+  assert.equal(keyUserLabel({}, 'ru'), 'ключ без пользователя')
+  assert.equal(keyUserLabel({}, 'en'), 'unbound key')
+  assert.equal(keyStatusTone(true), 'good')
+  assert.equal(keyStatusTone(false), 'bad')
+})
+
+
+test('buildCreateKeyPayload trims fields and omits empty user binding', () => {
+  assert.deepEqual(
+    buildCreateKeyPayload({ tenantId: ' tenant-a ', name: ' laptop ', userId: '' }),
+    { tenant_id: 'tenant-a', name: 'laptop' },
+  )
+  assert.deepEqual(
+    buildCreateKeyPayload({ tenantId: 't', name: 'k', userId: 'u-1' }),
+    { tenant_id: 't', name: 'k', user_id: 'u-1' },
+  )
 })

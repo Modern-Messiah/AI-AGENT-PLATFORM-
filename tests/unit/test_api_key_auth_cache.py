@@ -49,7 +49,12 @@ class FakeSessionFactory:
         self.execute_count = 0
         self.select_count = 0
         self.update_count = 0
-        self.select_row = select_row or (SimpleNamespace(tenant_id="tenant-a"), None, None, None)
+        self.select_row = select_row or (
+            SimpleNamespace(id=uuid.uuid4(), tenant_id="tenant-a", name="laptop"),
+            None,
+            None,
+            None,
+        )
 
     def __call__(self) -> FakeSession:
         return FakeSession(self)
@@ -87,7 +92,12 @@ async def test_require_actor_resolves_key_owner_identity(monkeypatch) -> None:
     api_keys._AUTH_LOCKS.clear()
     user_id = uuid.uuid4()
     factory = FakeSessionFactory()
-    factory.select_row = (SimpleNamespace(tenant_id="tenant-a"), user_id, "member", "alice")
+    factory.select_row = (
+        SimpleNamespace(id=uuid.uuid4(), tenant_id="tenant-a", name="laptop"),
+        user_id,
+        "member",
+        "alice",
+    )
     monkeypatch.setattr(api_keys, "async_session", factory)
 
     actor = await api_keys.require_actor("raw-test-key")
@@ -103,7 +113,12 @@ async def test_require_actor_caches_identity_with_the_tenant(monkeypatch) -> Non
     api_keys._AUTH_LOCKS.clear()
     user_id = uuid.uuid4()
     factory = FakeSessionFactory()
-    factory.select_row = (SimpleNamespace(tenant_id="tenant-b"), user_id, "admin", "bob")
+    factory.select_row = (
+        SimpleNamespace(id=uuid.uuid4(), tenant_id="tenant-b", name="desktop"),
+        user_id,
+        "admin",
+        "bob",
+    )
     monkeypatch.setattr(api_keys, "async_session", factory)
 
     await api_keys.require_actor("raw-test-key")

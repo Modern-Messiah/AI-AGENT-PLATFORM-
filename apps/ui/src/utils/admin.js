@@ -111,3 +111,30 @@ export function promptActor(item, locale = 'ru') {
   if (item.user_id) return String(item.user_id).slice(0, 8)
   return translate(locale, 'admin.unboundKey')
 }
+
+// ── API keys management ─────────────────────────────────────────────────────
+
+export function keyStatusTone(isActive) {
+  return isActive ? 'good' : 'bad'
+}
+
+export function keyUserLabel(key, locale = 'ru') {
+  if (!key) return '—'
+  if (key.user_name) return key.user_name
+  if (key.user_id) return String(key.user_id).slice(0, 8)
+  return translate(locale, 'admin.unboundKey')
+}
+
+export function keyDisplayName(key) {
+  if (!key) return '—'
+  return key.name || String(key.id).slice(0, 8)
+}
+
+export function buildCreateKeyPayload(form = {}) {
+  const payload = {
+    tenant_id: String(form.tenantId || '').trim(),
+    name: String(form.name || '').trim(),
+  }
+  if (form.userId) payload.user_id = form.userId
+  return payload
+}

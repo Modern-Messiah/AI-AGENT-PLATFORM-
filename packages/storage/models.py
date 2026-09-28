@@ -325,6 +325,8 @@ class AgentQueryLog(Base):
     tenant_id: Mapped[str] = mapped_column(String(64), nullable=False)
     user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     user_name: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    api_key_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    api_key_name: Mapped[str | None] = mapped_column(String(256), nullable=True)
     mode: Mapped[str] = mapped_column(String(16), nullable=False)  # stream | run | research
     model: Mapped[str] = mapped_column(String(128), nullable=False)
     session_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
@@ -350,6 +352,7 @@ class AgentQueryLog(Base):
     __table_args__ = (
         Index("ix_agent_query_logs_tenant_created", "tenant_id", "created_at"),
         Index("ix_agent_query_logs_user_created", "user_id", "created_at"),
+        Index("ix_agent_query_logs_key_created", "api_key_id", "created_at"),
         Index("ix_agent_query_logs_mode", "mode"),
     )
 

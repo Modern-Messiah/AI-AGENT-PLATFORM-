@@ -28,8 +28,11 @@ from packages.storage.db import async_session
 from packages.storage.models import ApiKey, User
 
 _AUTH_CACHE_TTL_SECONDS = 30.0
-# key_hash -> (tenant_id, role | None, user_id, user_name, expires_at)
-_AUTH_CACHE: dict[str, tuple[str, str | None, uuid.UUID | None, str | None, float]] = {}
+# key_hash -> (tenant_id, role, user_id, user_name, key_id, key_name, expires_at)
+_AUTH_CACHE: dict[
+    str,
+    tuple[str, str | None, uuid.UUID | None, str | None, uuid.UUID | None, str | None, float],
+] = {}
 _AUTH_LOCKS: dict[str, asyncio.Lock] = {}
 
 
@@ -41,6 +44,8 @@ class Actor:
     role: str | None  # None when the key is not bound to a user
     user_id: uuid.UUID | None = None
     user_name: str | None = None
+    api_key_id: uuid.UUID | None = None
+    api_key_name: str | None = None
 
     @property
     def can_destroy(self) -> bool:
@@ -74,9 +79,16 @@ async def require_actor(x_api_key: str | None = Header(None, alias="X-API-Key"))
     now = time.monotonic()
     cached = _AUTH_CACHE.get(key_hash)
     if cached is not None:
-        tenant_id, role, user_id, user_name, expires_at = cached
+        tenant_id, role, user_id, user_name, key_id, key_name, expires_at = cached
         if expires_at > now:
-            return Actor(tenant_id=tenant_id, role=role, user_id=user_id, user_name=user_name)
+            return Actor(
+                tenant_id=tenant_id,
+                role=role,
+                user_id=user_id,
+                user_name=user_name,
+                api_key_id=key_id,
+                api_key_name=key_name,
+            )
         _AUTH_CACHE.pop(key_hash, None)
 
     lock = _AUTH_LOCKS.setdefault(key_hash, asyncio.Lock())
@@ -84,9 +96,16 @@ async def require_actor(x_api_key: str | None = Header(None, alias="X-API-Key"))
         now = time.monotonic()
         cached = _AUTH_CACHE.get(key_hash)
         if cached is not None:
-            tenant_id, role, user_id, user_name, expires_at = cached
+            tenant_id, role, user_id, user_name, key_id, key_name, expires_at = cached
             if expires_at > now:
-                return Actor(tenant_id=tenant_id, role=role, user_id=user_id, user_name=user_name)
+                return Actor(
+                    tenant_id=tenant_id,
+                    role=role,
+                    user_id=user_id,
+                    user_name=user_name,
+                    api_key_id=key_id,
+                    api_key_name=key_name,
+                )
             _AUTH_CACHE.pop(key_hash, None)
 
         async with async_session() as s:
@@ -111,6 +130,8 @@ async def require_actor(x_api_key: str | None = Header(None, alias="X-API-Key"))
             role,
             user_id,
             user_name,
+            api_key_row.id,
+            api_key_row.name,
             now + _AUTH_CACHE_TTL_SECONDS,
         )
 
@@ -121,7 +142,14 @@ async def require_actor(x_api_key: str | None = Header(None, alias="X-API-Key"))
                 .values(last_used_at=datetime.now(UTC))
             )
 
-        return Actor(tenant_id=tenant_id, role=role, user_id=user_id, user_name=user_name)
+        return Actor(
+            tenant_id=tenant_id,
+            role=role,
+            user_id=user_id,
+            user_name=user_name,
+            api_key_id=api_key_row.id,
+            api_key_name=api_key_row.name,
+        )
 
 
 async def require_tenant(x_api_key: str | None = Header(None, alias="X-API-Key")) -> str:

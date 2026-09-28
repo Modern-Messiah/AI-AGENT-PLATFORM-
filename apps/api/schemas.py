@@ -276,11 +276,29 @@ class AdminUserInfo(BaseModel):
     last_query_at: datetime | None = None
 
 
+class AdminKeyInfo(BaseModel):
+    """Key with its request activity — the admin access-control view."""
+
+    id: str
+    tenant_id: str
+    name: str | None = None
+    user_id: str | None = None
+    user_name: str | None = None
+    is_active: bool
+    created_at: datetime
+    last_used_at: datetime | None = None
+    queries_total: int
+    queries_7d: int
+    last_query_at: datetime | None = None
+
+
 class AdminPromptListItem(BaseModel):
     id: str
     tenant_id: str
     user_id: str | None = None
     user_name: str | None = None
+    api_key_id: str | None = None
+    api_key_name: str | None = None
     mode: str
     model: str
     session_id: str | None = None

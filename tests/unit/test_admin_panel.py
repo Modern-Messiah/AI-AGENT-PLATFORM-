@@ -37,6 +37,7 @@ def test_admin_routes_are_registered() -> None:
     assert ("/admin/overview", "GET") in routes
     assert ("/admin/tenants", "GET") in routes
     assert ("/admin/users", "GET") in routes
+    assert ("/admin/keys", "GET") in routes
     assert ("/admin/prompts", "GET") in routes
     assert ("/admin/documents", "GET") in routes
     assert ("/admin/usage", "GET") in routes
@@ -49,6 +50,7 @@ def test_admin_routes_are_registered() -> None:
         lambda: admin_router.admin_overview(x_admin_secret="wrong"),
         lambda: admin_router.admin_tenants(x_admin_secret="wrong"),
         lambda: admin_router.admin_users(x_admin_secret="wrong"),
+        lambda: admin_router.admin_keys(x_admin_secret="wrong"),
         lambda: admin_router.admin_prompts(x_admin_secret="wrong"),
         lambda: admin_router.admin_prompt_detail(log_id=uuid.uuid4(), x_admin_secret="wrong"),
         lambda: admin_router.admin_documents(x_admin_secret="wrong"),
@@ -268,6 +270,86 @@ async def test_admin_health_reports_fresh_checks(monkeypatch) -> None:
     assert response.checks["postgres"] == "ok"
     assert response.checks["redis"] == "error: ConnectionError"
     assert set(response.checks) == set(admin_router._CHECK_NAMES)
+
+
+# ── /admin/keys ───────────────────────────────────────────────────────────────
+
+
+class KeysResult:
+    def __init__(self, rows: list[object]) -> None:
+        self.rows = rows
+
+    def all(self) -> list[object]:
+        return self.rows
+
+
+class KeysSession:
+    def __init__(self, key_rows: list[object], stat_rows: list[object]) -> None:
+        self.key_rows = key_rows
+        self.stat_rows = stat_rows
+
+    async def __aenter__(self) -> KeysSession:
+        return self
+
+    async def __aexit__(self, *args: object) -> None:
+        return None
+
+    def begin(self) -> KeysSession:
+        return self
+
+    async def execute(self, statement: object, params: object = None) -> KeysResult:
+        sql = str(statement)
+        if "GROUP BY api_key_id" in sql:
+            return KeysResult(self.stat_rows)
+        return KeysResult(self.key_rows)
+
+
+async def test_admin_keys_merges_activity_into_key_list(monkeypatch) -> None:
+    key_id = uuid.uuid4()
+    user_id = uuid.uuid4()
+    key_row = SimpleNamespace(
+        id=key_id,
+        tenant_id="tenant-a",
+        name="laptop",
+        user_id=user_id,
+        is_active=True,
+        created_at=datetime(2026, 9, 20, tzinfo=UTC),
+        last_used_at=datetime(2026, 9, 27, tzinfo=UTC),
+    )
+    stat_row = (key_id, 9, 4, datetime(2026, 9, 28, tzinfo=UTC))
+    session = KeysSession([(key_row, "alice")], [stat_row])
+    monkeypatch.setattr(admin_router, "admin_session", lambda: session)
+
+    keys = await admin_router.admin_keys(x_admin_secret=SECRET, tenant_id=None)
+
+    assert len(keys) == 1
+    item = keys[0]
+    assert item.id == str(key_id)
+    assert item.user_name == "alice"
+    assert item.is_active is True
+    assert item.queries_total == 9
+    assert item.queries_7d == 4
+    assert item.last_query_at == stat_row[3]
+
+
+async def test_admin_keys_zero_activity_for_unused_keys(monkeypatch) -> None:
+    key_row = SimpleNamespace(
+        id=uuid.uuid4(),
+        tenant_id="tenant-b",
+        name="spare",
+        user_id=None,
+        is_active=False,
+        created_at=datetime(2026, 9, 1, tzinfo=UTC),
+        last_used_at=None,
+    )
+    monkeypatch.setattr(admin_router, "admin_session", lambda: KeysSession([(key_row, None)], []))
+
+    keys = await admin_router.admin_keys(x_admin_secret=SECRET, tenant_id="tenant-b")
+
+    assert keys[0].queries_total == 0
+    assert keys[0].queries_7d == 0
+    assert keys[0].last_query_at is None
+    assert keys[0].is_active is False
 
 
 # ── /admin/overview SQL ──────────────────────────────────────────────────────

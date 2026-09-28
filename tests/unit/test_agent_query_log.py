@@ -218,3 +218,50 @@ async def test_agent_stream_logs_cached_hit(monkeypatch) -> None:
     assert entry.answer == "из кэша"
     assert entry.confidence == 0.9
     assert entry.sources_count == 1
+
+
+async def test_run_agent_logs_api_key_attribution(monkeypatch) -> None:
+    entries: list[QueryLogEntry] = []
+
+    async def fake_log(entry: QueryLogEntry) -> None:
+        entries.append(entry)
+
+    monkeypatch.setattr(agent_router, "tenant_session", lambda tenant_id: ScalarSession(0))
+    monkeypatch.setattr(agent_router, "log_agent_query", fake_log)
+    key_id = uuid.uuid4()
+    actor = Actor(
+        tenant_id="tenant-a",
+        role="member",
+        user_id=uuid.uuid4(),
+        user_name="alice",
+        api_key_id=key_id,
+        api_key_name="laptop",
+    )
+    request = SimpleNamespace(app=SimpleNamespace(state={}))
+
+    await agent_router.run_agent(AgentRunInput(user_query="вопрос"), actor, request)
+
+    assert entries[0].api_key_id == key_id
+    assert entries[0].api_key_name == "laptop"
+
+
+async def test_log_agent_query_persists_key_fields(monkeypatch) -> None:
+    session = CaptureSession()
+    monkeypatch.setattr("apps.api.services.query_log.tenant_session", lambda tenant_id: session)
+    key_id = uuid.uuid4()
+
+    await log_agent_query(
+        QueryLogEntry(
+            tenant_id="tenant-a",
+            mode="stream",
+            model="m",
+            query="q",
+            api_key_id=key_id,
+            api_key_name="laptop",
+        )
+    )
+
+    row = session.added[0]
+    assert isinstance(row, AgentQueryLog)
+    assert row.api_key_id == key_id
+    assert row.api_key_name == "laptop"
