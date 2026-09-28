@@ -1,7 +1,7 @@
 <template>
   <div class="screen-body admin-screen">
     <!-- Secret gate: the panel needs the deployment-wide admin secret -->
-    <div v-if="!settings.hasAdminSecret" class="card secret-gate">
+    <div v-if="!settings.hasAdminSecret && !session.isAdmin" class="card secret-gate">
       <div class="card-header">
         <div>
           <div class="card-title">{{ t('admin.title') }}</div>
@@ -42,7 +42,15 @@
           <div v-if="loading" class="spinner"></div>
           <AppIcon v-else name="refresh" :size="13" />
         </button>
-        <span class="secret-pill" :class="{ invalid: settings.isAdminInvalid }">
+        <span
+          v-if="session.isAdmin"
+          class="secret-pill"
+        >{{ session.displayName }} · admin</span>
+        <span
+          v-else
+          class="secret-pill"
+          :class="{ invalid: settings.isAdminInvalid }"
+        >
           {{ settings.isAdminInvalid ? t('admin.invalidSecret') : `admin: ${settings.adminMasked}` }}
         </span>
       </div>
@@ -630,6 +638,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import { useApi } from '@/composables/useApi'
+import { useSessionStore } from '@/stores/session'
 import { useSettingsStore } from '@/stores/settings'
 import { useI18n } from '@/composables/useI18n'
 import AppIcon from '@/components/AppIcon.vue'
@@ -656,6 +665,7 @@ import {
 
 const { apiAdminFetch } = useApi()
 const settings = useSettingsStore()
+const session = useSessionStore()
 const { t } = useI18n()
 
 const tabs = [
@@ -753,7 +763,7 @@ function loadHealth() {
 }
 
 function load() {
-  if (!settings.hasAdminSecret) return
+  if (!settings.hasAdminSecret && !session.isAdmin) return
   if (activeTab.value === 'overview') { loadOverview(); loadTenants() }
   else if (activeTab.value === 'prompts') loadPrompts()
   else if (activeTab.value === 'users') loadUsers()
