@@ -8,6 +8,8 @@
           : t('settings.localDescription') }}
       </div>
 
+      <div class="settings-section">{{ t('settings.sectionConnection') }}</div>
+
       <div class="form-group">
         <label class="form-label">{{ t('settings.baseUrl') }}</label>
         <input class="form-input" v-model="localBase" :placeholder="t('settings.basePlaceholder')"
@@ -25,6 +27,8 @@
                :disabled="validating" autofocus />
       </div>
 
+      <div class="settings-section">{{ t('settings.sectionAdmin') }}</div>
+
       <div class="form-group">
         <label class="form-label">{{ t('settings.adminSecret') }}</label>
         <input class="form-input" type="password" v-model="localAdminSecret"
@@ -32,6 +36,8 @@
                :disabled="validating" />
         <div class="language-hint">{{ t('settings.adminSecretHint') }}</div>
       </div>
+
+      <div class="settings-section">{{ t('settings.sectionInterface') }}</div>
 
       <div class="form-group">
         <label class="form-label">{{ t('settings.language') }}</label>
@@ -156,6 +162,17 @@ async function save() {
   max-height: calc(100vh - 32px);
   overflow-y: auto;
 }
+.settings-section {
+  margin: 10px 0 14px;
+  padding-bottom: 7px;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+}
+.settings-section:first-of-type { margin-top: 4px; }
 .env-note {
   margin-bottom: 16px;
   padding: 10px 12px;
