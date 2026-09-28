@@ -31,3 +31,17 @@ async def tenant_session(tenant_id: str) -> AsyncIterator[AsyncSession]:
             {"tid": tenant_id},
         )
         yield session
+
+
+@asynccontextmanager
+async def admin_session() -> AsyncIterator[AsyncSession]:
+    """Open a cross-tenant read session for admin endpoints.
+
+    Sets the session-local app.admin_read flag, which enables the admin_read
+    SELECT policies (migration 0019) on the RLS-protected tables. Writes stay
+    tenant-scoped: the policies are FOR SELECT only. Routers must gate this
+    behind X-Admin-Secret.
+    """
+    async with async_session() as session, session.begin():
+        await session.execute(sa.text("SELECT set_config('app.admin_read', 'on', true)"))
+        yield session

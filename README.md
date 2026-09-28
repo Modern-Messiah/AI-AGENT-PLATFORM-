@@ -247,6 +247,14 @@ X-Admin-Secret: <ADMIN_SECRET>
 | `POST` | `/notebooks/{id}/documents/upload` | Upload a file directly into a notebook |
 | `POST` | `/notebooks/{id}/insights` | Rebuild notebook summary/questions/topics |
 | `GET` | `/analytics/usage` | Aggregate LLM usage from ClickHouse |
+| `GET` | `/admin/overview` | Deployment-wide counters (X-Admin-Secret) |
+| `GET` | `/admin/tenants` | Per-tenant activity summary |
+| `GET` | `/admin/users` | Users across tenants with key/query stats |
+| `GET` | `/admin/prompts` | Agent query log feed (who asked what) |
+| `GET` | `/admin/prompts/{id}` | Full query log entry with answer |
+| `GET` | `/admin/documents` | Cross-tenant document health |
+| `GET` | `/admin/usage` | Cross-tenant LLM usage from ClickHouse |
+| `GET` | `/admin/health` | Fresh dependency checks |
 
 ## Configuration
 
@@ -439,6 +447,8 @@ The main application data lives in Postgres. Key tables include:
 - `document_assets` - visual page/image metadata and protected preview object keys.
 - `chat_sessions` and `chat_messages` - chat history and stored citations.
 - `notebooks` and `notebook_documents` - document collections for scoped retrieval.
+- `agent_query_logs` - admin monitoring trail: every agent request with the
+  prompt, answer, scope, model, latency, tokens, cost and the key owner.
 
 Object bytes live in MinIO. Vector search is done through pgvector columns in Postgres.
 Usage events are written to ClickHouse.
@@ -459,6 +469,10 @@ Current guardrails:
 - Upload size limits are enforced.
 - Agent prompt length and per-minute request limits are enforced.
 - Protected visual assets are served through the API instead of direct MinIO URLs.
+- The admin panel (`/admin` UI + `/admin/*` API) is gated by `X-Admin-Secret`.
+  Cross-tenant reads go through read-only RLS policies enabled by a
+  session-local flag — writes stay tenant-scoped. The query log stores
+  prompts and answers, so the admin secret must be treated as sensitive.
 
 Known limitations:
 

@@ -1,3 +1,4 @@
+from apps.api.routers.admin import router as admin_router
 from apps.api.routers.agent import router as agent_router
 from apps.api.routers.analytics import router as analytics_router
 from apps.api.routers.auth import router as auth_router
@@ -8,6 +9,7 @@ from apps.api.routers.sessions import router as sessions_router
 from apps.api.routers.workflows import router as workflows_router
 
 __all__ = [
+    "admin_router",
     "agent_router",
     "analytics_router",
     "auth_router",

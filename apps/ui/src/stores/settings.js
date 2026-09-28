@@ -6,17 +6,20 @@ import { applyTheme, AUTO_THEME, DEFAULT_THEME, normalizeTheme, persistTheme } f
 
 export const useSettingsStore = defineStore('settings', () => {
   const apiKey = ref('')
+  const adminSecret = ref('')
   const baseUrl = ref('/api')
   const locale = ref('ru')
   const theme = ref(DEFAULT_THEME)
   const keySource = ref('missing')
   const keyStatus = ref('unknown') // 'unknown' | 'valid' | 'invalid'
+  const adminStatus = ref('unknown') // 'unknown' | 'valid' | 'invalid'
 
   function _load() {
     try {
       const cfg = JSON.parse(localStorage.getItem('aap_config') || '{}')
       const resolved = resolveApiConfig({ stored: cfg, env: import.meta.env })
       apiKey.value = resolved.apiKey
+      adminSecret.value = typeof cfg.adminSecret === 'string' ? cfg.adminSecret : ''
       baseUrl.value = resolved.baseUrl
       locale.value = normalizeLocale(cfg.locale)
       theme.value = normalizeTheme(cfg.theme)
@@ -32,6 +35,7 @@ export const useSettingsStore = defineStore('settings', () => {
       keySource.value = 'env'
       localStorage.setItem('aap_config', JSON.stringify({
         base: baseUrl.value,
+        adminSecret: adminSecret.value,
         locale: locale.value,
         theme: theme.value,
       }))
@@ -42,10 +46,20 @@ export const useSettingsStore = defineStore('settings', () => {
     keySource.value = apiKey.value ? 'localStorage' : 'missing'
     localStorage.setItem('aap_config', JSON.stringify({
       apiKey: apiKey.value,
+      adminSecret: adminSecret.value,
       base: baseUrl.value,
       locale: locale.value,
       theme: theme.value,
     }))
+  }
+
+  function setAdminSecret(value) {
+    adminSecret.value = String(value || '').trim()
+    adminStatus.value = 'unknown'
+    try {
+      const cfg = JSON.parse(localStorage.getItem('aap_config') || '{}')
+      localStorage.setItem('aap_config', JSON.stringify({ ...cfg, adminSecret: adminSecret.value }))
+    } catch {}
   }
 
   function setLocale(value) {
@@ -65,9 +79,12 @@ export const useSettingsStore = defineStore('settings', () => {
 
   function markValid()   { keyStatus.value = 'valid' }
   function markInvalid() { keyStatus.value = 'invalid' }
+  function markAdminValid()   { adminStatus.value = 'valid' }
+  function markAdminInvalid() { adminStatus.value = 'invalid' }
 
   // Reset status when key changes so sidebar shows neutral state
   watch(apiKey, () => { keyStatus.value = 'unknown' })
+  watch(adminSecret, () => { adminStatus.value = 'unknown' })
   watch(locale, value => {
     if (globalThis.document?.documentElement) {
       globalThis.document.documentElement.lang = value
@@ -87,7 +104,12 @@ export const useSettingsStore = defineStore('settings', () => {
   const keyMasked    = computed(() => (
     apiKey.value ? `…${apiKey.value.slice(-6)}` : translate(locale.value, 'settings.notSet')
   ))
+  const adminMasked  = computed(() => (
+    adminSecret.value ? `…${adminSecret.value.slice(-4)}` : translate(locale.value, 'settings.notSet')
+  ))
   const isConnected  = computed(() => !!apiKey.value)
+  const hasAdminSecret = computed(() => !!adminSecret.value)
+  const isAdminInvalid = computed(() => adminStatus.value === 'invalid')
   const isKeyInvalid = computed(() => keyStatus.value === 'invalid')
   const isKeyManagedByEnv = computed(() => keySource.value === 'env')
 
@@ -95,18 +117,26 @@ export const useSettingsStore = defineStore('settings', () => {
 
   return {
     apiKey,
+    adminSecret,
     baseUrl,
     locale,
     theme,
     keySource,
     keyStatus,
+    adminStatus,
     save,
+    setAdminSecret,
     setLocale,
     setTheme,
     markValid,
     markInvalid,
+    markAdminValid,
+    markAdminInvalid,
     keyMasked,
+    adminMasked,
     isConnected,
+    hasAdminSecret,
+    isAdminInvalid,
     isKeyInvalid,
     isKeyManagedByEnv,
   }

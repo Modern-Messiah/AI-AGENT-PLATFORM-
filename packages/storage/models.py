@@ -311,6 +311,49 @@ class User(Base):
     )
 
 
+class AgentQueryLog(Base):
+    """One agent request (stream/run/research) — the admin monitoring trail.
+
+    Written best-effort from the API layer after each request finishes;
+    monitoring must never break the answer path. user_id/user_name are
+    snapshots (no FK) so deleting a person keeps their history auditable.
+    """
+
+    __tablename__ = "agent_query_logs"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    user_name: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    mode: Mapped[str] = mapped_column(String(16), nullable=False)  # stream | run | research
+    model: Mapped[str] = mapped_column(String(128), nullable=False)
+    session_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    workflow_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    scope_type: Mapped[str | None] = mapped_column(String(16), nullable=True)  # document | notebook
+    scope_ref: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    query: Mapped[str] = mapped_column(Text, nullable=False)
+    retrieval_query: Mapped[str | None] = mapped_column(Text, nullable=True)
+    answer: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="ok", nullable=False)  # ok | error
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    latency_ms: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    cached: Mapped[bool] = mapped_column(default=False, nullable=False)
+    confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    sources_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    prompt_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    completion_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    cost_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        Index("ix_agent_query_logs_tenant_created", "tenant_id", "created_at"),
+        Index("ix_agent_query_logs_user_created", "user_id", "created_at"),
+        Index("ix_agent_query_logs_mode", "mode"),
+    )
+
+
 class ApiKey(Base):
     __tablename__ = "api_keys"
 

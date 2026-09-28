@@ -5,6 +5,7 @@ import DocumentDetailView from '@/views/DocumentDetailView.vue'
 import NotebooksView from '@/views/NotebooksView.vue'
 import NotebookDetailView from '@/views/NotebookDetailView.vue'
 import AnalyticsView from '@/views/AnalyticsView.vue'
+import AdminView from '@/views/AdminView.vue'
 import { settingsRedirect } from '@/utils/settingsRoute'
 
 export default createRouter({
@@ -17,6 +18,7 @@ export default createRouter({
     { path: '/notebooks', component: NotebooksView },
     { path: '/notebooks/:id', component: NotebookDetailView },
     { path: '/analytics', component: AnalyticsView },
+    { path: '/admin', component: AdminView },
     { path: '/settings', redirect: settingsRedirect },
     { path: '/workflows', redirect: '/chat' },
   ]

@@ -4,7 +4,7 @@ Keys are stored as SHA-256 hashes in the api_keys table.
 The raw key is returned only at creation time — never stored.
 
 Role semantics (enforcement): a key may be bound to a user (api_keys.user_id).
-The resolved Actor carries that user's role:
+The resolved Actor carries that user's identity (id, name, role):
   - unbound key or role "admin"  -> full access (tenant-level key)
   - role "member"                -> no destructive operations
 Which operations count as destructive is decided by the routers
@@ -17,6 +17,7 @@ import asyncio
 import hashlib
 import secrets
 import time
+import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -27,17 +28,19 @@ from packages.storage.db import async_session
 from packages.storage.models import ApiKey, User
 
 _AUTH_CACHE_TTL_SECONDS = 30.0
-# key_hash -> (tenant_id, role | None, expires_at)
-_AUTH_CACHE: dict[str, tuple[str, str | None, float]] = {}
+# key_hash -> (tenant_id, role | None, user_id, user_name, expires_at)
+_AUTH_CACHE: dict[str, tuple[str, str | None, uuid.UUID | None, str | None, float]] = {}
 _AUTH_LOCKS: dict[str, asyncio.Lock] = {}
 
 
 @dataclass(frozen=True)
 class Actor:
-    """Who is acting on this request: the tenant plus the key owner's role."""
+    """Who is acting on this request: the tenant plus the key owner's identity."""
 
     tenant_id: str
     role: str | None  # None when the key is not bound to a user
+    user_id: uuid.UUID | None = None
+    user_name: str | None = None
 
     @property
     def can_destroy(self) -> bool:
@@ -71,9 +74,9 @@ async def require_actor(x_api_key: str | None = Header(None, alias="X-API-Key"))
     now = time.monotonic()
     cached = _AUTH_CACHE.get(key_hash)
     if cached is not None:
-        tenant_id, role, expires_at = cached
+        tenant_id, role, user_id, user_name, expires_at = cached
         if expires_at > now:
-            return Actor(tenant_id=tenant_id, role=role)
+            return Actor(tenant_id=tenant_id, role=role, user_id=user_id, user_name=user_name)
         _AUTH_CACHE.pop(key_hash, None)
 
     lock = _AUTH_LOCKS.setdefault(key_hash, asyncio.Lock())
@@ -81,15 +84,15 @@ async def require_actor(x_api_key: str | None = Header(None, alias="X-API-Key"))
         now = time.monotonic()
         cached = _AUTH_CACHE.get(key_hash)
         if cached is not None:
-            tenant_id, role, expires_at = cached
+            tenant_id, role, user_id, user_name, expires_at = cached
             if expires_at > now:
-                return Actor(tenant_id=tenant_id, role=role)
+                return Actor(tenant_id=tenant_id, role=role, user_id=user_id, user_name=user_name)
             _AUTH_CACHE.pop(key_hash, None)
 
         async with async_session() as s:
             row = (
                 await s.execute(
-                    select(ApiKey, User.role)
+                    select(ApiKey, User.id, User.role, User.name)
                     .outerjoin(User, ApiKey.user_id == User.id)
                     .where(
                         ApiKey.key_hash == key_hash,
@@ -101,9 +104,15 @@ async def require_actor(x_api_key: str | None = Header(None, alias="X-API-Key"))
         if row is None:
             raise HTTPException(status_code=401, detail="invalid or inactive API key")
 
-        api_key_row, role = row
+        api_key_row, user_id, role, user_name = row
         tenant_id = api_key_row.tenant_id
-        _AUTH_CACHE[key_hash] = (tenant_id, role, now + _AUTH_CACHE_TTL_SECONDS)
+        _AUTH_CACHE[key_hash] = (
+            tenant_id,
+            role,
+            user_id,
+            user_name,
+            now + _AUTH_CACHE_TTL_SECONDS,
+        )
 
         async with async_session() as s, s.begin():
             await s.execute(
@@ -112,7 +121,7 @@ async def require_actor(x_api_key: str | None = Header(None, alias="X-API-Key"))
                 .values(last_used_at=datetime.now(UTC))
             )
 
-        return Actor(tenant_id=tenant_id, role=role)
+        return Actor(tenant_id=tenant_id, role=role, user_id=user_id, user_name=user_name)
 
 
 async def require_tenant(x_api_key: str | None = Header(None, alias="X-API-Key")) -> str:

@@ -86,6 +86,7 @@ const nav = computed(() => [
   { path: '/documents', label: t('app.knowledgeBase'), icon: 'docs' },
   { path: '/notebooks', label: t('app.notebooks'), icon: 'docs' },
   { path: '/analytics', label: t('app.analytics'), icon: 'analytics' },
+  { path: '/admin', label: t('app.adminPanel'), icon: 'shield' },
 ])
 
 function isNavActive(path) {

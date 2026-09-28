@@ -29,13 +29,14 @@ from sqlalchemy import func, select
 from starlette.responses import StreamingResponse
 from temporalio.client import Client
 
-from apps.api.deps import TenantID
+from apps.api.deps import ActorDep
 from apps.api.metrics import agent_cache_requests_total, agent_tokens_total
 from apps.api.schemas import AgentRunApiResponse, AgentStreamRequest
 from apps.api.serializers import serialize_sources
 from apps.api.services.agent_limits import enforce_agent_limits, validate_agent_query
 from apps.api.services.notebooks import load_notebook_documents
 from apps.api.services.query_condensation import condense_query
+from apps.api.services.query_log import QueryLogEntry, log_agent_query
 from apps.worker.workflows.agent_run import AgentRunWorkflow
 from apps.worker.workflows.multi_step import MultiStepResearchWorkflow
 
@@ -46,12 +47,14 @@ router = APIRouter()
 @router.post("/agent/run", response_model=AgentRunApiResponse)
 async def run_agent(
     payload: AgentRunInput,
-    tenant_id: TenantID,
+    actor: ActorDep,
     request: Request,
 ) -> AgentRunApiResponse:
     """Single agent run. Set require_approval=true to pause for HITL review."""
+    tenant_id = actor.tenant_id
     user_query = await enforce_agent_limits(tenant_id, payload.user_query, "/agent/run")
     payload = payload.model_copy(update={"user_query": user_query})
+    model_name = payload.model or settings.strong_model
 
     async with tenant_session(tenant_id) as db:
         chunk_count = (
@@ -60,14 +63,24 @@ async def run_agent(
             )
         ).scalar()
     if not chunk_count:
-        return AgentRunApiResponse(
-            answer=(
-                "У вас ещё нет проиндексированных документов. "
-                "Перейдите в раздел «Документы», загрузите файлы — "
-                "после индексации я смогу отвечать на вопросы по ним."
-            ),
-            confidence=1.0,
+        answer = (
+            "У вас ещё нет проиндексированных документов. "
+            "Перейдите в раздел «Документы», загрузите файлы — "
+            "после индексации я смогу отвечать на вопросы по ним."
         )
+        await log_agent_query(
+            QueryLogEntry(
+                tenant_id=tenant_id,
+                user_id=actor.user_id,
+                user_name=actor.user_name,
+                mode="run",
+                model=model_name,
+                query=user_query,
+                answer=answer,
+                confidence=1.0,
+            )
+        )
+        return AgentRunApiResponse(answer=answer, confidence=1.0)
 
     payload = payload.model_copy(update={"tenant_id": tenant_id})
     client: Client = request.app.state.temporal
@@ -82,7 +95,32 @@ async def run_agent(
                 task_queue=settings.temporal_task_queue,
             )
         except Exception as e:
+            await log_agent_query(
+                QueryLogEntry(
+                    tenant_id=tenant_id,
+                    user_id=actor.user_id,
+                    user_name=actor.user_name,
+                    mode="run",
+                    model=model_name,
+                    query=user_query,
+                    status="error",
+                    error=str(e),
+                    workflow_id=workflow_id,
+                )
+            )
             raise HTTPException(status_code=500, detail=str(e)) from e
+        await log_agent_query(
+            QueryLogEntry(
+                tenant_id=tenant_id,
+                user_id=actor.user_id,
+                user_name=actor.user_name,
+                mode="run",
+                model=model_name,
+                query=user_query,
+                status="pending",
+                workflow_id=workflow_id,
+            )
+        )
         return AgentRunApiResponse(workflow_id=workflow_id, pending_approval=True)
 
     try:
@@ -93,6 +131,21 @@ async def run_agent(
             task_queue=settings.temporal_task_queue,
         )
         sources = normalize_citation_sources(result.answer, result.sources)
+        await log_agent_query(
+            QueryLogEntry(
+                tenant_id=tenant_id,
+                user_id=actor.user_id,
+                user_name=actor.user_name,
+                mode="run",
+                model=model_name,
+                query=user_query,
+                answer=result.answer,
+                confidence=result.confidence,
+                sources_count=len(sources),
+                cached=result.cached,
+                workflow_id=workflow_id,
+            )
+        )
         return AgentRunApiResponse(
             answer=result.answer,
             confidence=result.confidence,
@@ -100,12 +153,26 @@ async def run_agent(
             cached=result.cached,
         )
     except Exception as e:
+        await log_agent_query(
+            QueryLogEntry(
+                tenant_id=tenant_id,
+                user_id=actor.user_id,
+                user_name=actor.user_name,
+                mode="run",
+                model=model_name,
+                query=user_query,
+                status="error",
+                error=str(e),
+                workflow_id=workflow_id,
+            )
+        )
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post("/agent/stream")
-async def agent_stream(body: AgentStreamRequest, tenant_id: TenantID) -> StreamingResponse:
+async def agent_stream(body: AgentStreamRequest, actor: ActorDep) -> StreamingResponse:
     """SSE streaming agent — bypasses Temporal for interactive chat."""
+    tenant_id = actor.tenant_id
     user_query = await enforce_agent_limits(tenant_id, body.user_query, "/agent/stream")
     model_name = body.model or settings.strong_model
     scoped_document_id = body.document_id
@@ -184,6 +251,47 @@ async def agent_stream(body: AgentStreamRequest, tenant_id: TenantID) -> Streami
     async def generate() -> AsyncIterator[str]:
         request_t0 = time.monotonic()
         scoped = scoped_document_id is not None or scoped_notebook_id is not None
+        scope_type = (
+            "document"
+            if scoped_document_id is not None
+            else "notebook"
+            if scoped_notebook_id is not None
+            else None
+        )
+        scope_ref = scoped_document_id if scoped_document_id is not None else scoped_notebook_id
+
+        def log_entry(
+            answer: str = "",
+            confidence: float | None = None,
+            cached_hit: bool = False,
+            sources_count: int = 0,
+            prompt_tokens: int = 0,
+            completion_tokens: int = 0,
+            status: str = "ok",
+            error: str | None = None,
+        ) -> QueryLogEntry:
+            return QueryLogEntry(
+                tenant_id=tenant_id,
+                user_id=actor.user_id,
+                user_name=actor.user_name,
+                mode="stream",
+                model=model_name,
+                query=user_query,
+                session_id=body.session_id,
+                scope_type=scope_type,
+                scope_ref=scope_ref,
+                retrieval_query=retrieval_query,
+                answer=answer,
+                status=status,
+                error=error,
+                latency_ms=int((time.monotonic() - request_t0) * 1000),
+                cached=cached_hit,
+                confidence=confidence,
+                sources_count=sources_count,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+            )
+
         cached = None
         if not scoped:
             cache_t0 = time.monotonic()
@@ -209,6 +317,14 @@ async def agent_stream(body: AgentStreamRequest, tenant_id: TenantID) -> Streami
             cached_sources = serialize_sources(answer_sources)
             yield f"data: {json.dumps({'type': 'token', 'content': cached.answer})}\n\n"
             yield f"data: {json.dumps({'type': 'done', 'answer': cached.answer, 'sources': cached_sources, 'confidence': cached.confidence, 'cached': True})}\n\n"
+            await log_agent_query(
+                log_entry(
+                    answer=cached.answer,
+                    confidence=cached.confidence,
+                    cached_hit=True,
+                    sources_count=len(answer_sources),
+                )
+            )
             return
 
         try:
@@ -245,6 +361,7 @@ async def agent_stream(body: AgentStreamRequest, tenant_id: TenantID) -> Streami
                     "data: "
                     f"{json.dumps({'type': 'done', 'answer': answer, 'sources': [], 'confidence': output.confidence, 'cached': False})}\n\n"
                 )
+                await log_agent_query(log_entry(answer=answer, confidence=0.2))
                 return
 
             selected_chunks = select_diverse_chunks(
@@ -333,6 +450,16 @@ async def agent_stream(body: AgentStreamRequest, tenant_id: TenantID) -> Streami
                     )
                 )
 
+            await log_agent_query(
+                log_entry(
+                    answer=output.answer,
+                    confidence=output.confidence,
+                    sources_count=len(output.sources),
+                    prompt_tokens=prompt_tokens,
+                    completion_tokens=completion_tokens,
+                )
+            )
+
             if not scoped:
                 with contextlib.suppress(Exception):
                     await semantic_cache.set(retrieval_query, tenant_id, output)
@@ -340,6 +467,7 @@ async def agent_stream(body: AgentStreamRequest, tenant_id: TenantID) -> Streami
         except Exception as exc:
             log.exception("agent_stream error | tenant=%s", tenant_id)
             yield f"data: {json.dumps({'type': 'error', 'message': str(exc)})}\n\n"
+            await log_agent_query(log_entry(status="error", error=str(exc)))
 
     return StreamingResponse(
         generate(),
@@ -355,10 +483,11 @@ async def agent_stream(body: AgentStreamRequest, tenant_id: TenantID) -> Streami
 @router.post("/agent/research", response_model=AgentRunApiResponse)
 async def run_research(
     payload: MultiStepResearchInput,
-    tenant_id: TenantID,
+    actor: ActorDep,
     request: Request,
 ) -> AgentRunApiResponse:
     """Multi-step research: fan-out sub-queries as child workflows, then synthesise."""
+    tenant_id = actor.tenant_id
     main_query = await enforce_agent_limits(tenant_id, payload.main_query, "/agent/research")
     sub_queries = [validate_agent_query(q) for q in payload.sub_queries]
     payload = payload.model_copy(
@@ -368,6 +497,7 @@ async def run_research(
             "sub_queries": sub_queries,
         }
     )
+    model_name = payload.model or settings.strong_model
     client: Client = request.app.state.temporal
     workflow_id = f"research-{tenant_id}-{uuid.uuid4()}"
     try:
@@ -377,11 +507,40 @@ async def run_research(
             id=workflow_id,
             task_queue=settings.temporal_task_queue,
         )
+        sources = normalize_citation_sources(result.answer, result.sources)
+        await log_agent_query(
+            QueryLogEntry(
+                tenant_id=tenant_id,
+                user_id=actor.user_id,
+                user_name=actor.user_name,
+                mode="research",
+                model=model_name,
+                query=main_query,
+                answer=result.answer,
+                confidence=result.confidence,
+                sources_count=len(sources),
+                cached=result.cached,
+                workflow_id=workflow_id,
+            )
+        )
         return AgentRunApiResponse(
             answer=result.answer,
             confidence=result.confidence,
-            sources=normalize_citation_sources(result.answer, result.sources),
+            sources=sources,
             cached=result.cached,
         )
     except Exception as e:
+        await log_agent_query(
+            QueryLogEntry(
+                tenant_id=tenant_id,
+                user_id=actor.user_id,
+                user_name=actor.user_name,
+                mode="research",
+                model=model_name,
+                query=main_query,
+                status="error",
+                error=str(e),
+                workflow_id=workflow_id,
+            )
+        )
         raise HTTPException(status_code=500, detail=str(e)) from e
