@@ -5,7 +5,7 @@ from datetime import datetime
 
 from packages.rag import CitationSource
 from packages.storage import DocumentAssetStatus, DocumentStatus
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, EmailStr, Field, model_validator
 
 
 class ChatMessageSchema(BaseModel):
@@ -407,3 +407,28 @@ class SessionInfo(BaseModel):
     email: str | None = None
     role: str | None = None
     is_admin: bool = False
+
+
+class RegisterRequest(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=8, max_length=256)
+    name: str = Field(default="", max_length=256)
+
+
+class EmailLoginRequest(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=1, max_length=256)
+
+
+class EmailLoginResponse(BaseModel):
+    token: str
+    tenant_id: str
+    user_id: str
+    user_name: str | None = None
+    email: str
+    role: str
+    is_admin: bool
+
+
+class PasswordChangeRequest(BaseModel):
+    new_password: str = Field(min_length=8, max_length=256)
