@@ -319,8 +319,9 @@ async def login(body: EmailLoginRequest) -> EmailLoginResponse:
     if user is None or not verify_password(body.password, user.password_hash):
         raise HTTPException(status_code=401, detail="invalid email or password")
 
-    # ADMIN_EMAILS stays authoritative across logins.
-    role = _role_for(email)
+    # ADMIN_EMAILS may promote, but never demote an admin-granted role
+    # (roles are also granted through the admin panel).
+    role = "admin" if (user.role == "admin" or email in settings.admin_emails) else "member"
     if user.role != role:
         async with async_session() as s, s.begin():
             user.role = role
