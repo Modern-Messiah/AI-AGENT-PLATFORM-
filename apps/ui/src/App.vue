@@ -33,6 +33,7 @@ import AppSidebar from './components/AppSidebar.vue'
 import AppTopbar from './components/AppTopbar.vue'
 import SettingsModal from './components/SettingsModal.vue'
 import { useSettingsStore } from './stores/settings'
+import { useSessionStore } from './stores/session'
 import { useI18n } from './composables/useI18n'
 import { readStoredSidebarCollapsed, toggleSidebarCollapsed } from './utils/sidebarCollapse'
 import { useMaxWidthMediaQuery } from './utils/mediaQuery'
@@ -41,11 +42,21 @@ import { clearSettingsQuery, shouldOpenSettingsModal } from './utils/settingsRou
 const route = useRoute()
 const router = useRouter()
 const settings = useSettingsStore()
+const session = useSessionStore()
 const { t } = useI18n()
-const showSettings = ref(!settings.isConnected || shouldOpenSettingsModal(route.query))
+const showSettings = ref(
+  !settings.isConnected && !session.isAuthenticated || shouldOpenSettingsModal(route.query)
+)
 const sidebarCollapsed = ref(false)
 const isMobile = useMaxWidthMediaQuery(900)
 const mobileNavOpen = ref(false)
+
+// A session expiring mid-flight logs the user out to the login page.
+watch(() => session.isAuthenticated, (active) => {
+  if (!active && !settings.isConnected && route.path !== '/login') {
+    router.replace('/login')
+  }
+})
 
 watch(() => route.path, () => {
   mobileNavOpen.value = false
