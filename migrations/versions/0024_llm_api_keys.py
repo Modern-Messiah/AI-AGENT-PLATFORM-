@@ -49,9 +49,7 @@ def upgrade() -> None:
         )
         """
     )
-    op.execute(
-        "CREATE INDEX ix_llm_api_keys_provider_active ON llm_api_keys (provider, is_active)"
-    )
+    op.execute("CREATE INDEX ix_llm_api_keys_provider_active ON llm_api_keys (provider, is_active)")
     # Runtime role grant — every new table must repeat this (see 0020).
     op.execute(f"GRANT SELECT, INSERT, UPDATE, DELETE ON llm_api_keys TO {_role_ident()}")
 

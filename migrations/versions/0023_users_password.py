@@ -19,9 +19,7 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.execute(
-        "ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash VARCHAR(512)"
-    )
+    op.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash VARCHAR(512)")
 
 
 def downgrade() -> None:
