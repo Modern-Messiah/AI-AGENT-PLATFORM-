@@ -43,9 +43,20 @@ class AuthConfigError(HTTPException):
 
 
 def google_login_configured() -> bool:
+    """OAuth is usable only with an explicit login allowlist (no open signup)."""
     return bool(
-        settings.google_client_id and settings.google_client_secret and settings.auth_jwt_secret
+        settings.google_client_id
+        and settings.google_client_secret
+        and settings.auth_jwt_secret
+        and login_allowed_emails()
     )
+
+
+def login_allowed_emails() -> set[str]:
+    """Emails that may sign in: AUTH_ALLOWED_EMAILS plus ADMIN_EMAILS."""
+    return {e.lower() for e in settings.auth_allowed_emails} | {
+        e.lower() for e in settings.admin_emails
+    }
 
 
 def _now() -> datetime:
