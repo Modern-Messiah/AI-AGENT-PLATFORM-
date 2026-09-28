@@ -83,7 +83,7 @@ async def test_require_tenant_returns_401_for_missing_api_key(monkeypatch) -> No
         await api_keys.require_tenant(None)
 
     assert exc_info.value.status_code == 401
-    assert exc_info.value.detail == "missing API key"
+    assert exc_info.value.detail == "missing credentials: X-API-Key or Bearer session"
     assert factory.execute_count == 0
 
 

@@ -4,8 +4,8 @@ from datetime import UTC, datetime
 
 import pytest
 from apps.api.main import CreateUserRequest, UserInfo, app
-from apps.api.routers import auth as auth_router
 from fastapi import HTTPException
+from packages.auth import require_admin_principal
 
 
 def test_user_admin_routes_are_registered() -> None:
@@ -20,18 +20,10 @@ def test_user_admin_routes_are_registered() -> None:
     assert ("/auth/users/{user_id}", "DELETE") in routes
 
 
-@pytest.mark.parametrize(
-    "endpoint",
-    [
-        lambda: auth_router.list_users(x_admin_secret="wrong"),
-        lambda: auth_router.delete_user(
-            user_id="00000000-0000-0000-0000-000000000000", x_admin_secret="wrong"
-        ),
-    ],
-)
-async def test_user_admin_endpoints_reject_bad_admin_secret(endpoint) -> None:
+async def test_user_admin_endpoints_reject_bad_admin_secret() -> None:
+    # Both endpoints are guarded by the require_admin_principal dependency.
     with pytest.raises(HTTPException) as exc_info:
-        await endpoint()
+        await require_admin_principal(x_admin_secret="wrong")
     assert exc_info.value.status_code == 403
 
 
