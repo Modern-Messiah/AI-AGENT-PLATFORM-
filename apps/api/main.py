@@ -53,6 +53,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from packages.auth import revocation_listener
 from packages.core import settings
+from packages.llm.keyring import keyring_refresh_loop, refresh_from_db
 from packages.observability import setup_tracing
 from packages.rag.embedder import embed_texts
 from temporalio.client import Client
@@ -155,11 +156,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.temporal = await Client.connect(
         settings.temporal_address, namespace=settings.temporal_namespace
     )
+    await refresh_from_db()
     revocation_task = asyncio.create_task(revocation_listener())
     retention_task = asyncio.create_task(retention_loop())
+    keyring_task = asyncio.create_task(keyring_refresh_loop())
     yield
     revocation_task.cancel()
     retention_task.cancel()
+    keyring_task.cancel()
 
 
 app = FastAPI(title="AI Agent Platform", lifespan=lifespan)

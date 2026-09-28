@@ -125,9 +125,11 @@ class Settings(BaseSettings):
     auth_session_ttl_hours: int = 12
     # Comma-separated Google emails that get the admin cabinet on login.
     admin_emails: Annotated[list[str], NoDecode] = []
-    # Who may sign in at all (ADMIN_EMAILS is always allowed). Empty allowlist
-    # disables Google login — no open registration by default.
+    # Who may sign in at all — consulted only when open_registration is false.
     auth_allowed_emails: Annotated[list[str], NoDecode] = []
+    # Open signup: anyone with any email (incl. gmail.com) can register as a
+    # member. Set false to fall back to the AUTH_ALLOWED_EMAILS allowlist.
+    open_registration: bool = True
     # Tenant every Google-logged-in user belongs to (single-deployment model).
     default_tenant_id: str = "main"
 

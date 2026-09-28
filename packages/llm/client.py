@@ -13,11 +13,24 @@ from pydantic_ai.models.openai import OpenAIModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
 from packages.core import settings
+from packages.llm.keyring import resolve_api_key
 
-_PROVIDER_CONFIG: dict[str, tuple[str, str]] = {
-    "moonshot": ("https://api.moonshot.ai/v1", settings.moonshot_api_key),
-    "deepseek": ("https://api.deepseek.com", settings.deepseek_api_key),
+_PROVIDER_ENV_KEYS: dict[str, str] = {
+    "moonshot": "moonshot",
+    "deepseek": "deepseek",
 }
+_PROVIDER_BASE_URLS: dict[str, str] = {
+    "moonshot": "https://api.moonshot.ai/v1",
+    "deepseek": "https://api.deepseek.com",
+}
+
+
+def _env_key(provider: str) -> str:
+    if provider == "moonshot":
+        return settings.moonshot_api_key
+    if provider == "deepseek":
+        return settings.deepseek_api_key
+    return ""
 
 
 @dataclass
@@ -34,10 +47,9 @@ def _resolve_model(model_name: str | None = None) -> tuple[str, str, str, str]:
 
     if len(parts) == 2:
         provider_key, model_id = parts
-        base_url, api_key = _PROVIDER_CONFIG.get(
-            provider_key,
-            ("https://api.openai.com/v1", ""),
-        )
+        base_url = _PROVIDER_BASE_URLS.get(provider_key, "https://api.openai.com/v1")
+        # Admin-managed key wins; the env key is the fallback.
+        api_key = resolve_api_key(provider_key, _env_key(provider_key)) if provider_key else ""
     else:
         provider_key = ""
         model_id = full_name

@@ -42,6 +42,7 @@ def _auth_config(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "google_client_secret", "google-client-secret")
     monkeypatch.setattr(settings, "admin_emails", ["root@example.com"])
     monkeypatch.setattr(settings, "default_tenant_id", "main")
+    monkeypatch.setattr(settings, "open_registration", False)
 
 
 # ── session tokens ───────────────────────────────────────────────────────────
