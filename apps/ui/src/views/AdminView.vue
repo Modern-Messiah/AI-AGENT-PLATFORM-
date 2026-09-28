@@ -212,7 +212,12 @@
         <div class="card">
           <div class="card-header">
             <div class="card-title">{{ t('admin.usersTitle') }}</div>
-            <span v-if="users" class="badge badge-muted">{{ users.length }}</span>
+            <div class="keys-header-actions">
+              <span v-if="users" class="badge badge-muted">{{ users.length }}</span>
+              <button class="btn btn-primary btn-sm" @click="userFormOpen = true">
+                {{ t('admin.addUser') }}
+              </button>
+            </div>
           </div>
           <div v-if="users && !users.length" class="empty compact-empty">
             <div class="empty-title">{{ t('admin.noUsers') }}</div>
@@ -221,6 +226,7 @@
             <thead>
               <tr>
                 <th>{{ t('admin.user') }}</th>
+                <th>{{ t('login.email') }}</th>
                 <th>{{ t('admin.tenant') }}</th>
                 <th>{{ t('admin.role') }}</th>
                 <th>{{ t('admin.keys') }}</th>
@@ -233,6 +239,7 @@
             <tbody>
               <tr v-for="user in users" :key="user.id">
                 <td class="file-name">{{ user.name }}</td>
+                <td class="td-mono">{{ user.email || '—' }}</td>
                 <td class="td-mono">{{ user.tenant_id }}</td>
                 <td>
                   <span :class="['badge', user.role === 'admin' ? 'badge-purple' : 'badge-blue']">
@@ -317,6 +324,46 @@
           </table>
         </div>
       </template>
+
+      <!-- Add user modal -->
+      <div v-if="userFormOpen" class="modal-overlay" @click.self="userFormOpen = false">
+        <div class="modal key-modal">
+          <div class="modal-title">{{ t('admin.addUser') }}</div>
+          <div class="modal-sub">{{ t('admin.addUserSub') }}</div>
+          <div class="form-group">
+            <label class="form-label">{{ t('login.email') }}</label>
+            <input v-model="userForm.email" type="email" class="form-input" placeholder="name@example.com" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">{{ t('admin.keyName') }}</label>
+            <input v-model="userForm.name" class="form-input" :placeholder="t('login.namePlaceholder')" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">{{ t('login.password') }}</label>
+            <input v-model="userForm.password" type="password" class="form-input" :placeholder="t('login.passwordPlaceholder')" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">{{ t('admin.role') }}</label>
+            <select v-model="userForm.role" class="form-input">
+              <option value="member">member</option>
+              <option value="admin">admin</option>
+            </select>
+          </div>
+          <div v-if="userFormError" class="admin-error">{{ userFormError }}</div>
+          <div class="form-actions">
+            <button class="btn btn-ghost" :disabled="userSaving" @click="userFormOpen = false">
+              {{ t('common.cancel') }}
+            </button>
+            <button
+              class="btn btn-primary"
+              :disabled="userSaving || !userForm.email.trim() || userForm.password.length < 8"
+              @click="saveUser"
+            >
+              {{ userSaving ? t('settings.validating') : t('common.create') }}
+            </button>
+          </div>
+        </div>
+      </div>
 
       <!-- ── LLM provider keys ────────────────────────────────────── -->
       <template v-if="activeTab === 'llm'">
@@ -795,6 +842,11 @@ const llmFormError = ref('')
 const llmForm = ref({ provider: 'moonshot', name: '', key: '' })
 const llmDeleteTarget = ref(null)
 
+const userFormOpen = ref(false)
+const userSaving = ref(false)
+const userFormError = ref('')
+const userForm = ref({ email: '', name: '', password: '', role: 'member' })
+
 const filters = ref({ q: '', tenantId: '', mode: '', status: '', days: 30 })
 const prompts = ref(null)
 const promptsOffset = ref(0)
@@ -839,6 +891,30 @@ function loadKeys() {
 }
 function loadLlmKeys() {
   return _call('/admin/llm-keys', (data) => { llmKeys.value = data })
+}
+
+async function saveUser() {
+  userSaving.value = true
+  userFormError.value = ''
+  try {
+    await apiAdminFetch('/admin/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: userForm.value.email.trim(),
+        name: userForm.value.name.trim(),
+        password: userForm.value.password,
+        role: userForm.value.role,
+      }),
+    })
+    userFormOpen.value = false
+    userForm.value = { email: '', name: '', password: '', role: 'member' }
+    loadUsers()
+  } catch (e) {
+    userFormError.value = e.message
+  } finally {
+    userSaving.value = false
+  }
 }
 
 async function saveLlmKey() {
