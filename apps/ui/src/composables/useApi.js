@@ -63,5 +63,26 @@ export function useApi() {
     })
   }
 
-  return { apiFetch, apiRawFetch, apiStreamFetch, apiUpload }
+  // Admin panel calls authenticate with the deployment-wide admin secret
+  // instead of a tenant API key (X-Admin-Secret endpoints).
+  async function apiAdminFetch(path, opts = {}) {
+    const base = settings.baseUrl || '/api'
+    const res = await fetch(`${base}${path}`, {
+      ...opts,
+      headers: {
+        'X-Admin-Secret': settings.adminSecret,
+        ...(opts.headers || {}),
+      },
+    })
+    if (!res.ok) {
+      if (res.status === 403) settings.markAdminInvalid()
+      const text = await res.text().catch(() => res.statusText)
+      throw new Error(`${res.status}: ${text}`)
+    }
+    if (settings.adminStatus !== 'valid') settings.markAdminValid()
+    if (res.status === 204 || res.headers.get('content-length') === '0') return null
+    return res.json()
+  }
+
+  return { apiFetch, apiRawFetch, apiStreamFetch, apiUpload, apiAdminFetch }
 }

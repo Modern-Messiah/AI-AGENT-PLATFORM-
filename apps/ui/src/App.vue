@@ -63,6 +63,7 @@ const meta = computed(() => {
     '/documents': { title: t('app.documentsTitle'), sub: t('app.documentsSub') },
     '/notebooks': { title: t('app.notebooksTitle'), sub: t('app.notebooksSub') },
     '/analytics': { title: t('app.analyticsTitle'), sub: t('app.analyticsSub') },
+    '/admin': { title: t('app.adminTitle'), sub: t('app.adminSub') },
   }
   return pageMeta[route.path] || { title: 'AI Agent Platform', sub: '' }
 })

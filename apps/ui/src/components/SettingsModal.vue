@@ -26,6 +26,14 @@
       </div>
 
       <div class="form-group">
+        <label class="form-label">{{ t('settings.adminSecret') }}</label>
+        <input class="form-input" type="password" v-model="localAdminSecret"
+               :placeholder="t('settings.adminSecretPlaceholder')"
+               :disabled="validating" />
+        <div class="language-hint">{{ t('settings.adminSecretHint') }}</div>
+      </div>
+
+      <div class="form-group">
         <label class="form-label">{{ t('settings.language') }}</label>
         <div class="language-control" role="group" :aria-label="t('settings.language')">
           <button
@@ -106,6 +114,7 @@ const themeOptions = [AUTO_THEME_OPTION, ...THEMES]
 
 const localKey  = ref(settings.apiKey)
 const localBase = ref(settings.baseUrl)
+const localAdminSecret = ref(settings.adminSecret)
 const validating = ref(false)
 const error = ref('')
 const keyManagedByEnv = computed(() => settings.isKeyManagedByEnv)
@@ -131,6 +140,7 @@ async function save() {
       return
     }
     settings.save(key, base)
+    settings.setAdminSecret(localAdminSecret.value)
     emit('close')
   } catch {
     error.value = t('settings.connectionError')
