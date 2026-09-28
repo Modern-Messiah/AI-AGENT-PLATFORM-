@@ -3,33 +3,33 @@
     <div class="modal settings-modal">
       <div class="modal-title">{{ t('settings.title') }}</div>
       <div class="modal-sub">
-        {{ keyManagedByEnv
-          ? t('settings.envDescription')
-          : t('settings.localDescription') }}
+        {{ isAdminUser
+          ? (keyManagedByEnv ? t('settings.envDescription') : t('settings.localDescription'))
+          : t('settings.interfaceOnly') }}
       </div>
 
-      <div class="settings-section">{{ t('settings.sectionConnection') }}</div>
+      <div v-if="isAdminUser" class="settings-section">{{ t('settings.sectionConnection') }}</div>
 
-      <div class="form-group">
+      <div v-if="isAdminUser" class="form-group">
         <label class="form-label">{{ t('settings.baseUrl') }}</label>
         <input class="form-input" v-model="localBase" :placeholder="t('settings.basePlaceholder')"
                :disabled="validating" />
       </div>
 
-      <div v-if="keyManagedByEnv" class="env-note">
+      <div v-if="isAdminUser && keyManagedByEnv" class="env-note">
         {{ t('settings.envNote').split('VITE_API_KEY')[0] }}<span>VITE_API_KEY</span>{{ t('settings.envNote').split('VITE_API_KEY')[1] }}
       </div>
 
-      <div v-else class="form-group">
+      <div v-else-if="isAdminUser" class="form-group">
         <label class="form-label">X-API-Key</label>
         <input class="form-input" type="password" v-model="localKey"
                :placeholder="t('settings.keyPlaceholder')"
                :disabled="validating" autofocus />
       </div>
 
-      <div class="settings-section">{{ t('settings.sectionAdmin') }}</div>
+      <div v-if="isAdminUser" class="settings-section">{{ t('settings.sectionAdmin') }}</div>
 
-      <div class="form-group">
+      <div v-if="isAdminUser" class="form-group">
         <label class="form-label">{{ t('settings.adminSecret') }}</label>
         <input class="form-input" type="password" v-model="localAdminSecret"
                :placeholder="t('settings.adminSecretPlaceholder')"
@@ -88,7 +88,7 @@
 
       <div class="form-actions">
         <button class="btn btn-ghost" :disabled="validating" @click="$emit('close')">{{ t('common.cancel') }}</button>
-        <button class="btn btn-primary" :disabled="validating || (!keyManagedByEnv && !localKey.trim())" @click="save">
+        <button class="btn btn-primary" :disabled="validating || (isAdminUser && !keyManagedByEnv && !localKey.trim())" @click="save">
           <div v-if="validating" class="spinner" style="width: 12px; height: 12px; border-width: 1.5px"></div>
           {{ validating ? t('settings.validating') : t('common.save') }}
         </button>
@@ -100,6 +100,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
+import { useSessionStore } from '@/stores/session'
 import { useI18n } from '@/composables/useI18n'
 import { THEMES } from '@/utils/theme'
 
@@ -111,6 +112,7 @@ const AUTO_THEME_OPTION = {
 
 const emit = defineEmits(['close'])
 const settings = useSettingsStore()
+const session = useSessionStore()
 const { t } = useI18n()
 const languageOptions = computed(() => [
   { value: 'ru', label: t('settings.russian') },
@@ -124,8 +126,14 @@ const localAdminSecret = ref(settings.adminSecret)
 const validating = ref(false)
 const error = ref('')
 const keyManagedByEnv = computed(() => settings.isKeyManagedByEnv)
+const isAdminUser = computed(() => session.isAdmin || settings.hasAdminSecret)
 
 async function save() {
+  if (!isAdminUser.value) {
+    // Interface-only mode: locale/theme persist on change; nothing to validate.
+    emit('close')
+    return
+  }
   const key  = keyManagedByEnv.value ? settings.apiKey : localKey.value.trim()
   const base = localBase.value.trim() || '/api'
   if (!key) return

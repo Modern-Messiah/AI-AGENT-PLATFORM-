@@ -267,6 +267,8 @@ class AdminUserInfo(BaseModel):
     id: str
     tenant_id: str
     name: str
+    email: str | None = None
+    has_password: bool = False
     role: str
     created_at: datetime
     keys: int
@@ -274,6 +276,13 @@ class AdminUserInfo(BaseModel):
     queries_total: int
     queries_7d: int
     last_query_at: datetime | None = None
+
+
+class CreateAdminUserRequest(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=8, max_length=256)
+    name: str = Field(default="", max_length=256)
+    role: str = Field(default="member", pattern="^(member|admin)$")
 
 
 class AdminKeyInfo(BaseModel):

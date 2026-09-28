@@ -371,3 +371,51 @@ async def test_llm_key_value_never_returned(monkeypatch) -> None:
 
     assert keys[0].key_preview == "sk-…alue"[0:3] + "…" + "sk-super-secret-value"[-4:]
     assert "super-secret" not in keys[0].model_dump_json()
+
+
+# ── admin-managed user accounts ──────────────────────────────────────────────
+
+
+async def test_admin_can_create_user_with_role(monkeypatch) -> None:
+    from datetime import UTC, datetime
+
+    from apps.api.schemas import CreateAdminUserRequest
+
+    session = LlmKeysSession()  # same fake: records adds, serves rows
+    monkeypatch.setattr(admin_router, "admin_session", lambda: session)
+
+    from packages.storage import User
+
+    created: list[User] = []
+
+    def add_user(row: object) -> None:
+        row.created_at = datetime(2026, 9, 28, tzinfo=UTC)  # type: ignore[attr-defined]
+        created.append(row)  # type: ignore[arg-type]
+
+    session.add = add_user  # type: ignore[method-assign]
+
+    info = await admin_router.admin_create_user(
+        CreateAdminUserRequest(email="New@Gmail.com", password="long-pass-123", role="admin"),
+        AdminPrincipal(via="secret", actor=None),
+    )
+
+    assert info.email == "new@gmail.com"  # normalized
+    assert info.role == "admin"
+    assert info.has_password is True
+    assert created[0].password_hash.startswith("scrypt$")
+
+
+async def test_admin_create_user_rejects_duplicate_email(monkeypatch) -> None:
+    from apps.api.schemas import CreateAdminUserRequest
+    from packages.storage import User
+
+    existing = User(id=uuid.uuid4(), tenant_id="main", name="X", email="dup@example.com")
+    session = LlmKeysSession([existing])
+    monkeypatch.setattr(admin_router, "admin_session", lambda: session)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await admin_router.admin_create_user(
+            CreateAdminUserRequest(email="dup@example.com", password="long-pass-123"),
+            AdminPrincipal(via="secret", actor=None),
+        )
+    assert exc_info.value.status_code == 409
