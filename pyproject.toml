@@ -46,6 +46,7 @@ dependencies = [
     # Logging
     "structlog>=24.4",
     "prometheus-client>=0.26.0",
+    "pyjwt>=2.8",
 ]
 
 [dependency-groups]

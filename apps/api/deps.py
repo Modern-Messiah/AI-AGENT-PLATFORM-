@@ -3,10 +3,17 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, UploadFile
-from packages.auth import Actor, require_actor, require_tenant
+from packages.auth import (
+    Actor,
+    AdminPrincipal,
+    require_actor,
+    require_admin_principal,
+    require_tenant,
+)
 
 TenantID = Annotated[str, Depends(require_tenant)]
 ActorDep = Annotated[Actor, Depends(require_actor)]
+AdminDep = Annotated[AdminPrincipal, Depends(require_admin_principal)]
 
 _READ_CHUNK = 64 * 1024  # 64 KB
 

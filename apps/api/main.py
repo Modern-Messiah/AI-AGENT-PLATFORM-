@@ -25,6 +25,9 @@ Endpoints:
   POST /notebooks/{id}/insights      — rebuild collection overview
   GET  /analytics/usage              — cost/token aggregate for a tenant
   POST /auth/keys                    — create an API key (admin only)
+  GET  /auth/google/url              — Google consent URL for the login page
+  GET  /auth/google/callback         — OAuth callback, issues a session JWT
+  GET  /auth/me                      — current principal (session or API key)
   GET  /admin/overview               — deployment counters (X-Admin-Secret)
   GET  /admin/tenants                — per-tenant activity
   GET  /admin/users                  — users with key/query stats
@@ -59,6 +62,7 @@ from apps.api.routers import (
     auth_router,
     documents_router,
     health_router,
+    login_router,
     notebooks_router,
     sessions_router,
     workflows_router,
@@ -166,6 +170,7 @@ app.add_middleware(
 )
 
 app.include_router(health_router)
+app.include_router(login_router)
 app.include_router(auth_router)
 app.include_router(admin_router)
 app.include_router(agent_router)

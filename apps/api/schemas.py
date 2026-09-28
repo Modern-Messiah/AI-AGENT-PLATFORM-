@@ -394,3 +394,16 @@ class AdminUsageResponse(BaseModel):
 class AdminHealthResponse(BaseModel):
     status: str
     checks: dict[str, str]
+
+
+class GoogleLoginUrlResponse(BaseModel):
+    url: str
+
+
+class SessionInfo(BaseModel):
+    tenant_id: str
+    user_id: str | None = None
+    user_name: str | None = None
+    email: str | None = None
+    role: str | None = None
+    is_admin: bool = False
