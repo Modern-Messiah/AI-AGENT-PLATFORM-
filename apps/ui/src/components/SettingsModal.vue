@@ -37,6 +37,31 @@
         <div class="language-hint">{{ t('settings.adminSecretHint') }}</div>
       </div>
 
+      <div v-if="session.isAuthenticated" class="settings-section">
+        {{ t('settings.sectionSecurity') }}
+      </div>
+
+      <div v-if="session.isAuthenticated" class="form-group">
+        <label class="form-label">{{ t('settings.newPassword') }}</label>
+        <input
+          v-model="localNewPassword"
+          type="password"
+          class="form-input"
+          :placeholder="t('login.passwordPlaceholder')"
+          :disabled="passwordSaving"
+        />
+        <div class="language-hint">{{ t('settings.newPasswordHint') }}</div>
+        <button
+          class="btn btn-ghost btn-sm"
+          style="margin-top: 8px"
+          :disabled="passwordSaving || localNewPassword.length < 8"
+          @click="changePassword"
+        >
+          {{ passwordSaving ? t('settings.validating') : t('settings.changePassword') }}
+        </button>
+        <div v-if="passwordMessage" class="language-hint">{{ passwordMessage }}</div>
+      </div>
+
       <div class="settings-section">{{ t('settings.sectionInterface') }}</div>
 
       <div class="form-group">
@@ -123,10 +148,42 @@ const themeOptions = [AUTO_THEME_OPTION, ...THEMES]
 const localKey  = ref(settings.apiKey)
 const localBase = ref(settings.baseUrl)
 const localAdminSecret = ref(settings.adminSecret)
+const localNewPassword = ref('')
+const passwordSaving = ref(false)
+const passwordMessage = ref('')
 const validating = ref(false)
 const error = ref('')
 const keyManagedByEnv = computed(() => settings.isKeyManagedByEnv)
 const isAdminUser = computed(() => session.isAdmin || settings.hasAdminSecret)
+
+async function changePassword() {
+  const value = localNewPassword.value
+  if (value.length < 8) return
+  passwordSaving.value = true
+  passwordMessage.value = ''
+  try {
+    const base = settings.baseUrl || '/api'
+    const res = await fetch(`${base}/auth/password`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${session.token}`,
+      },
+      body: JSON.stringify({ new_password: value }),
+    })
+    if (!res.ok && res.status !== 204) {
+      const detail = await res.json().catch(() => null)
+      passwordMessage.value = detail?.detail?.[0]?.msg || t('settings.serverError', { status: res.status })
+      return
+    }
+    localNewPassword.value = ''
+    passwordMessage.value = t('settings.passwordChanged')
+  } catch {
+    passwordMessage.value = t('settings.connectionError')
+  } finally {
+    passwordSaving.value = false
+  }
+}
 
 async function save() {
   if (!isAdminUser.value) {

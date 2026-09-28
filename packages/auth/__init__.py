@@ -14,6 +14,7 @@ from packages.auth.revocation import (
     revocation_listener,
 )
 from packages.auth.session_revocation import (
+    clear_user_denial,
     deny_user_sessions,
     is_user_denied,
 )
@@ -22,6 +23,7 @@ __all__ = [
     "Actor",
     "AdminPrincipal",
     "actor_from_claims",
+    "clear_user_denial",
     "deny_user_sessions",
     "generate_key",
     "hash_password",

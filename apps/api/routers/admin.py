@@ -18,7 +18,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from openai import AsyncOpenAI
 from packages.analytics.clickhouse import ch_client
-from packages.auth import hash_password
+from packages.auth import deny_user_sessions, hash_password
 from packages.core import settings
 from packages.llm.keyring import refresh_from_db as refresh_keyring
 from packages.storage import (
@@ -49,6 +49,7 @@ from apps.api.schemas import (
     AdminHealthResponse,
     AdminKeyInfo,
     AdminOverviewResponse,
+    AdminPasswordResetRequest,
     AdminPromptDetail,
     AdminPromptListItem,
     AdminPromptListResponse,
@@ -356,6 +357,21 @@ async def admin_create_user(body: CreateAdminUserRequest, _principal: AdminDep) 
         queries_7d=0,
         last_query_at=None,
     )
+
+
+@router.post("/admin/users/{user_id}/password", status_code=204)
+async def admin_reset_user_password(
+    user_id: uuid.UUID, body: AdminPasswordResetRequest, _principal: AdminDep
+) -> None:
+    """Set a new password for any account and kill its live sessions."""
+    async with admin_session() as db:
+        user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+        if user is None:
+            raise HTTPException(status_code=404, detail="user not found")
+        user.password_hash = hash_password(body.new_password)
+    await deny_user_sessions(user_id)
+    log.info("admin reset password | user_id=%s", user_id)
+    return None
 
 
 # ── API keys (access control + activity) ─────────────────────────────────────

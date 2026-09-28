@@ -235,6 +235,9 @@ class FakeKVRedis:
     async def exists(self, key: str) -> int:
         return 1 if key in self.store else 0
 
+    async def delete(self, key: str) -> int:
+        return 1 if self.store.pop(key, None) is not None else 0
+
 
 async def test_denied_user_sessions_are_rejected(monkeypatch) -> None:
     import packages.auth.session_revocation as revocation
@@ -447,3 +450,97 @@ async def test_llm_key_test_endpoint_reports_provider_errors(monkeypatch) -> Non
     result = await admin_router.admin_test_llm_key(row.id, AdminPrincipal(via="secret", actor=None))
     assert result["ok"] is False
     assert "invalid api key" in str(result["error"])
+
+
+async def test_admin_password_reset_sets_hash_and_denies_sessions(monkeypatch) -> None:
+    from datetime import UTC, datetime
+
+    from apps.api.schemas import AdminPasswordResetRequest
+    from packages.storage import User
+
+    user = User(id=uuid.uuid4(), tenant_id="main", name="X", email="x@example.com", role="member")
+    user.created_at = datetime(2026, 9, 28, tzinfo=UTC)
+    session = LlmKeysSession([user])
+    monkeypatch.setattr(admin_router, "admin_session", lambda: session)
+
+    denied: list[object] = []
+
+    async def fake_deny(user_id: object) -> None:
+        denied.append(user_id)
+
+    monkeypatch.setattr(admin_router, "deny_user_sessions", fake_deny)
+
+    await admin_router.admin_reset_user_password(
+        user.id,
+        AdminPasswordResetRequest(new_password="brand-new-pass-123"),
+        AdminPrincipal(via="secret", actor=None),
+    )
+
+    assert user.password_hash and user.password_hash.startswith("scrypt$")
+    assert denied == [user.id]  # live sessions die with the old password
+
+
+async def test_admin_password_reset_404_for_unknown_user(monkeypatch) -> None:
+    from apps.api.schemas import AdminPasswordResetRequest
+
+    monkeypatch.setattr(admin_router, "admin_session", lambda: LlmKeysSession([]))
+    with pytest.raises(HTTPException) as exc_info:
+        await admin_router.admin_reset_user_password(
+            uuid.uuid4(),
+            AdminPasswordResetRequest(new_password="brand-new-pass-123"),
+            AdminPrincipal(via="secret", actor=None),
+        )
+    assert exc_info.value.status_code == 404
+
+
+async def test_fresh_login_lifts_session_denial(monkeypatch) -> None:
+    """A password reset denies old tokens — but a NEW login must work."""
+    import packages.auth.session_revocation as revocation
+    from apps.api.schemas import EmailLoginRequest
+    from packages.auth.passwords import hash_password
+    from packages.storage import User as U
+
+    redis = FakeKVRedis()
+    monkeypatch.setattr(revocation, "get_redis", lambda: redis)
+
+    user = U(
+        id=uuid.uuid4(),
+        tenant_id="main",
+        name="X",
+        email="x@example.com",
+        password_hash=hash_password("long-enough-pass"),
+        role="member",
+    )
+
+    class UsersFakeSession:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return None
+
+        def begin(self):
+            return self
+
+        async def execute(self, statement, params=None):
+            class R:
+                def __init__(self, row):
+                    self.row = row
+
+                def scalar_one_or_none(self):
+                    return self.row
+
+            if "WHERE users.email" in str(statement):
+                return R(user)
+            return R(None)
+
+    monkeypatch.setattr(login_router, "async_session", lambda: UsersFakeSession())
+
+    await deny_user_sessions(user.id)
+    assert await is_user_denied(user.id) is True
+
+    response = await login_router.login(
+        EmailLoginRequest(email=user.email, password="long-enough-pass")
+    )
+    assert len(response.token) > 50  # логин прошёл — блокировка снята
+    assert await is_user_denied(user.id) is False

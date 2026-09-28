@@ -98,6 +98,7 @@
                 <th>{{ t('admin.sessions') }}</th>
                 <th>{{ t('admin.queries7d') }}</th>
                 <th>{{ t('admin.lastQuery') }}</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
@@ -233,6 +234,7 @@
                 <th>{{ t('admin.queriesTotal') }}</th>
                 <th>{{ t('admin.queries7d') }}</th>
                 <th>{{ t('admin.lastQuery') }}</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
@@ -249,6 +251,15 @@
                 <td class="td-mono">{{ user.queries_total }}</td>
                 <td class="td-mono">{{ user.queries_7d }}</td>
                 <td class="td-mono">{{ fmtDateTime(user.last_query_at) }}</td>
+                <td>
+                  <button
+                    v-if="user.email"
+                    class="btn btn-ghost btn-sm"
+                    @click="resetTarget = user"
+                  >
+                    {{ t('admin.resetPassword') }}
+                  </button>
+                </td>
               </tr>
             </tbody>
           </table>
@@ -290,6 +301,30 @@
               @click="saveUser"
             >
               {{ userSaving ? t('settings.validating') : t('common.create') }}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Reset password modal -->
+      <div v-if="resetTarget" class="modal-overlay" @click.self="resetTarget = null">
+        <div class="modal key-modal">
+          <div class="modal-title">{{ t('admin.resetPassword') }}</div>
+          <div class="modal-sub">{{ t('admin.resetPasswordSub', { email: resetTarget.email }) }}</div>
+          <div class="form-group">
+            <label class="form-label">{{ t('settings.newPassword') }}</label>
+            <input v-model="resetPasswordValue" type="password" class="form-input" :placeholder="t('login.passwordPlaceholder')" />
+            <div class="language-hint">{{ t('admin.resetPasswordHint') }}</div>
+          </div>
+          <div v-if="resetError" class="admin-error">{{ resetError }}</div>
+          <div class="form-actions">
+            <button class="btn btn-ghost" @click="resetTarget = null">{{ t('common.cancel') }}</button>
+            <button
+              class="btn btn-primary"
+              :disabled="resetSaving || resetPasswordValue.length < 8"
+              @click="resetPassword"
+            >
+              {{ resetSaving ? t('settings.validating') : t('common.save') }}
             </button>
           </div>
         </div>
@@ -698,6 +733,10 @@ const userFormOpen = ref(false)
 const userSaving = ref(false)
 const userFormError = ref('')
 const userForm = ref({ email: '', name: '', password: '', role: 'member' })
+const resetTarget = ref(null)
+const resetPasswordValue = ref('')
+const resetSaving = ref(false)
+const resetError = ref('')
 const llmTesting = ref({})
 const llmTestResults = ref({})
 
@@ -742,6 +781,24 @@ function loadUsers() {
 }
 function loadLlmKeys() {
   return _call('/admin/llm-keys', (data) => { llmKeys.value = data })
+}
+
+async function resetPassword() {
+  resetSaving.value = true
+  resetError.value = ''
+  try {
+    await apiAdminFetch(`/admin/users/${resetTarget.value.id}/password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ new_password: resetPasswordValue.value }),
+    })
+    resetTarget.value = null
+    resetPasswordValue.value = ''
+  } catch (e) {
+    resetError.value = e.message
+  } finally {
+    resetSaving.value = false
+  }
 }
 
 async function saveUser() {
