@@ -20,6 +20,7 @@ from apps.api.services.query_log import (
 )
 from packages.agents.schemas import AgentRunInput, AgentRunOutput
 from packages.auth import Actor
+from packages.core import settings
 from packages.storage import AgentQueryLog
 
 # ── log_agent_query ───────────────────────────────────────────────────────────
@@ -265,3 +266,16 @@ async def test_log_agent_query_persists_key_fields(monkeypatch) -> None:
     assert isinstance(row, AgentQueryLog)
     assert row.api_key_id == key_id
     assert row.api_key_name == "laptop"
+
+
+def test_resolve_chat_model_admin_only() -> None:
+    from apps.api.routers.agent import resolve_chat_model
+
+    admin = Actor(tenant_id="t", role="admin")
+    member = Actor(tenant_id="t", role="member")
+
+    # admins pick freely; members are pinned to the default regardless
+    assert resolve_chat_model(admin, "deepseek/deepseek-v4-pro") == "deepseek/deepseek-v4-pro"
+    assert resolve_chat_model(admin, None) == settings.strong_model
+    assert resolve_chat_model(member, "deepseek/deepseek-v4-pro") == settings.strong_model
+    assert resolve_chat_model(member, None) == settings.strong_model

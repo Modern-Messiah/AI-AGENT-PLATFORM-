@@ -444,8 +444,6 @@ async def test_llm_key_test_endpoint_reports_provider_errors(monkeypatch) -> Non
 
     monkeypatch.setattr(admin_router, "AsyncOpenAI", FakeClient)
 
-    result = await admin_router.admin_test_llm_key(
-        row.id, AdminPrincipal(via="secret", actor=None)
-    )
+    result = await admin_router.admin_test_llm_key(row.id, AdminPrincipal(via="secret", actor=None))
     assert result["ok"] is False
     assert "invalid api key" in str(result["error"])
