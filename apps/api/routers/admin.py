@@ -39,6 +39,7 @@ from apps.api.schemas import (
     AdminDocumentListItem,
     AdminDocumentListResponse,
     AdminHealthResponse,
+    AdminKeyInfo,
     AdminOverviewResponse,
     AdminPromptDetail,
     AdminPromptListItem,
@@ -311,6 +312,63 @@ async def admin_users(
     return items
 
 
+# ── API keys (access control + activity) ─────────────────────────────────────
+
+
+@router.get("/admin/keys", response_model=list[AdminKeyInfo])
+async def admin_keys(
+    x_admin_secret: str = Header(..., alias="X-Admin-Secret"),
+    tenant_id: str | None = Query(default=None, max_length=64),
+) -> list[AdminKeyInfo]:
+    """All API keys with their request activity (creation/revocation stay on
+    POST /auth/keys and DELETE /auth/keys/{id} — same admin secret)."""
+    _require_admin(x_admin_secret)
+
+    async with admin_session() as db:
+        keys_stmt = (
+            select(ApiKey, User.name)
+            .outerjoin(User, ApiKey.user_id == User.id)
+            .order_by(ApiKey.created_at.desc())
+            .limit(_MAX_USERS)
+        )
+        if tenant_id:
+            keys_stmt = keys_stmt.where(ApiKey.tenant_id == tenant_id)
+        key_rows = (await db.execute(keys_stmt)).all()
+
+        stats_rows = (
+            await db.execute(
+                text(
+                    "SELECT api_key_id, count(*),"
+                    " count(*) FILTER (WHERE created_at >= now() - interval '7 days'),"
+                    " max(created_at)"
+                    " FROM agent_query_logs WHERE api_key_id IS NOT NULL"
+                    " GROUP BY api_key_id"
+                )
+            )
+        ).all()
+    stats_by_key = {row[0]: (int(row[1]), int(row[2]), row[3]) for row in stats_rows}
+
+    items = []
+    for key_row, user_name in key_rows:
+        total, week, last_at = stats_by_key.get(key_row.id, (0, 0, None))
+        items.append(
+            AdminKeyInfo(
+                id=str(key_row.id),
+                tenant_id=key_row.tenant_id,
+                name=key_row.name,
+                user_id=str(key_row.user_id) if key_row.user_id else None,
+                user_name=user_name,
+                is_active=key_row.is_active,
+                created_at=key_row.created_at,
+                last_used_at=key_row.last_used_at,
+                queries_total=total,
+                queries_7d=week,
+                last_query_at=last_at,
+            )
+        )
+    return items
+
+
 # ── Query log (prompts) ───────────────────────────────────────────────────────
 
 
@@ -320,6 +378,8 @@ def _prompt_item(row: AgentQueryLog, *, preview_only: bool) -> dict[str, object]
         "tenant_id": row.tenant_id,
         "user_id": str(row.user_id) if row.user_id else None,
         "user_name": row.user_name,
+        "api_key_id": str(row.api_key_id) if row.api_key_id else None,
+        "api_key_name": row.api_key_name,
         "mode": row.mode,
         "model": row.model,
         "session_id": str(row.session_id) if row.session_id else None,

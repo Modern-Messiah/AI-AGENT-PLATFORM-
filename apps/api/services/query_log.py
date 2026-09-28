@@ -32,6 +32,8 @@ class QueryLogEntry:
     query: str
     user_id: uuid.UUID | None = None
     user_name: str | None = None
+    api_key_id: uuid.UUID | None = None
+    api_key_name: str | None = None
     session_id: uuid.UUID | None = None
     workflow_id: str | None = None
     scope_type: str | None = None
@@ -62,6 +64,8 @@ async def log_agent_query(entry: QueryLogEntry) -> None:
             tenant_id=entry.tenant_id,
             user_id=entry.user_id,
             user_name=entry.user_name,
+            api_key_id=entry.api_key_id,
+            api_key_name=entry.api_key_name,
             mode=entry.mode,
             model=entry.model,
             session_id=entry.session_id,
