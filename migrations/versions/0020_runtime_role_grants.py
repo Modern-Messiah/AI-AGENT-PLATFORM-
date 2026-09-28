@@ -1,6 +1,6 @@
 """runtime role grants for tables created after 0011 (users, agent_query_logs)
 
-Revision ID: 0020_runtime_role_users_logs_grants
+Revision ID: 0020_runtime_role_grants
 Revises: 0019_admin_read_policies
 Create Date: 2026-09-28
 
@@ -27,7 +27,7 @@ import re
 
 from alembic import op
 
-revision: str = "0020_runtime_role_users_logs_grants"
+revision: str = "0020_runtime_role_grants"
 down_revision: str | None = "0019_admin_read_policies"
 branch_labels = None
 depends_on = None
