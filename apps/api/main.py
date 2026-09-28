@@ -25,6 +25,14 @@ Endpoints:
   POST /notebooks/{id}/insights      — rebuild collection overview
   GET  /analytics/usage              — cost/token aggregate for a tenant
   POST /auth/keys                    — create an API key (admin only)
+  GET  /admin/overview               — deployment counters (X-Admin-Secret)
+  GET  /admin/tenants                — per-tenant activity
+  GET  /admin/users                  — users with key/query stats
+  GET  /admin/prompts                — agent query log feed
+  GET  /admin/prompts/{id}           — full query log entry
+  GET  /admin/documents              — cross-tenant document health
+  GET  /admin/usage                  — cross-tenant LLM usage
+  GET  /admin/health                 — fresh dependency checks
 """
 
 from __future__ import annotations
@@ -44,6 +52,7 @@ from temporalio.client import Client
 
 from apps.api.metrics import MetricsMiddleware
 from apps.api.routers import (
+    admin_router,
     agent_router,
     analytics_router,
     auth_router,
@@ -157,6 +166,7 @@ app.add_middleware(
 
 app.include_router(health_router)
 app.include_router(auth_router)
+app.include_router(admin_router)
 app.include_router(agent_router)
 app.include_router(analytics_router)
 app.include_router(documents_router)

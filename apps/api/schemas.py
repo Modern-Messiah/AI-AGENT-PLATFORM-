@@ -215,3 +215,164 @@ class AgentStreamRequest(BaseModel):
         if self.document_id is not None and self.notebook_id is not None:
             raise ValueError("document_id and notebook_id cannot be used together")
         return self
+
+
+# ── Admin panel ──────────────────────────────────────────────────────────────
+
+
+class AdminDocumentCounts(BaseModel):
+    total: int
+    done: int
+    processing: int
+    failed: int
+    pending: int
+
+
+class AdminQueryCounts(BaseModel):
+    total: int
+    today: int
+    errors: int
+
+
+class AdminDailyQueries(BaseModel):
+    day: str
+    count: int
+    errors: int
+
+
+class AdminOverviewResponse(BaseModel):
+    tenants: int
+    users: int
+    active_api_keys: int
+    documents: AdminDocumentCounts
+    chunks: int
+    notebooks: int
+    chat_sessions: int
+    chat_messages: int
+    queries: AdminQueryCounts
+    daily_queries: list[AdminDailyQueries]
+
+
+class AdminTenantSummary(BaseModel):
+    tenant_id: str
+    users: int
+    documents: int
+    chunks: int
+    sessions: int
+    queries_7d: int
+    last_query_at: datetime | None = None
+
+
+class AdminUserInfo(BaseModel):
+    id: str
+    tenant_id: str
+    name: str
+    role: str
+    created_at: datetime
+    keys: int
+    active_keys: int
+    queries_total: int
+    queries_7d: int
+    last_query_at: datetime | None = None
+
+
+class AdminPromptListItem(BaseModel):
+    id: str
+    tenant_id: str
+    user_id: str | None = None
+    user_name: str | None = None
+    mode: str
+    model: str
+    session_id: str | None = None
+    workflow_id: str | None = None
+    scope_type: str | None = None
+    scope_ref: str | None = None
+    query: str
+    answer_preview: str
+    status: str
+    error: str | None = None
+    latency_ms: int
+    cached: bool
+    confidence: float | None = None
+    sources_count: int
+    prompt_tokens: int
+    completion_tokens: int
+    cost_usd: float | None = None
+    created_at: datetime
+
+
+class AdminPromptDetail(AdminPromptListItem):
+    answer: str
+    retrieval_query: str | None = None
+
+
+class AdminPromptListResponse(BaseModel):
+    items: list[AdminPromptListItem]
+    total: int
+    limit: int
+    offset: int
+
+
+class AdminDocumentListItem(BaseModel):
+    id: str
+    tenant_id: str
+    filename: str
+    source_type: str
+    status: str
+    processing_stage: str
+    error: str | None = None
+    size_bytes: int
+    total_pages: int
+    processed_pages: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class AdminDocumentListResponse(BaseModel):
+    items: list[AdminDocumentListItem]
+    total: int
+    limit: int
+    offset: int
+
+
+class AdminUsageTotals(BaseModel):
+    cost_usd: float
+    total_tokens: int
+    calls: int
+    avg_latency_ms: int
+
+
+class AdminUsageByTenant(BaseModel):
+    tenant_id: str
+    cost_usd: float
+    total_tokens: int
+    calls: int
+
+
+class AdminUsageByModel(BaseModel):
+    model: str
+    provider: str
+    cost_usd: float
+    total_tokens: int
+    calls: int
+    avg_latency_ms: int
+
+
+class AdminUsageDaily(BaseModel):
+    day: str
+    cost_usd: float
+    total_tokens: int
+    calls: int
+
+
+class AdminUsageResponse(BaseModel):
+    days: int
+    totals: AdminUsageTotals
+    by_tenant: list[AdminUsageByTenant]
+    by_model: list[AdminUsageByModel]
+    daily: list[AdminUsageDaily]
+
+
+class AdminHealthResponse(BaseModel):
+    status: str
+    checks: dict[str, str]
