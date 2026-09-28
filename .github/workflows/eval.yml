@@ -30,6 +30,10 @@ jobs:
 
     env:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/app
+      # Migration 0011 creates the runtime role; later migrations (0020,
+      # 0024) grant new tables to it — same setup as the CI eval job.
+      APP_DB_USER: aap_app
+      APP_DB_PASSWORD: ci-eval-app-password
       # Stub provider values — retrieval eval uses DB only.
       MOONSHOT_API_KEY: ""
       DEEPSEEK_API_KEY: ""

@@ -5,7 +5,7 @@ from datetime import datetime
 
 from packages.rag import CitationSource
 from packages.storage import DocumentAssetStatus, DocumentStatus
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, EmailStr, Field, model_validator
 
 
 class ChatMessageSchema(BaseModel):
@@ -267,6 +267,8 @@ class AdminUserInfo(BaseModel):
     id: str
     tenant_id: str
     name: str
+    email: str | None = None
+    has_password: bool = False
     role: str
     created_at: datetime
     keys: int
@@ -274,6 +276,13 @@ class AdminUserInfo(BaseModel):
     queries_total: int
     queries_7d: int
     last_query_at: datetime | None = None
+
+
+class CreateAdminUserRequest(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=8, max_length=256)
+    name: str = Field(default="", max_length=256)
+    role: str = Field(default="member", pattern="^(member|admin)$")
 
 
 class AdminKeyInfo(BaseModel):
@@ -394,3 +403,60 @@ class AdminUsageResponse(BaseModel):
 class AdminHealthResponse(BaseModel):
     status: str
     checks: dict[str, str]
+
+
+class GoogleLoginUrlResponse(BaseModel):
+    url: str
+
+
+class SessionInfo(BaseModel):
+    tenant_id: str
+    user_id: str | None = None
+    user_name: str | None = None
+    email: str | None = None
+    role: str | None = None
+    is_admin: bool = False
+
+
+class RegisterRequest(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=8, max_length=256)
+    name: str = Field(default="", max_length=256)
+
+
+class EmailLoginRequest(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=1, max_length=256)
+
+
+class EmailLoginResponse(BaseModel):
+    token: str
+    tenant_id: str
+    user_id: str
+    user_name: str | None = None
+    email: str
+    role: str
+    is_admin: bool
+
+
+class PasswordChangeRequest(BaseModel):
+    new_password: str = Field(min_length=8, max_length=256)
+
+
+class LlmKeyInfo(BaseModel):
+    """Admin view of a provider key — the value itself never leaves the DB."""
+
+    id: str
+    provider: str
+    name: str
+    key_preview: str
+    is_active: bool
+    requests_count: int
+    last_used_at: datetime | None = None
+    created_at: datetime
+
+
+class CreateLlmKeyRequest(BaseModel):
+    provider: str = Field(pattern="^(moonshot|deepseek)$")
+    name: str = Field(min_length=1, max_length=256)
+    key: str = Field(min_length=8, max_length=512)

@@ -13,7 +13,10 @@
     <span class="topbar-title">{{ title }}</span>
     <span class="topbar-sub">{{ sub }}</span>
     <div class="topbar-right">
-      <span v-if="settings.isConnected" class="badge badge-green">
+      <span v-if="session.isAuthenticated" class="badge badge-green">
+        <span class="dot-pulse"></span>{{ t('app.connected') }}
+      </span>
+      <span v-else-if="settings.isConnected" class="badge badge-green">
         <span class="dot-pulse"></span>{{ t('app.apiReady') }}
       </span>
       <span v-else class="badge badge-yellow">{{ t('app.noKey') }}</span>
@@ -23,6 +26,7 @@
 
 <script setup>
 import { useSettingsStore } from '@/stores/settings'
+import { useSessionStore } from '@/stores/session'
 import { useI18n } from '@/composables/useI18n'
 import AppIcon from '@/components/AppIcon.vue'
 
@@ -33,6 +37,7 @@ defineProps({
 })
 
 const settings = useSettingsStore()
+const session = useSessionStore()
 const { t } = useI18n()
 
 defineEmits(['toggle-sidebar'])

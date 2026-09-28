@@ -10,6 +10,7 @@ import asyncio
 import logging
 
 from packages.core import settings
+from packages.llm.keyring import keyring_refresh_loop, refresh_from_db
 from packages.observability import setup_tracing
 from packages.rag.embedder import embed_texts
 from temporalio.client import Client
@@ -43,6 +44,10 @@ async def main() -> None:
         log.info("embedding model ready")
     except Exception as exc:
         log.warning("embedding model warmup failed (%s) — will retry on first use", exc)
+    await refresh_from_db()
+    # Runs alongside the worker until process exit; no need to await it.
+    keyring_task = asyncio.create_task(keyring_refresh_loop())
+    keyring_task.set_name("keyring-refresh")
     client = await Client.connect(settings.temporal_address, namespace=settings.temporal_namespace)
     log.info(
         "worker connected to %s (queue=%s)",

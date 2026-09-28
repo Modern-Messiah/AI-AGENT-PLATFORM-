@@ -25,6 +25,12 @@ Endpoints:
   POST /notebooks/{id}/insights      — rebuild collection overview
   GET  /analytics/usage              — cost/token aggregate for a tenant
   POST /auth/keys                    — create an API key (admin only)
+  POST /auth/register               — email+password signup (allowlisted)
+  POST /auth/login                  — email+password sign-in (session JWT)
+  POST /auth/password               — change own password (session)
+  GET  /auth/google/url              — Google consent URL for the login page
+  GET  /auth/google/callback         — OAuth callback, issues a session JWT
+  GET  /auth/me                      — current principal (session or API key)
   GET  /admin/overview               — deployment counters (X-Admin-Secret)
   GET  /admin/tenants                — per-tenant activity
   GET  /admin/users                  — users with key/query stats
@@ -47,6 +53,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from packages.auth import revocation_listener
 from packages.core import settings
+from packages.llm.keyring import keyring_refresh_loop, refresh_from_db
 from packages.observability import setup_tracing
 from packages.rag.embedder import embed_texts
 from temporalio.client import Client
@@ -59,6 +66,7 @@ from apps.api.routers import (
     auth_router,
     documents_router,
     health_router,
+    login_router,
     notebooks_router,
     sessions_router,
     workflows_router,
@@ -148,11 +156,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.temporal = await Client.connect(
         settings.temporal_address, namespace=settings.temporal_namespace
     )
+    await refresh_from_db()
     revocation_task = asyncio.create_task(revocation_listener())
     retention_task = asyncio.create_task(retention_loop())
+    keyring_task = asyncio.create_task(keyring_refresh_loop())
     yield
     revocation_task.cancel()
     retention_task.cancel()
+    keyring_task.cancel()
 
 
 app = FastAPI(title="AI Agent Platform", lifespan=lifespan)
@@ -166,6 +177,7 @@ app.add_middleware(
 )
 
 app.include_router(health_router)
+app.include_router(login_router)
 app.include_router(auth_router)
 app.include_router(admin_router)
 app.include_router(agent_router)

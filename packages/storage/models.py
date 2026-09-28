@@ -305,6 +305,11 @@ class User(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
     name: Mapped[str] = mapped_column(String(256), nullable=False)
+    # Identity for Google OAuth and email+password logins (NULL for
+    # manually created users).
+    email: Mapped[str | None] = mapped_column(String(320), nullable=True, index=True)
+    # scrypt$<salt>$<hash>; NULL until a password is set.
+    password_hash: Mapped[str | None] = mapped_column(String(512), nullable=True)
     role: Mapped[str] = mapped_column(String(32), default="member", nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -355,6 +360,25 @@ class AgentQueryLog(Base):
         Index("ix_agent_query_logs_key_created", "api_key_id", "created_at"),
         Index("ix_agent_query_logs_mode", "mode"),
     )
+
+
+class LlmApiKey(Base):
+    """Admin-managed provider key (Moonshot/DeepSeek). One active per provider."""
+
+    __tablename__ = "llm_api_keys"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    provider: Mapped[str] = mapped_column(String(32), nullable=False)
+    name: Mapped[str] = mapped_column(String(256), nullable=False)
+    key_value: Mapped[str] = mapped_column(Text, nullable=False)
+    is_active: Mapped[bool] = mapped_column(default=True, nullable=False)
+    requests_count: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (Index("ix_llm_api_keys_provider_active", "provider", "is_active"),)
 
 
 class ApiKey(Base):
