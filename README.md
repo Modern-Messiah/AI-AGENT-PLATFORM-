@@ -223,7 +223,9 @@ X-Admin-Secret: <ADMIN_SECRET>
 
 Set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` (OAuth Web credentials with
 redirect URI `<API base>/auth/google/callback`), `AUTH_JWT_SECRET`
-(`openssl rand -hex 32`) and `ADMIN_EMAILS` in `.env`. The UI then offers
+(`openssl rand -hex 32`), `ADMIN_EMAILS` and `AUTH_ALLOWED_EMAILS` in `.env`.
+Sign-in is allowlist-only: nobody can register just by having a Google
+account, and an empty allowlist disables Google login entirely. The UI then offers
 "Sign in with Google" at `/login`: emails in `ADMIN_EMAILS` land in the
 admin cabinet, everyone else in the user cabinet of `DEFAULT_TENANT_ID`.
 Without these variables the login page degrades to the API-key path.
