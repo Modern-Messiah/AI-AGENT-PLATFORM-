@@ -233,7 +233,6 @@
                 <th>{{ t('admin.queriesTotal') }}</th>
                 <th>{{ t('admin.queries7d') }}</th>
                 <th>{{ t('admin.lastQuery') }}</th>
-                <th></th>
               </tr>
             </thead>
             <tbody>
@@ -250,75 +249,6 @@
                 <td class="td-mono">{{ user.queries_total }}</td>
                 <td class="td-mono">{{ user.queries_7d }}</td>
                 <td class="td-mono">{{ fmtDateTime(user.last_query_at) }}</td>
-                <td>
-                  <button class="btn btn-ghost btn-sm" @click="openCreateKey(user)">
-                    {{ t('admin.issueKey') }}
-                  </button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </template>
-
-      <!-- ── Keys ─────────────────────────────────────────────────── -->
-      <template v-if="activeTab === 'keys'">
-        <div class="card">
-          <div class="card-header">
-            <div class="card-title">{{ t('admin.keysTitle') }}</div>
-            <div class="keys-header-actions">
-              <label class="revoked-toggle">
-                <input type="checkbox" v-model="showRevokedKeys" />
-                <span>{{ t('admin.showRevoked') }}</span>
-              </label>
-              <span v-if="keys" class="badge badge-muted">{{ visibleKeys.length }}</span>
-              <button class="btn btn-primary btn-sm" @click="openCreateKey()">
-                {{ t('admin.createKey') }}
-              </button>
-            </div>
-          </div>
-
-          <div v-if="keys && !visibleKeys.length" class="empty compact-empty">
-            <div class="empty-title">{{ t('admin.noKeys') }}</div>
-            <div class="empty-sub">{{ t('admin.noKeysSub') }}</div>
-          </div>
-          <table v-if="keys && visibleKeys.length">
-            <thead>
-              <tr>
-                <th>{{ t('admin.keyName') }}</th>
-                <th>{{ t('admin.tenant') }}</th>
-                <th>{{ t('admin.user') }}</th>
-                <th>{{ t('admin.keyStatus') }}</th>
-                <th>{{ t('admin.queriesTotal') }}</th>
-                <th>{{ t('admin.queries7d') }}</th>
-                <th>{{ t('admin.lastUsed') }}</th>
-                <th>{{ t('admin.lastQuery') }}</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="key in visibleKeys" :key="key.id">
-                <td class="file-name">{{ keyDisplayName(key) }}</td>
-                <td class="td-mono">{{ key.tenant_id }}</td>
-                <td>{{ keyUserLabel(key, settings.locale) }}</td>
-                <td>
-                  <span :class="['badge', key.is_active ? 'badge-green' : 'badge-red']">
-                    {{ key.is_active ? t('admin.keyActive') : t('admin.keyRevoked') }}
-                  </span>
-                </td>
-                <td class="td-mono">{{ key.queries_total }}</td>
-                <td class="td-mono">{{ key.queries_7d }}</td>
-                <td class="td-mono">{{ fmtDateTime(key.last_used_at) }}</td>
-                <td class="td-mono">{{ fmtDateTime(key.last_query_at) }}</td>
-                <td>
-                  <button
-                    v-if="key.is_active"
-                    class="btn btn-danger btn-sm"
-                    @click="revokeTarget = key"
-                  >
-                    {{ t('admin.revoke') }}
-                  </button>
-                </td>
               </tr>
             </tbody>
           </table>
@@ -700,85 +630,6 @@
       </div>
     </div>
 
-    <!-- Create key modal -->
-    <div v-if="createKeyOpen" class="modal-overlay" @click.self="createKeyOpen = false">
-      <div class="modal key-modal">
-        <div class="modal-title">{{ t('admin.createKey') }}</div>
-        <div class="modal-sub">{{ t('admin.createKeySub') }}</div>
-
-        <div class="form-group">
-          <label class="form-label">{{ t('admin.tenant') }}</label>
-          <input
-            v-model="keyForm.tenantId"
-            class="form-input"
-            :placeholder="t('admin.tenantPlaceholder')"
-            @input="onKeyFormTenantInput"
-          />
-        </div>
-        <div class="form-group">
-          <label class="form-label">{{ t('admin.keyName') }}</label>
-          <input
-            v-model="keyForm.name"
-            class="form-input"
-            :placeholder="t('admin.keyNamePlaceholder')"
-          />
-        </div>
-        <div class="form-group">
-          <label class="form-label">{{ t('admin.keyUser') }}</label>
-          <select v-model="keyForm.userId" class="form-input">
-            <option value="">{{ t('admin.noUser') }}</option>
-            <option v-for="user in keyFormUsers" :key="user.id" :value="user.id">
-              {{ user.name }} ({{ user.role }})
-            </option>
-          </select>
-          <div class="language-hint">{{ t('admin.keyUserHint') }}</div>
-        </div>
-
-        <div v-if="createKeyError" class="admin-error">{{ createKeyError }}</div>
-
-        <div class="form-actions">
-          <button class="btn btn-ghost" :disabled="creatingKey" @click="createKeyOpen = false">
-            {{ t('common.cancel') }}
-          </button>
-          <button
-            class="btn btn-primary"
-            :disabled="creatingKey || !keyForm.tenantId.trim() || !keyForm.name.trim()"
-            @click="createKey"
-          >
-            {{ creatingKey ? t('settings.validating') : t('admin.createKey') }}
-          </button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Created key: raw_key shown once -->
-    <div v-if="createdKey" class="modal-overlay" @click.self="createdKey = null">
-      <div class="modal key-modal">
-        <div class="modal-title">{{ t('admin.keyCreated') }}</div>
-        <div class="modal-sub">{{ t('admin.keyCreatedHint') }}</div>
-        <div class="raw-key-row">
-          <code class="raw-key">{{ createdKey.raw_key }}</code>
-          <button class="btn btn-ghost btn-sm" @click="copyRawKey">
-            {{ rawKeyCopied ? t('chat.copied') : t('chat.copy') }}
-          </button>
-        </div>
-        <div class="language-hint">{{ t('admin.keyCreatedWarning') }}</div>
-        <div class="form-actions">
-          <button class="btn btn-primary" @click="createdKey = null">{{ t('common.close') }}</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Revoke confirmation -->
-    <ConfirmModal
-      v-if="revokeTarget"
-      :title="`${revokeTarget.name || revokeTarget.id}`"
-      :heading="t('admin.revokeKeyTitle')"
-      :warning="t('admin.revokeKeyWarning')"
-      :confirm-label="t('admin.revoke')"
-      @confirm="revokeKey"
-      @cancel="revokeTarget = null"
-    />
   </div>
 </template>
 
@@ -790,12 +641,10 @@ import { useSettingsStore } from '@/stores/settings'
 import { useI18n } from '@/composables/useI18n'
 import AppIcon from '@/components/AppIcon.vue'
 import TrendChart from '@/components/TrendChart.vue'
-import ConfirmModal from '@/components/ConfirmModal.vue'
 import { formatTokens, formatMs } from '@/utils/analytics'
 import {
   PROMPT_MODES,
   PROMPT_STATUSES,
-  buildCreateKeyPayload,
   buildPromptQueryParams,
   buildQueryTrend,
   buildUsageTrend,
@@ -819,7 +668,6 @@ const tabs = [
   { id: 'overview', labelKey: 'admin.tabOverview' },
   { id: 'prompts', labelKey: 'admin.tabPrompts' },
   { id: 'users', labelKey: 'admin.tabUsers' },
-  { id: 'keys', labelKey: 'admin.tabKeys' },
   { id: 'llm', labelKey: 'admin.tabLlm' },
   { id: 'documents', labelKey: 'admin.tabDocuments' },
   { id: 'usage', labelKey: 'admin.tabUsage' },
@@ -833,21 +681,11 @@ const error = ref(null)
 const overview = ref(null)
 const tenants = ref([])
 const users = ref(null)
-const keys = ref(null)
-const showRevokedKeys = ref(false)
 const docs = ref(null)
 const usage = ref(null)
 const health = ref(null)
 const detail = ref(null)
 
-const createKeyOpen = ref(false)
-const creatingKey = ref(false)
-const createKeyError = ref('')
-const keyForm = ref({ tenantId: '', name: '', userId: '' })
-const keyFormUsers = ref([])
-const createdKey = ref(null)
-const rawKeyCopied = ref(false)
-const revokeTarget = ref(null)
 
 const llmKeys = ref(null)
 const llmFormOpen = ref(false)
@@ -901,9 +739,6 @@ function loadTenants() {
 }
 function loadUsers() {
   return _call('/admin/users', (data) => { users.value = data })
-}
-function loadKeys() {
-  return _call('/admin/keys', (data) => { keys.value = data })
 }
 function loadLlmKeys() {
   return _call('/admin/llm-keys', (data) => { llmKeys.value = data })
@@ -1006,7 +841,6 @@ function load() {
   if (activeTab.value === 'overview') { loadOverview(); loadTenants() }
   else if (activeTab.value === 'prompts') loadPrompts()
   else if (activeTab.value === 'users') loadUsers()
-  else if (activeTab.value === 'keys') loadKeys()
   else if (activeTab.value === 'llm') loadLlmKeys()
   else if (activeTab.value === 'documents') loadDocuments()
   else if (activeTab.value === 'usage') loadUsage()
@@ -1018,7 +852,6 @@ function refresh() {
     overview.value = null; tenants.value = []
   } else if (activeTab.value === 'prompts') prompts.value = null
   else if (activeTab.value === 'users') users.value = null
-  else if (activeTab.value === 'keys') keys.value = null
   else if (activeTab.value === 'llm') llmKeys.value = null
   else if (activeTab.value === 'documents') docs.value = null
   else if (activeTab.value === 'usage') usage.value = null
@@ -1030,87 +863,10 @@ function openPrompt(id) {
   _call(`/admin/prompts/${id}`, (data) => { detail.value = data })
 }
 
-const visibleKeys = computed(() => {
-  if (!keys.value) return []
-  return showRevokedKeys.value ? keys.value : keys.value.filter((k) => k.is_active)
-})
-
-async function openCreateKey(user = null) {
-  createKeyError.value = ''
-  rawKeyCopied.value = false
-  keyForm.value = {
-    tenantId: user?.tenant_id || '',
-    name: user ? `${user.name}-key` : '',
-    userId: user?.id || '',
-  }
-  keyFormUsers.value = []
-  createKeyOpen.value = true
-  if (keyForm.value.tenantId) await refreshKeyFormUsers()
-}
-
-async function refreshKeyFormUsers() {
-  const tenant = keyForm.value.tenantId.trim()
-  if (!tenant) { keyFormUsers.value = []; return }
-  try {
-    keyFormUsers.value = await apiAdminFetch(`/admin/users?tenant_id=${encodeURIComponent(tenant)}`)
-  } catch {
-    keyFormUsers.value = []
-  }
-}
-
-let tenantInputTimer = null
-function onKeyFormTenantInput() {
-  keyForm.value.userId = ''
-  clearTimeout(tenantInputTimer)
-  tenantInputTimer = setTimeout(refreshKeyFormUsers, 400)
-}
-
-async function createKey() {
-  creatingKey.value = true
-  createKeyError.value = ''
-  try {
-    createdKey.value = await apiAdminFetch('/auth/keys', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(buildCreateKeyPayload(keyForm.value)),
-    })
-    createKeyOpen.value = false
-    loadKeys()
-    if (activeTab.value === 'users') loadUsers()
-  } catch (e) {
-    createKeyError.value = e.message
-  } finally {
-    creatingKey.value = false
-  }
-}
-
-async function revokeKey() {
-  const target = revokeTarget.value
-  revokeTarget.value = null
-  if (!target) return
-  try {
-    await apiAdminFetch(`/auth/keys/${target.id}`, { method: 'DELETE' })
-  } catch (e) {
-    error.value = e.message
-  }
-  loadKeys()
-  if (activeTab.value === 'users') loadUsers()
-}
-
-async function copyRawKey() {
-  if (!createdKey.value?.raw_key) return
-  try {
-    await navigator.clipboard.writeText(createdKey.value.raw_key)
-    rawKeyCopied.value = true
-  } catch {
-    rawKeyCopied.value = false
-  }
-}
-
 watch(activeTab, load, { immediate: true })
 watch(usageDays, loadUsage)
 watch(() => settings.adminSecret, () => {
-  overview.value = null; tenants.value = []; users.value = null; keys.value = null; llmKeys.value = null
+  overview.value = null; tenants.value = []; users.value = null; llmKeys.value = null
   prompts.value = null; docs.value = null; usage.value = null; health.value = null
   load()
 })
