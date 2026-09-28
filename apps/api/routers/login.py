@@ -33,6 +33,7 @@ from packages.auth.jwt_sessions import (
     create_oauth_state,
     create_session_token,
     google_login_configured,
+    login_allowed_emails,
     verify_oauth_state,
 )
 from packages.core import settings
@@ -41,9 +42,10 @@ from packages.storage.db import async_session
 from sqlalchemy import select
 
 from apps.api.schemas import GoogleLoginUrlResponse, SessionInfo
+from apps.api.services.auth_rate_limit import enforce_auth_rate_limit
 
 log = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(enforce_auth_rate_limit)])
 
 _GOOGLE_AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth"
 _GOOGLE_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token"
@@ -186,6 +188,13 @@ async def google_login_callback(
     if not id_token:
         raise HTTPException(status_code=502, detail="Google response has no id_token")
     identity = await _verify_google_id_token(id_token)
+
+    if identity["email"] not in login_allowed_emails():
+        log.warning("google login denied | email=%s (not in allowlist)", identity["email"])
+        return RedirectResponse(
+            url=f"{frontend_redirect}#error={quote('account is not allowed to sign in')}",
+            status_code=302,
+        )
 
     role = "admin" if identity["email"] in settings.admin_emails else "member"
     user = await _upsert_google_user(identity["email"], identity["name"], role)
