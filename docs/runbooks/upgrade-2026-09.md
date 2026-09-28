@@ -91,6 +91,23 @@ deterministic RU/EN corpus). Known hard cases live in
 closed by query expansion (verified live; CI runs keyless so it exercises the
 fallback path).
 
+## Additions after the first notes
+
+- **Role enforcement**: keys bound to a user carry that user's role;
+  `member` keys get 403 on DELETE /documents and /notebooks, unbound and
+  `admin` keys keep full access.
+- **Multilingual OCR**: `OCR_LANGUAGE` accepts a comma-separated list
+  (e.g. `ru,en`); every engine runs per page, best result wins.
+- **URL source compatibility**: browser-like request headers, charset
+  chain (Content-Type -> meta -> UTF-8 -> cp1251), honest errors for
+  bot-blocked / JS-only pages in /documents/url/check.
+- **Component render tests** (vitest) run in CI next to the util tests.
+- **Observability profile** (`docker compose --profile observability up -d`):
+  Prometheus scrapes /metrics, Grafana serves a provisioned dashboard at
+  http://localhost:3001 (default admin/admin — change for LAN use) with
+  request rate, latency p50/p95, LLM tokens by model, cache hit ratio
+  and 5xx rate panels. Not started by default.
+
 ## Rollback highlights
 
 Every new behaviour has a kill-switch env (see table above); the embedding

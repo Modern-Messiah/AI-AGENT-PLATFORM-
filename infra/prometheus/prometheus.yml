@@ -1,0 +1,11 @@
+# Scraped metrics live at GET /metrics on the api container.
+# Enabled with: docker compose --profile observability up -d
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: aap-api
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["api:8000"]
