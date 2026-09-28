@@ -10,7 +10,12 @@
     >
       <AppIcon name="docs" :size="14" />
     </button>
-    <select class="model-select" :value="model" @change="$emit('update:model', $event.target.value)">
+    <select
+      v-if="session.isAdmin"
+      class="model-select"
+      :value="model"
+      @change="$emit('update:model', $event.target.value)"
+    >
       <option v-for="m in MODELS" :key="m" :value="m">{{ m }}</option>
     </select>
     <div style="width: 1px; height: 20px; background: var(--border); margin: 0 4px"></div>

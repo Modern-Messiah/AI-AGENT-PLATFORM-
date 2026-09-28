@@ -10,6 +10,7 @@ from collections.abc import AsyncIterator
 from fastapi import APIRouter, HTTPException, Request
 from packages.agents import AgentRunInput, AgentRunOutput, MultiStepResearchInput
 from packages.analytics.events import UsageEvent, record_usage
+from packages.auth import Actor
 from packages.cache.semantic import semantic_cache
 from packages.core import settings
 from packages.llm import stream_chat_text
@@ -54,7 +55,7 @@ async def run_agent(
     tenant_id = actor.tenant_id
     user_query = await enforce_agent_limits(tenant_id, payload.user_query, "/agent/run")
     payload = payload.model_copy(update={"user_query": user_query})
-    model_name = payload.model or settings.strong_model
+    model_name = resolve_chat_model(actor, payload.model)
 
     async with tenant_session(tenant_id) as db:
         chunk_count = (
@@ -179,12 +180,19 @@ async def run_agent(
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
+def resolve_chat_model(actor: Actor, requested: str | None) -> str:
+    """Admins may pick any model; members are pinned to the default one."""
+    if actor.is_admin and requested:
+        return requested
+    return settings.strong_model
+
+
 @router.post("/agent/stream")
 async def agent_stream(body: AgentStreamRequest, actor: ActorDep) -> StreamingResponse:
     """SSE streaming agent — bypasses Temporal for interactive chat."""
     tenant_id = actor.tenant_id
     user_query = await enforce_agent_limits(tenant_id, body.user_query, "/agent/stream")
-    model_name = body.model or settings.strong_model
+    model_name = resolve_chat_model(actor, body.model)
     scoped_document_id = body.document_id
     scoped_notebook_id = body.notebook_id
     scoped_document_ids: list[uuid.UUID] | None = None
@@ -509,7 +517,7 @@ async def run_research(
             "sub_queries": sub_queries,
         }
     )
-    model_name = payload.model or settings.strong_model
+    model_name = resolve_chat_model(actor, payload.model)
     client: Client = request.app.state.temporal
     workflow_id = f"research-{tenant_id}-{uuid.uuid4()}"
     try:
