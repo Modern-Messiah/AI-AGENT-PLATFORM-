@@ -17,7 +17,7 @@ from apps.api.main import app
 from apps.api.routers import admin as admin_router
 from fastapi import HTTPException
 from packages.core import settings
-from packages.storage import AgentQueryLog
+from packages.storage import AgentQueryLog, DocumentStatus
 
 SECRET = "unit-test-admin-secret"
 
@@ -268,3 +268,67 @@ async def test_admin_health_reports_fresh_checks(monkeypatch) -> None:
     assert response.checks["postgres"] == "ok"
     assert response.checks["redis"] == "error: ConnectionError"
     assert set(response.checks) == set(admin_router._CHECK_NAMES)
+
+
+# ── /admin/overview SQL ──────────────────────────────────────────────────────
+
+
+class OverviewResult:
+    def __init__(self, payload: object, one_row: tuple[int, int, int] | None = None) -> None:
+        self.payload = payload
+        self.one_row = one_row or (5, 2, 1)
+
+    def scalar(self) -> object:
+        return self.payload
+
+    def one(self) -> tuple[int, int, int]:
+        return self.one_row
+
+    def all(self) -> list[object]:
+        if isinstance(self.payload, list):
+            return self.payload
+        return []
+
+
+class OverviewSession:
+    """Content-sniffing fake: serves scalar/one/all for the overview queries."""
+
+    def __init__(self) -> None:
+        self.statements: list[str] = []
+
+    async def __aenter__(self) -> OverviewSession:
+        return self
+
+    async def __aexit__(self, *args: object) -> None:
+        return None
+
+    def begin(self) -> OverviewSession:
+        return self
+
+    async def execute(self, statement: object, params: object = None) -> OverviewResult:
+        sql = str(statement)
+        self.statements.append(sql)
+        if "generate_series" in sql:
+            return OverviewResult([("2026-09-28", 3, 0)])
+        if "FILTER" in sql and "FROM agent_query_logs" in sql:
+            return OverviewResult(None)
+        if "SELECT count" in sql or "count_1" in sql:
+            return OverviewResult(1)
+        return OverviewResult([(DocumentStatus.done, 2)])
+
+
+async def test_admin_overview_daily_series_uses_cast_not_postgres_cast_operator(
+    monkeypatch,
+) -> None:
+    # ':days::int' inside text() mangles the SQL sent to Postgres (live-stack
+    # catch: "syntax error at or near ':'"). The bind must use CAST(... AS int).
+    session = OverviewSession()
+    monkeypatch.setattr(admin_router, "admin_session", lambda: session)
+
+    response = await admin_router.admin_overview(x_admin_secret=SECRET)
+
+    assert response.queries.total == 5
+    assert response.daily_queries[-1].day == "2026-09-28"
+    daily_sql = next(sql for sql in session.statements if "generate_series" in sql)
+    assert "CAST(:days AS int)" in daily_sql
+    assert "::int" not in daily_sql
