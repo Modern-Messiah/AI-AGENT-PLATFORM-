@@ -201,9 +201,12 @@ async def require_actor(
         )
 
 
-async def require_tenant(x_api_key: str | None = Header(None, alias="X-API-Key")) -> str:
-    """Backward-compatible dependency — validates the key, returns tenant_id."""
-    actor = await require_actor(x_api_key)
+async def require_tenant(
+    x_api_key: str | None = Header(None, alias="X-API-Key"),
+    authorization: str | None = Header(None, alias="Authorization"),
+) -> str:
+    """Backward-compatible dependency — resolves the actor, returns tenant_id."""
+    actor = await require_actor(x_api_key, authorization)
     return actor.tenant_id
 
 
