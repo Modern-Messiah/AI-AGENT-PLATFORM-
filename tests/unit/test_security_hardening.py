@@ -14,11 +14,12 @@ from types import SimpleNamespace
 from urllib.parse import unquote
 
 import pytest
+from apps.api.routers import admin as admin_router
 from apps.api.routers import login as login_router
 from apps.api.services import auth_rate_limit
 from apps.api.services.auth_rate_limit import _enforce
 from fastapi import HTTPException
-from packages.auth import require_actor
+from packages.auth import AdminPrincipal, require_actor, require_admin_principal
 from packages.auth.jwt_sessions import (
     create_oauth_state,
     create_session_token,
@@ -38,6 +39,7 @@ def _auth_config(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "google_client_secret", "google-client-secret")
     monkeypatch.setattr(settings, "admin_emails", ["root@example.com"])
     monkeypatch.setattr(settings, "auth_allowed_emails", [])
+    monkeypatch.setattr(settings, "open_registration", False)
 
 
 # ── 1. login allowlist ───────────────────────────────────────────────────────
@@ -50,15 +52,12 @@ def test_login_allowed_emails_unions_admin_and_allowed_lists(
     assert login_allowed_emails() == {"root@example.com", "bob@example.com"}
 
 
-def test_google_login_disabled_without_any_allowlist(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_signup_gate_follows_open_registration(monkeypatch: pytest.MonkeyPatch) -> None:
+    # OAuth readiness no longer depends on the allowlist; the callback gate
+    # (closed mode, fixture) still rejects unknown accounts — covered by
+    # test_callback_denies_unknown_google_accounts.
     monkeypatch.setattr(settings, "admin_emails", [])
     monkeypatch.setattr(settings, "auth_allowed_emails", [])
-    assert google_login_configured() is False
-
-    # ...and enabled as soon as one email is allowed
-    monkeypatch.setattr(settings, "auth_allowed_emails", ["bob@example.com"])
     assert google_login_configured() is True
 
 
@@ -266,3 +265,109 @@ async def test_revocation_check_fails_open_on_redis_outage(monkeypatch) -> None:
 
     monkeypatch.setattr(revocation, "get_redis", broken)
     assert await is_user_denied(uuid.uuid4()) is False
+
+
+# ── admin-managed LLM provider keys ──────────────────────────────────────────
+
+
+class LlmKeysResult:
+    def __init__(self, rows: list[object]) -> None:
+        self.rows = rows
+
+    def scalars(self) -> LlmKeysResult:
+        return self
+
+    def all(self) -> list[object]:
+        return self.rows
+
+    def scalar_one_or_none(self) -> object | None:
+        return self.rows[0] if self.rows else None
+
+
+class LlmKeysSession:
+    """Records UPDATE/DELETE/INSERT; serves the stored rows back."""
+
+    def __init__(self, rows: list[object] | None = None) -> None:
+        self.rows = rows or []
+        self.executed: list[str] = []
+
+    async def __aenter__(self) -> LlmKeysSession:
+        return self
+
+    async def __aexit__(self, *args: object) -> None:
+        return None
+
+    def begin(self) -> LlmKeysSession:
+        return self
+
+    async def execute(self, statement: object, params: object = None) -> LlmKeysResult:
+        self.executed.append(str(statement))
+        return LlmKeysResult(self.rows)
+
+    def add(self, row: object) -> None:
+        self.rows.append(row)
+
+
+async def test_llm_keys_endpoints_require_admin() -> None:
+    with pytest.raises(HTTPException) as exc_info:
+        await require_admin_principal(x_admin_secret="wrong")
+    assert exc_info.value.status_code == 403
+
+
+async def test_create_llm_key_rotates_previous_and_masks(monkeypatch) -> None:
+    from datetime import UTC, datetime
+
+    from apps.api.schemas import CreateLlmKeyRequest
+
+    session = LlmKeysSession()
+    monkeypatch.setattr(admin_router, "admin_session", lambda: session)
+    refreshed = []
+
+    async def fake_refresh() -> None:
+        refreshed.append(1)
+
+    monkeypatch.setattr(admin_router, "refresh_keyring", fake_refresh)
+
+    real_init = admin_router.LlmApiKey.__init__
+
+    def init_with_defaults(self: object, **kwargs: object) -> None:
+        real_init(self, **kwargs)
+        self.created_at = datetime(2026, 9, 28, tzinfo=UTC)  # type: ignore[attr-defined]
+        self.requests_count = 0  # type: ignore[attr-defined]
+
+    monkeypatch.setattr(admin_router.LlmApiKey, "__init__", init_with_defaults)
+
+    info = await admin_router.admin_create_llm_key(
+        CreateLlmKeyRequest(provider="moonshot", name="main", key="sk-live-abcdef123456"),
+        AdminPrincipal(via="secret", actor=None),
+    )
+
+    assert info.key_preview == "sk-…3456"
+    assert "sk-live" not in info.key_preview
+    assert info.is_active is True
+    assert refreshed == [1]
+    # deactivation of the previous active key issued before the insert
+    assert any("UPDATE llm_api_keys" in sql for sql in session.executed)
+
+
+async def test_llm_key_value_never_returned(monkeypatch) -> None:
+    from datetime import UTC, datetime
+
+    from packages.storage import LlmApiKey
+
+    row = LlmApiKey(
+        id=uuid.uuid4(),
+        provider="deepseek",
+        name="prod",
+        key_value="sk-super-secret-value",
+    )
+    row.created_at = datetime(2026, 9, 28, tzinfo=UTC)
+    row.is_active = True
+    row.requests_count = 7
+    row.last_used_at = None
+    monkeypatch.setattr(admin_router, "admin_session", lambda: LlmKeysSession([row]))
+
+    keys = await admin_router.admin_llm_keys(AdminPrincipal(via="secret", actor=None))
+
+    assert keys[0].key_preview == "sk-…alue"[0:3] + "…" + "sk-super-secret-value"[-4:]
+    assert "super-secret" not in keys[0].model_dump_json()

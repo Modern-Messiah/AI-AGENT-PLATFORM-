@@ -43,12 +43,10 @@ class AuthConfigError(HTTPException):
 
 
 def google_login_configured() -> bool:
-    """OAuth is usable only with an explicit login allowlist (no open signup)."""
+    """OAuth needs its credentials; signup breadth is governed by
+    OPEN_REGISTRATION / the allowlist at the callback."""
     return bool(
-        settings.google_client_id
-        and settings.google_client_secret
-        and settings.auth_jwt_secret
-        and login_allowed_emails()
+        settings.google_client_id and settings.google_client_secret and settings.auth_jwt_secret
     )
 
 

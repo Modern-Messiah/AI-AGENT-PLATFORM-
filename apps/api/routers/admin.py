@@ -10,12 +10,14 @@ app.admin_read flag enables the FOR SELECT RLS policies (migration 0019).
 from __future__ import annotations
 
 import asyncio
+import logging
 import uuid
 from datetime import timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from packages.analytics.clickhouse import ch_client
+from packages.llm.keyring import refresh_from_db as refresh_keyring
 from packages.storage import (
     AgentQueryLog,
     ApiKey,
@@ -24,11 +26,14 @@ from packages.storage import (
     Chunk,
     Document,
     DocumentStatus,
+    LlmApiKey,
     Notebook,
     User,
 )
 from packages.storage.db import admin_session
 from sqlalchemy import TextClause, func, or_, select, text
+from sqlalchemy import delete as sa_delete
+from sqlalchemy import update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.deps import AdminDep
@@ -52,10 +57,14 @@ from apps.api.schemas import (
     AdminUsageResponse,
     AdminUsageTotals,
     AdminUserInfo,
+    CreateLlmKeyRequest,
+    LlmKeyInfo,
 )
 from apps.api.services.auth_rate_limit import enforce_admin_rate_limit
 
 router = APIRouter(dependencies=[Depends(enforce_admin_rate_limit)])
+
+log = logging.getLogger(__name__)
 
 _OVERVIEW_DAILY_DAYS = 14
 _ANSWER_PREVIEW_CHARS = 240
@@ -627,3 +636,84 @@ async def admin_health(
     checks = dict(results)
     ready = all(status == "ok" for status in checks.values())
     return AdminHealthResponse(status="ok" if ready else "unavailable", checks=checks)
+
+
+# ── LLM provider keys (admin only) ───────────────────────────────────────────
+
+
+def _mask_key(value: str) -> str:
+    if len(value) <= 8:
+        return "••••"
+    return f"{value[:3]}…{value[-4:]}"
+
+
+@router.get("/admin/llm-keys", response_model=list[LlmKeyInfo])
+async def admin_llm_keys(_principal: AdminDep) -> list[LlmKeyInfo]:
+    """Provider API keys with usage counters — values are masked."""
+    async with admin_session() as db:
+        rows = (
+            (
+                await db.execute(
+                    select(LlmApiKey).order_by(LlmApiKey.provider, LlmApiKey.created_at.desc())
+                )
+            )
+            .scalars()
+            .all()
+        )
+    return [
+        LlmKeyInfo(
+            id=str(row.id),
+            provider=row.provider,
+            name=row.name,
+            key_preview=_mask_key(row.key_value),
+            is_active=row.is_active,
+            requests_count=row.requests_count,
+            last_used_at=row.last_used_at,
+            created_at=row.created_at,
+        )
+        for row in rows
+    ]
+
+
+@router.post("/admin/llm-keys", response_model=LlmKeyInfo, status_code=201)
+async def admin_create_llm_key(body: CreateLlmKeyRequest, _principal: AdminDep) -> LlmKeyInfo:
+    """Add a provider key. It becomes THE active key; previous keys of the
+    same provider are rotated out (kept for history/activity)."""
+    row = LlmApiKey(
+        id=uuid.uuid4(),
+        provider=body.provider,
+        name=body.name.strip(),
+        key_value=body.key.strip(),
+    )
+    async with admin_session() as db:
+        await db.execute(
+            sa_update(LlmApiKey)
+            .where(LlmApiKey.provider == body.provider, LlmApiKey.is_active.is_(True))
+            .values(is_active=False)
+        )
+        db.add(row)
+    await refresh_keyring()
+    log.info("llm key added | provider=%s name=%s", body.provider, row.name)
+    return LlmKeyInfo(
+        id=str(row.id),
+        provider=row.provider,
+        name=row.name,
+        key_preview=_mask_key(row.key_value),
+        is_active=True,
+        requests_count=0,
+        last_used_at=None,
+        created_at=row.created_at,
+    )
+
+
+@router.delete("/admin/llm-keys/{key_id}", status_code=204)
+async def admin_delete_llm_key(key_id: uuid.UUID, _principal: AdminDep) -> None:
+    """Remove a provider key; if it was active, the env fallback takes over."""
+    async with admin_session() as db:
+        row = (
+            await db.execute(select(LlmApiKey).where(LlmApiKey.id == key_id))
+        ).scalar_one_or_none()
+        if row is None:
+            raise HTTPException(status_code=404, detail="llm key not found")
+        await db.execute(sa_delete(LlmApiKey).where(LlmApiKey.id == key_id))
+    await refresh_keyring()
