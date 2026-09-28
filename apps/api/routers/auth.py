@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Header, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query
 from packages.auth import generate_key, publish_revocation
-from packages.core import settings
 from packages.storage import ApiKey, User, async_session
 from sqlalchemy import select
 
+from apps.api.deps import AdminDep
 from apps.api.schemas import (
     ApiKeyInfo,
     CreateKeyRequest,
@@ -19,19 +19,12 @@ from apps.api.schemas import (
 router = APIRouter()
 
 
-def _require_admin(x_admin_secret: str) -> None:
-    if x_admin_secret != settings.admin_secret:
-        raise HTTPException(status_code=403, detail="invalid admin secret")
-
-
 @router.post("/auth/keys", response_model=CreateKeyResponse, status_code=201)
 async def create_api_key(
     body: CreateKeyRequest,
-    x_admin_secret: str = Header(..., alias="X-Admin-Secret"),
+    _principal: AdminDep,
 ) -> CreateKeyResponse:
     """Create an API key for a tenant. Protected by X-Admin-Secret header."""
-    _require_admin(x_admin_secret)
-
     raw_key, key_hash = generate_key()
     key_id = uuid.uuid4()
 
@@ -69,12 +62,10 @@ async def create_api_key(
 
 @router.get("/auth/keys", response_model=list[ApiKeyInfo])
 async def list_api_keys(
-    x_admin_secret: str = Header(..., alias="X-Admin-Secret"),
+    _principal: AdminDep,
     tenant_id: str | None = Query(default=None),
 ) -> list[ApiKeyInfo]:
     """List tenant API keys (no hashes, no raw keys). X-Admin-Secret only."""
-    _require_admin(x_admin_secret)
-
     async with async_session() as s:
         stmt = select(ApiKey).order_by(ApiKey.created_at.desc()).limit(500)
         if tenant_id:
@@ -98,7 +89,7 @@ async def list_api_keys(
 @router.delete("/auth/keys/{key_id}", status_code=204)
 async def revoke_api_key(
     key_id: uuid.UUID,
-    x_admin_secret: str = Header(..., alias="X-Admin-Secret"),
+    _principal: AdminDep,
 ) -> None:
     """Deactivate a key. Protected by X-Admin-Secret.
 
@@ -106,8 +97,6 @@ async def revoke_api_key(
     API process) — the same window that already applies to deactivation.
     The row is kept for audit; reissuing a new key is the rotation path.
     """
-    _require_admin(x_admin_secret)
-
     async with async_session() as s, s.begin():
         row = (await s.execute(select(ApiKey).where(ApiKey.id == key_id))).scalar_one_or_none()
         if row is None:
@@ -120,11 +109,9 @@ async def revoke_api_key(
 @router.post("/auth/users", response_model=UserInfo, status_code=201)
 async def create_user(
     body: CreateUserRequest,
-    x_admin_secret: str = Header(..., alias="X-Admin-Secret"),
+    _principal: AdminDep,
 ) -> UserInfo:
     """Register a user within a tenant. Protected by X-Admin-Secret."""
-    _require_admin(x_admin_secret)
-
     user_id = uuid.uuid4()
     async with async_session() as s, s.begin():
         existing = (
@@ -151,12 +138,10 @@ async def create_user(
 
 @router.get("/auth/users", response_model=list[UserInfo])
 async def list_users(
-    x_admin_secret: str = Header(..., alias="X-Admin-Secret"),
+    _principal: AdminDep,
     tenant_id: str | None = Query(default=None),
 ) -> list[UserInfo]:
     """List users (optionally filtered by tenant). Protected by X-Admin-Secret."""
-    _require_admin(x_admin_secret)
-
     async with async_session() as s:
         stmt = select(User).order_by(User.created_at.desc()).limit(500)
         if tenant_id:
@@ -178,15 +163,13 @@ async def list_users(
 @router.delete("/auth/users/{user_id}", status_code=204)
 async def delete_user(
     user_id: uuid.UUID,
-    x_admin_secret: str = Header(..., alias="X-Admin-Secret"),
+    _principal: AdminDep,
 ) -> None:
     """Remove a user; their API keys survive with user_id cleared.
 
     Key revocation stays an explicit admin action — deleting a person is
     not silently treated as revoking their keys.
     """
-    _require_admin(x_admin_secret)
-
     async with async_session() as s, s.begin():
         row = (await s.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
         if row is None:

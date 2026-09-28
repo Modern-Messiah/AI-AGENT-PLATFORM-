@@ -4,8 +4,8 @@ from datetime import UTC, datetime
 
 import pytest
 from apps.api.main import ApiKeyInfo, app
-from apps.api.routers import auth as auth_router
 from fastapi import HTTPException
+from packages.auth import require_admin_principal
 
 
 def test_key_admin_routes_are_registered() -> None:
@@ -20,18 +20,9 @@ def test_key_admin_routes_are_registered() -> None:
     assert ("/auth/keys/{key_id}", "DELETE") in routes
 
 
-@pytest.mark.parametrize(
-    "endpoint",
-    [
-        lambda: auth_router.list_api_keys(x_admin_secret="wrong"),
-        lambda: auth_router.revoke_api_key(
-            key_id="00000000-0000-0000-0000-000000000000", x_admin_secret="wrong"
-        ),
-    ],
-)
-async def test_key_admin_endpoints_reject_bad_admin_secret(endpoint) -> None:
+async def test_key_admin_endpoints_reject_bad_admin_secret() -> None:
     with pytest.raises(HTTPException) as exc_info:
-        await endpoint()
+        await require_admin_principal(x_admin_secret="wrong")
     assert exc_info.value.status_code == 403
 
 
