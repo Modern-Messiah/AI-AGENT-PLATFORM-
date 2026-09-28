@@ -318,6 +318,96 @@
         </div>
       </template>
 
+      <!-- ── LLM provider keys ────────────────────────────────────── -->
+      <template v-if="activeTab === 'llm'">
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">{{ t('admin.llmKeysTitle') }}</div>
+            <div class="keys-header-actions">
+              <span v-if="llmKeys" class="badge badge-muted">{{ llmKeys.length }}</span>
+              <button class="btn btn-primary btn-sm" @click="llmFormOpen = true">
+                {{ t('admin.addLlmKey') }}
+              </button>
+            </div>
+          </div>
+
+          <div v-if="llmKeys && !llmKeys.length" class="empty compact-empty">
+            <div class="empty-title">{{ t('admin.noLlmKeys') }}</div>
+            <div class="empty-sub">{{ t('admin.noLlmKeysSub') }}</div>
+          </div>
+          <table v-if="llmKeys && llmKeys.length">
+            <thead>
+              <tr>
+                <th>{{ t('admin.provider') }}</th>
+                <th>{{ t('admin.keyName') }}</th>
+                <th>{{ t('admin.keyValue') }}</th>
+                <th>{{ t('admin.keyStatus') }}</th>
+                <th>{{ t('admin.requests') }}</th>
+                <th>{{ t('admin.lastUsed') }}</th>
+                <th>{{ t('admin.created') }}</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="key in llmKeys" :key="key.id">
+                <td><span class="tag">{{ key.provider }}</span></td>
+                <td class="file-name">{{ key.name }}</td>
+                <td class="td-mono">{{ key.key_preview }}</td>
+                <td>
+                  <span :class="['badge', key.is_active ? 'badge-green' : 'badge-muted']">
+                    {{ key.is_active ? t('admin.keyActive') : t('admin.rotatedOut') }}
+                  </span>
+                </td>
+                <td class="td-mono">{{ key.requests_count }}</td>
+                <td class="td-mono">{{ fmtDateTime(key.last_used_at) }}</td>
+                <td class="td-mono">{{ fmtDateTime(key.created_at) }}</td>
+                <td>
+                  <button class="btn btn-danger btn-sm" @click="deleteLlmKey(key)">
+                    {{ llmDeleteTarget?.id === key.id ? t('admin.confirmDelete') : t('common.delete') }}
+                  </button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div v-if="llmFormOpen" class="modal-overlay" @click.self="llmFormOpen = false">
+          <div class="modal key-modal">
+            <div class="modal-title">{{ t('admin.addLlmKey') }}</div>
+            <div class="modal-sub">{{ t('admin.addLlmKeySub') }}</div>
+            <div class="form-group">
+              <label class="form-label">{{ t('admin.provider') }}</label>
+              <select v-model="llmForm.provider" class="form-input">
+                <option value="moonshot">moonshot (Kimi)</option>
+                <option value="deepseek">deepseek</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">{{ t('admin.keyName') }}</label>
+              <input v-model="llmForm.name" class="form-input" :placeholder="t('admin.keyNamePlaceholder')" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">{{ t('admin.keyValue') }}</label>
+              <input v-model="llmForm.key" type="password" class="form-input" placeholder="sk-…" />
+              <div class="language-hint">{{ t('admin.llmKeyHint') }}</div>
+            </div>
+            <div v-if="llmFormError" class="admin-error">{{ llmFormError }}</div>
+            <div class="form-actions">
+              <button class="btn btn-ghost" :disabled="llmSaving" @click="llmFormOpen = false">
+                {{ t('common.cancel') }}
+              </button>
+              <button
+                class="btn btn-primary"
+                :disabled="llmSaving || !llmForm.name.trim() || llmForm.key.trim().length < 8"
+                @click="saveLlmKey"
+              >
+                {{ llmSaving ? t('settings.validating') : t('common.save') }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </template>
+
       <!-- ── Documents ────────────────────────────────────────────── -->
       <template v-if="activeTab === 'documents'">
         <div class="card">
@@ -669,6 +759,7 @@ const tabs = [
   { id: 'prompts', labelKey: 'admin.tabPrompts' },
   { id: 'users', labelKey: 'admin.tabUsers' },
   { id: 'keys', labelKey: 'admin.tabKeys' },
+  { id: 'llm', labelKey: 'admin.tabLlm' },
   { id: 'documents', labelKey: 'admin.tabDocuments' },
   { id: 'usage', labelKey: 'admin.tabUsage' },
   { id: 'health', labelKey: 'admin.tabHealth' },
@@ -696,6 +787,13 @@ const keyFormUsers = ref([])
 const createdKey = ref(null)
 const rawKeyCopied = ref(false)
 const revokeTarget = ref(null)
+
+const llmKeys = ref(null)
+const llmFormOpen = ref(false)
+const llmSaving = ref(false)
+const llmFormError = ref('')
+const llmForm = ref({ provider: 'moonshot', name: '', key: '' })
+const llmDeleteTarget = ref(null)
 
 const filters = ref({ q: '', tenantId: '', mode: '', status: '', days: 30 })
 const prompts = ref(null)
@@ -739,6 +837,47 @@ function loadUsers() {
 function loadKeys() {
   return _call('/admin/keys', (data) => { keys.value = data })
 }
+function loadLlmKeys() {
+  return _call('/admin/llm-keys', (data) => { llmKeys.value = data })
+}
+
+async function saveLlmKey() {
+  llmSaving.value = true
+  llmFormError.value = ''
+  try {
+    await apiAdminFetch('/admin/llm-keys', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        provider: llmForm.value.provider,
+        name: llmForm.value.name.trim(),
+        key: llmForm.value.key.trim(),
+      }),
+    })
+    llmFormOpen.value = false
+    llmForm.value = { provider: llmForm.value.provider, name: '', key: '' }
+    loadLlmKeys()
+  } catch (e) {
+    llmFormError.value = e.message
+  } finally {
+    llmSaving.value = false
+  }
+}
+
+async function deleteLlmKey(key) {
+  if (llmDeleteTarget.value?.id === key.id) {
+    llmDeleteTarget.value = null
+    try {
+      await apiAdminFetch(`/admin/llm-keys/${key.id}`, { method: 'DELETE' })
+    } catch (e) {
+      error.value = e.message
+    }
+    loadLlmKeys()
+    return
+  }
+  llmDeleteTarget.value = key
+  setTimeout(() => { if (llmDeleteTarget.value?.id === key.id) llmDeleteTarget.value = null }, 3000)
+}
 function loadPrompts() {
   const params = buildPromptQueryParams(filters.value, { limit: 50, offset: promptsOffset.value })
   return _call(`/admin/prompts?${params}`, (data) => { prompts.value = data })
@@ -764,6 +903,7 @@ function load() {
   else if (activeTab.value === 'prompts') loadPrompts()
   else if (activeTab.value === 'users') loadUsers()
   else if (activeTab.value === 'keys') loadKeys()
+  else if (activeTab.value === 'llm') loadLlmKeys()
   else if (activeTab.value === 'documents') loadDocuments()
   else if (activeTab.value === 'usage') loadUsage()
   else if (activeTab.value === 'health') loadHealth()
@@ -775,6 +915,7 @@ function refresh() {
   } else if (activeTab.value === 'prompts') prompts.value = null
   else if (activeTab.value === 'users') users.value = null
   else if (activeTab.value === 'keys') keys.value = null
+  else if (activeTab.value === 'llm') llmKeys.value = null
   else if (activeTab.value === 'documents') docs.value = null
   else if (activeTab.value === 'usage') usage.value = null
   else if (activeTab.value === 'health') health.value = null
@@ -865,7 +1006,7 @@ async function copyRawKey() {
 watch(activeTab, load, { immediate: true })
 watch(usageDays, loadUsage)
 watch(() => settings.adminSecret, () => {
-  overview.value = null; tenants.value = []; users.value = null; keys.value = null
+  overview.value = null; tenants.value = []; users.value = null; keys.value = null; llmKeys.value = null
   prompts.value = null; docs.value = null; usage.value = null; health.value = null
   load()
 })
