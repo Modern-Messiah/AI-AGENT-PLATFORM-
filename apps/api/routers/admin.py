@@ -14,9 +14,8 @@ import uuid
 from datetime import timedelta
 from typing import Any
 
-from fastapi import APIRouter, Header, HTTPException, Query, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from packages.analytics.clickhouse import ch_client
-from packages.core import settings
 from packages.storage import (
     AgentQueryLog,
     ApiKey,
@@ -32,6 +31,7 @@ from packages.storage.db import admin_session
 from sqlalchemy import TextClause, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from apps.api.deps import AdminDep
 from apps.api.routers.health import _CHECK_NAMES, _run_check
 from apps.api.schemas import (
     AdminDailyQueries,
@@ -62,11 +62,6 @@ _MAX_TENANTS = 500
 _MAX_USERS = 500
 
 
-def _require_admin(x_admin_secret: str) -> None:
-    if x_admin_secret != settings.admin_secret:
-        raise HTTPException(status_code=403, detail="invalid admin secret")
-
-
 def _scalar(value: Any) -> int:
     return int(value or 0)
 
@@ -95,11 +90,9 @@ def _status_name(value: Any) -> str:
 
 @router.get("/admin/overview", response_model=AdminOverviewResponse)
 async def admin_overview(
-    x_admin_secret: str = Header(..., alias="X-Admin-Secret"),
+    _principal: AdminDep,
 ) -> AdminOverviewResponse:
     """Deployment-wide counters plus the last two weeks of query activity."""
-    _require_admin(x_admin_secret)
-
     async with admin_session() as db:
         tenants = _scalar(
             (
@@ -202,11 +195,9 @@ async def _tenant_group_counts(db: AsyncSession, statement: TextClause) -> dict[
 
 @router.get("/admin/tenants", response_model=list[AdminTenantSummary])
 async def admin_tenants(
-    x_admin_secret: str = Header(..., alias="X-Admin-Secret"),
+    _principal: AdminDep,
 ) -> list[AdminTenantSummary]:
     """Per-tenant activity: documents, chunks, sessions and 7-day query volume."""
-    _require_admin(x_admin_secret)
-
     async with admin_session() as db:
         users = await _tenant_group_counts(
             db, text("SELECT tenant_id, count(*) FROM users GROUP BY tenant_id")
@@ -256,12 +247,10 @@ async def admin_tenants(
 
 @router.get("/admin/users", response_model=list[AdminUserInfo])
 async def admin_users(
-    x_admin_secret: str = Header(..., alias="X-Admin-Secret"),
+    _principal: AdminDep,
     tenant_id: str | None = Query(default=None, max_length=64),
 ) -> list[AdminUserInfo]:
     """All users across tenants with key counts and query-log activity."""
-    _require_admin(x_admin_secret)
-
     async with admin_session() as db:
         users_stmt = select(User).order_by(User.created_at.desc()).limit(_MAX_USERS)
         if tenant_id:
@@ -317,13 +306,11 @@ async def admin_users(
 
 @router.get("/admin/keys", response_model=list[AdminKeyInfo])
 async def admin_keys(
-    x_admin_secret: str = Header(..., alias="X-Admin-Secret"),
+    _principal: AdminDep,
     tenant_id: str | None = Query(default=None, max_length=64),
 ) -> list[AdminKeyInfo]:
     """All API keys with their request activity (creation/revocation stay on
     POST /auth/keys and DELETE /auth/keys/{id} — same admin secret)."""
-    _require_admin(x_admin_secret)
-
     async with admin_session() as db:
         keys_stmt = (
             select(ApiKey, User.name)
@@ -407,7 +394,7 @@ def _prompt_item(row: AgentQueryLog, *, preview_only: bool) -> dict[str, object]
 
 @router.get("/admin/prompts", response_model=AdminPromptListResponse)
 async def admin_prompts(
-    x_admin_secret: str = Header(..., alias="X-Admin-Secret"),
+    _principal: AdminDep,
     tenant_id: str | None = Query(default=None, max_length=64),
     user_id: uuid.UUID | None = None,
     mode: str | None = Query(default=None, pattern="^(stream|run|research)$"),
@@ -418,8 +405,6 @@ async def admin_prompts(
     offset: int = Query(default=0, ge=0),
 ) -> AdminPromptListResponse:
     """Paginated agent query log with filters — the "who asked what" feed."""
-    _require_admin(x_admin_secret)
-
     filters = [
         AgentQueryLog.created_at >= func.now() - timedelta(days=days),
     ]
@@ -459,11 +444,9 @@ async def admin_prompts(
 @router.get("/admin/prompts/{log_id}", response_model=AdminPromptDetail)
 async def admin_prompt_detail(
     log_id: uuid.UUID,
-    x_admin_secret: str = Header(..., alias="X-Admin-Secret"),
+    _principal: AdminDep,
 ) -> AdminPromptDetail:
     """Full log entry: complete answer, retrieval query, cost breakdown."""
-    _require_admin(x_admin_secret)
-
     async with admin_session() as db:
         row = (
             await db.execute(select(AgentQueryLog).where(AgentQueryLog.id == log_id))
@@ -478,7 +461,7 @@ async def admin_prompt_detail(
 
 @router.get("/admin/documents", response_model=AdminDocumentListResponse)
 async def admin_documents(
-    x_admin_secret: str = Header(..., alias="X-Admin-Secret"),
+    _principal: AdminDep,
     tenant_id: str | None = Query(default=None, max_length=64),
     status: str | None = Query(default=None, pattern="^(pending|processing|done|failed)$"),
     q: str | None = Query(default=None, max_length=256),
@@ -486,8 +469,6 @@ async def admin_documents(
     offset: int = Query(default=0, ge=0),
 ) -> AdminDocumentListResponse:
     """All documents across tenants — ingestion failures and progress at a glance."""
-    _require_admin(x_admin_secret)
-
     filters = []
     if tenant_id:
         filters.append(Document.tenant_id == tenant_id)
@@ -539,12 +520,10 @@ async def admin_documents(
 
 @router.get("/admin/usage", response_model=AdminUsageResponse)
 async def admin_usage(
-    x_admin_secret: str = Header(..., alias="X-Admin-Secret"),
+    _principal: AdminDep,
     days: int = Query(default=7, ge=1, le=90),
 ) -> AdminUsageResponse:
     """LLM cost/token usage across all tenants, models and days."""
-    _require_admin(x_admin_secret)
-
     by_tenant_sql = """
         SELECT
             tenant_id,
@@ -640,11 +619,9 @@ async def admin_usage(
 @router.get("/admin/health", response_model=AdminHealthResponse)
 async def admin_health(
     request: Request,
-    x_admin_secret: str = Header(..., alias="X-Admin-Secret"),
+    _principal: AdminDep,
 ) -> AdminHealthResponse:
     """Fresh dependency checks (postgres, redis, clickhouse, minio, temporal)."""
-    _require_admin(x_admin_secret)
-
     results = await asyncio.gather(*(_run_check(name, request) for name in _CHECK_NAMES))
     checks = dict(results)
     ready = all(status == "ok" for status in checks.values())
