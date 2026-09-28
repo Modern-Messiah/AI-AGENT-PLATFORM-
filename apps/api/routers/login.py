@@ -196,7 +196,7 @@ async def google_login_callback(
         raise HTTPException(status_code=502, detail="Google response has no id_token")
     identity = await _verify_google_id_token(id_token)
 
-    if identity["email"] not in login_allowed_emails():
+    if not _signup_allowed(identity["email"]):
         log.warning("google login denied | email=%s (not in allowlist)", identity["email"])
         return RedirectResponse(
             url=f"{frontend_redirect}#error={quote('account is not allowed to sign in')}",
@@ -232,9 +232,16 @@ async def whoami(actor: Annotated[Actor, Depends(require_actor)]) -> SessionInfo
 # ── Email + password authentication ─────────────────────────────────────────
 
 
+def _signup_allowed(email: str) -> bool:
+    """Open signup by default; the allowlist gates only when it is closed."""
+    if settings.open_registration:
+        return True
+    return email in login_allowed_emails()
+
+
 def _email_login_enabled() -> bool:
-    """Email login needs the JWT secret and an explicit allowlist."""
-    return bool(settings.auth_jwt_secret and login_allowed_emails())
+    """Email login needs the JWT secret; signup breadth is a separate gate."""
+    return bool(settings.auth_jwt_secret)
 
 
 def _role_for(email: str) -> str:
@@ -264,9 +271,9 @@ def _session_response(user: User, role: str) -> EmailLoginResponse:
 async def register(body: RegisterRequest) -> EmailLoginResponse:
     """Create an email+password account and sign in immediately.
 
-    Registration follows the same allowlist as Google login: only
-    AUTH_ALLOWED_EMAILS / ADMIN_EMAILS may create accounts; an empty
-    allowlist keeps registration closed.
+    Open by default (OPEN_REGISTRATION=true): any email may register as a
+    member. When registration is closed, only AUTH_ALLOWED_EMAILS /
+    ADMIN_EMAILS pass — same gate as the Google callback.
     """
     if not _email_login_enabled():
         raise HTTPException(
@@ -277,7 +284,7 @@ async def register(body: RegisterRequest) -> EmailLoginResponse:
             ),
         )
     email = body.email.lower().strip()
-    if email not in login_allowed_emails():
+    if not _signup_allowed(email):
         raise HTTPException(status_code=403, detail="this email is not allowed to register")
 
     async with async_session() as s, s.begin():

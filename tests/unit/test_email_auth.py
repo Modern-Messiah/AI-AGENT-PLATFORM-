@@ -27,6 +27,7 @@ def _auth_config(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "admin_emails", [ADMIN_EMAIL])
     monkeypatch.setattr(settings, "auth_allowed_emails", [MEMBER_EMAIL])
     monkeypatch.setattr(settings, "default_tenant_id", "main")
+    monkeypatch.setattr(settings, "open_registration", False)
 
 
 class UsersResult:
@@ -116,14 +117,18 @@ async def test_register_rejects_duplicate_email(users) -> None:
     assert exc_info.value.status_code == 409
 
 
-async def test_register_disabled_without_allowlist(users, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_register_closed_without_allowlist_rejects(
+    users, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # open_registration is False in the fixture: with no allowlist at all,
+    # nobody may register (403 — email login itself stays available).
     monkeypatch.setattr(settings, "auth_allowed_emails", [])
     monkeypatch.setattr(settings, "admin_emails", [])
     with pytest.raises(HTTPException) as exc_info:
         await login_router.register(
             RegisterRequest(email=MEMBER_EMAIL, password="long-enough-pass")
         )
-    assert exc_info.value.status_code == 503
+    assert exc_info.value.status_code == 403
 
 
 # ── login ────────────────────────────────────────────────────────────────────
@@ -187,3 +192,12 @@ def test_password_hashing_roundtrip_and_uniqueness() -> None:
     assert not verify_password("other", first)
     assert not verify_password("same-password-1", None)
     assert not verify_password("same-password-1", "garbage")
+
+
+async def test_open_registration_allows_any_email(users, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "open_registration", True)
+    response = await login_router.register(
+        RegisterRequest(email="random.person@gmail.com", password="long-enough-pass")
+    )
+    assert response.email == "random.person@gmail.com"
+    assert response.role == "member"

@@ -432,3 +432,22 @@ class EmailLoginResponse(BaseModel):
 
 class PasswordChangeRequest(BaseModel):
     new_password: str = Field(min_length=8, max_length=256)
+
+
+class LlmKeyInfo(BaseModel):
+    """Admin view of a provider key — the value itself never leaves the DB."""
+
+    id: str
+    provider: str
+    name: str
+    key_preview: str
+    is_active: bool
+    requests_count: int
+    last_used_at: datetime | None = None
+    created_at: datetime
+
+
+class CreateLlmKeyRequest(BaseModel):
+    provider: str = Field(pattern="^(moonshot|deepseek)$")
+    name: str = Field(min_length=1, max_length=256)
+    key: str = Field(min_length=8, max_length=512)
