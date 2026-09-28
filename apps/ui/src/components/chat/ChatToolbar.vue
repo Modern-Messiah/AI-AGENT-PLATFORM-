@@ -20,13 +20,14 @@
     </label>
     <span v-if="requireApproval" class="badge badge-yellow" style="margin-left: 4px">{{ t('chat.hitlOn') }}</span>
     <span style="margin-left: auto; font-size: 11px; color: var(--muted); font-family: var(--mono)">
-      {{ settings.isConnected ? `${settings.isKeyManagedByEnv ? t('chat.envKey') : t('chat.key')}: …${settings.apiKey.slice(-6)}` : t('chat.noKey') }}
+      {{ session.isAuthenticated ? (session.displayName || t('app.connected')) : (settings.isConnected ? `${settings.isKeyManagedByEnv ? t('chat.envKey') : t('chat.key')}: …${settings.apiKey.slice(-6)}` : t('chat.noKey')) }}
     </span>
   </div>
 </template>
 
 <script setup>
 import { useSettingsStore } from '@/stores/settings'
+import { useSessionStore } from '@/stores/session'
 import { useI18n } from '@/composables/useI18n'
 import AppIcon from '@/components/AppIcon.vue'
 
@@ -40,5 +41,6 @@ defineProps({
 defineEmits(['update:model', 'update:requireApproval'])
 
 const settings = useSettingsStore()
+const session = useSessionStore()
 const { t } = useI18n()
 </script>
