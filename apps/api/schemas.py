@@ -460,3 +460,7 @@ class CreateLlmKeyRequest(BaseModel):
     provider: str = Field(pattern="^(moonshot|deepseek)$")
     name: str = Field(min_length=1, max_length=256)
     key: str = Field(min_length=8, max_length=512)
+
+
+class AdminPasswordResetRequest(BaseModel):
+    new_password: str = Field(min_length=8, max_length=256)
