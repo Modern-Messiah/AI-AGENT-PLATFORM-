@@ -35,6 +35,19 @@ async def deny_user_sessions(user_id: uuid.UUID) -> None:
         log.warning("session denylist write failed | user_id=%s", user_id, exc_info=True)
 
 
+async def clear_user_denial(user_id: uuid.UUID) -> None:
+    """Lift the denylist entry on a fresh successful login.
+
+    Password resets (and other admin actions) deny live sessions; without
+    this the block would also kill every FUTURE token for the TTL window.
+    """
+    try:
+        redis: Any = get_redis()
+        await redis.delete(_denied_key(user_id))
+    except Exception:
+        log.warning("session denylist clear failed | user_id=%s", user_id)
+
+
 async def is_user_denied(user_id: uuid.UUID | None) -> bool:
     if user_id is None:
         return False
