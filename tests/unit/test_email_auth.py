@@ -201,3 +201,23 @@ async def test_open_registration_allows_any_email(users, monkeypatch: pytest.Mon
     )
     assert response.email == "random.person@gmail.com"
     assert response.role == "member"
+
+
+async def test_login_never_demotes_admin_granted_role(users) -> None:
+    """A role granted via the admin panel survives login (only ADMIN_EMAILS
+    may promote; it must not overwrite an existing admin grant)."""
+    user = User(
+        id=uuid.uuid4(),
+        tenant_id="main",
+        name="Deputy",
+        email=MEMBER_EMAIL,  # NOT in ADMIN_EMAILS
+        password_hash=hash_password("long-enough-pass"),
+        role="admin",
+    )
+    users[MEMBER_EMAIL] = user
+
+    response = await login_router.login(
+        EmailLoginRequest(email=MEMBER_EMAIL, password="long-enough-pass")
+    )
+    assert response.role == "admin"
+    assert response.is_admin is True
