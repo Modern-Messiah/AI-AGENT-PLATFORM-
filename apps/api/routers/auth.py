@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, HTTPException, Query
-from packages.auth import generate_key, publish_revocation
+from fastapi import APIRouter, Depends, HTTPException, Query
+from packages.auth import deny_user_sessions, generate_key, publish_revocation
 from packages.storage import ApiKey, User, async_session
 from sqlalchemy import select
 
@@ -15,8 +15,9 @@ from apps.api.schemas import (
     CreateUserRequest,
     UserInfo,
 )
+from apps.api.services.auth_rate_limit import enforce_auth_rate_limit
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(enforce_auth_rate_limit)])
 
 
 @router.post("/auth/keys", response_model=CreateKeyResponse, status_code=201)
@@ -175,3 +176,5 @@ async def delete_user(
         if row is None:
             raise HTTPException(status_code=404, detail="user not found")
         await s.delete(row)
+    # Their session tokens die immediately, not at JWT expiry.
+    await deny_user_sessions(user_id)

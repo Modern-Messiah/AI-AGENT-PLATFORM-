@@ -125,6 +125,9 @@ class Settings(BaseSettings):
     auth_session_ttl_hours: int = 12
     # Comma-separated Google emails that get the admin cabinet on login.
     admin_emails: Annotated[list[str], NoDecode] = []
+    # Who may sign in at all (ADMIN_EMAILS is always allowed). Empty allowlist
+    # disables Google login — no open registration by default.
+    auth_allowed_emails: Annotated[list[str], NoDecode] = []
     # Tenant every Google-logged-in user belongs to (single-deployment model).
     default_tenant_id: str = "main"
 
@@ -157,9 +160,9 @@ class Settings(BaseSettings):
     # in non-local environments. Wildcard origins are rejected outside local.
     allowed_origins: Annotated[list[str], NoDecode] = []
 
-    @field_validator("admin_emails", mode="before")
+    @field_validator("admin_emails", "auth_allowed_emails", mode="before")
     @classmethod
-    def _parse_admin_emails(cls, v: object) -> object:
+    def _parse_email_list(cls, v: object) -> object:
         if isinstance(v, str):
             return [e.strip().lower() for e in v.split(",") if e.strip()]
         if isinstance(v, list):
