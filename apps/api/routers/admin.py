@@ -16,6 +16,7 @@ from datetime import timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from openai import AsyncOpenAI
 from packages.analytics.clickhouse import ch_client
 from packages.auth import hash_password
 from packages.core import settings
@@ -750,6 +751,40 @@ async def admin_create_llm_key(body: CreateLlmKeyRequest, _principal: AdminDep) 
         last_used_at=None,
         created_at=row.created_at,
     )
+
+
+@router.post("/admin/llm-keys/{key_id}/test")
+async def admin_test_llm_key(key_id: uuid.UUID, _principal: AdminDep) -> dict[str, object]:
+    """Make a tiny real call with the stored key — proves it works.
+
+    Answers the classic 'I added a key, why is nothing happening' without
+    guessing: ok=true means the provider accepted THIS key.
+    """
+    async with admin_session() as db:
+        row = (
+            await db.execute(select(LlmApiKey).where(LlmApiKey.id == key_id))
+        ).scalar_one_or_none()
+        if row is None:
+            raise HTTPException(status_code=404, detail="llm key not found")
+
+    base_url = {
+        "moonshot": "https://api.moonshot.ai/v1",
+        "deepseek": "https://api.deepseek.com",
+    }.get(row.provider)
+    model = "kimi-k2.6" if row.provider == "moonshot" else "deepseek-chat"
+    if base_url is None:
+        return {"ok": False, "error": f"unknown provider {row.provider}"}
+
+    try:
+        client = AsyncOpenAI(base_url=base_url, api_key=row.key_value, timeout=20.0)
+        await client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": "ping"}],
+            max_tokens=5,
+        )
+        return {"ok": True, "model": model}
+    except Exception as e:  # provider errors are the point of this endpoint
+        return {"ok": False, "error": str(e)[:300], "model": model}
 
 
 @router.delete("/admin/llm-keys/{key_id}", status_code=204)
