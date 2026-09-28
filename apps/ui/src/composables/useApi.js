@@ -1,23 +1,37 @@
 import { useSettingsStore } from '@/stores/settings'
+import { useSessionStore } from '@/stores/session'
 
 export function useApi() {
   const settings = useSettingsStore()
+  const session = useSessionStore()
+
+  // Session (Google login) takes precedence; API key stays as the fallback.
+  function _tenantHeaders() {
+    return session.isAuthenticated
+      ? { Authorization: `Bearer ${session.token}` }
+      : { 'X-API-Key': settings.apiKey }
+  }
 
   async function apiRawFetch(path, opts = {}) {
     const base = settings.baseUrl || '/api'
     const res = await fetch(`${base}${path}`, {
       ...opts,
       headers: {
-        'X-API-Key': settings.apiKey,
+        ..._tenantHeaders(),
         ...(opts.headers || {}),
       },
     })
     if (!res.ok) {
-      if (res.status === 401) settings.markInvalid()
+      if (res.status === 401) {
+        if (session.isAuthenticated) session.markInvalid()
+        else settings.markInvalid()
+      }
       const text = await res.text().catch(() => res.statusText)
       throw new Error(`${res.status}: ${text}`)
     }
-    if (settings.keyStatus !== 'valid') settings.markValid()
+    if (session.isAuthenticated) {
+      // keep it; /auth/me refresh handled where needed
+    } else if (settings.keyStatus !== 'valid') settings.markValid()
     return res
   }
 
@@ -39,7 +53,8 @@ export function useApi() {
       const base = settings.baseUrl || '/api'
       const xhr = new XMLHttpRequest()
       xhr.open(method, `${base}${path}`)
-      xhr.setRequestHeader('X-API-Key', settings.apiKey)
+      const headers = _tenantHeaders()
+      for (const [name, value] of Object.entries(headers)) xhr.setRequestHeader(name, value)
       if (onProgress) {
         xhr.upload.onprogress = (e) => {
           if (e.lengthComputable) onProgress(e.loaded / e.total)
@@ -54,7 +69,10 @@ export function useApi() {
             resolve(null)
           }
         } else {
-          if (xhr.status === 401) settings.markInvalid()
+          if (xhr.status === 401) {
+            if (session.isAuthenticated) session.markInvalid()
+            else settings.markInvalid()
+          }
           reject(new Error(`${xhr.status}: ${xhr.responseText || xhr.statusText}`))
         }
       }
@@ -63,23 +81,26 @@ export function useApi() {
     })
   }
 
-  // Admin panel calls authenticate with the deployment-wide admin secret
-  // instead of a tenant API key (X-Admin-Secret endpoints).
+  // Admin panel calls: an admin session (Bearer) when logged in via Google,
+  // otherwise the deployment-wide admin secret.
   async function apiAdminFetch(path, opts = {}) {
     const base = settings.baseUrl || '/api'
+    const headers = session.isAdmin
+      ? { Authorization: `Bearer ${session.token}` }
+      : { 'X-Admin-Secret': settings.adminSecret }
     const res = await fetch(`${base}${path}`, {
       ...opts,
       headers: {
-        'X-Admin-Secret': settings.adminSecret,
+        ...headers,
         ...(opts.headers || {}),
       },
     })
     if (!res.ok) {
-      if (res.status === 403) settings.markAdminInvalid()
+      if (res.status === 403 && !session.isAdmin) settings.markAdminInvalid()
       const text = await res.text().catch(() => res.statusText)
       throw new Error(`${res.status}: ${text}`)
     }
-    if (settings.adminStatus !== 'valid') settings.markAdminValid()
+    if (!session.isAdmin && settings.adminStatus !== 'valid') settings.markAdminValid()
     if (res.status === 204 || res.headers.get('content-length') === '0') return null
     return res.json()
   }
