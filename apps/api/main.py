@@ -25,6 +25,9 @@ Endpoints:
   POST /notebooks/{id}/insights      — rebuild collection overview
   GET  /analytics/usage              — cost/token aggregate for a tenant
   POST /auth/keys                    — create an API key (admin only)
+  POST /auth/register               — email+password signup (allowlisted)
+  POST /auth/login                  — email+password sign-in (session JWT)
+  POST /auth/password               — change own password (session)
   GET  /auth/google/url              — Google consent URL for the login page
   GET  /auth/google/callback         — OAuth callback, issues a session JWT
   GET  /auth/me                      — current principal (session or API key)
