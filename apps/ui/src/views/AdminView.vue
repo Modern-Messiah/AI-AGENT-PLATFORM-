@@ -392,6 +392,7 @@
                 <th>{{ t('admin.requests') }}</th>
                 <th>{{ t('admin.lastUsed') }}</th>
                 <th>{{ t('admin.created') }}</th>
+                <th>{{ t('admin.keyTestCol') }}</th>
                 <th></th>
               </tr>
             </thead>
@@ -409,6 +410,19 @@
                 <td class="td-mono">{{ fmtDateTime(key.last_used_at) }}</td>
                 <td class="td-mono">{{ fmtDateTime(key.created_at) }}</td>
                 <td>
+                  <span v-if="llmTestResults[key.id]" :class="['badge', llmTestResults[key.id].ok ? 'badge-green' : 'badge-red']">
+                    {{ llmTestResults[key.id].ok ? t('admin.keyWorks') : t('admin.keyFails') }}
+                  </span>
+                  <span
+                    v-if="!llmTestResults[key.id]?.ok && llmTestResults[key.id]?.error"
+                    class="doc-error"
+                    :title="llmTestResults[key.id].error"
+                  >{{ llmTestResults[key.id].error }}</span>
+                </td>
+                <td class="llm-row-actions">
+                  <button class="btn btn-ghost btn-sm" :disabled="llmTesting[key.id]" @click="testLlmKey(key)">
+                    {{ llmTesting[key.id] ? '…' : t('admin.testKey') }}
+                  </button>
                   <button class="btn btn-danger btn-sm" @click="deleteLlmKey(key)">
                     {{ llmDeleteTarget?.id === key.id ? t('admin.confirmDelete') : t('common.delete') }}
                   </button>
@@ -846,6 +860,8 @@ const userFormOpen = ref(false)
 const userSaving = ref(false)
 const userFormError = ref('')
 const userForm = ref({ email: '', name: '', password: '', role: 'member' })
+const llmTesting = ref({})
+const llmTestResults = ref({})
 
 const filters = ref({ q: '', tenantId: '', mode: '', status: '', days: 30 })
 const prompts = ref(null)
@@ -937,6 +953,18 @@ async function saveLlmKey() {
     llmFormError.value = e.message
   } finally {
     llmSaving.value = false
+  }
+}
+
+async function testLlmKey(key) {
+  llmTesting.value = { ...llmTesting.value, [key.id]: true }
+  try {
+    const result = await apiAdminFetch(`/admin/llm-keys/${key.id}/test`, { method: 'POST' })
+    llmTestResults.value = { ...llmTestResults.value, [key.id]: result }
+  } catch (e) {
+    llmTestResults.value = { ...llmTestResults.value, [key.id]: { ok: false, error: e.message } }
+  } finally {
+    llmTesting.value = { ...llmTesting.value, [key.id]: false }
   }
 }
 
@@ -1399,5 +1427,14 @@ function docBadge(status) {
   .usage-grid { grid-template-columns: 1fr; }
   .prompt-modal { width: calc(100vw - 24px); }
   .secret-pill { display: none; }
+}
+</style>
+
+<style scoped>
+.llm-row-actions {
+  white-space: nowrap;
+}
+.llm-row-actions .btn + .btn {
+  margin-left: 6px;
 }
 </style>

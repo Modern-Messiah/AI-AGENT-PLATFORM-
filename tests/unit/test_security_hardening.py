@@ -419,3 +419,33 @@ async def test_admin_create_user_rejects_duplicate_email(monkeypatch) -> None:
             AdminPrincipal(via="secret", actor=None),
         )
     assert exc_info.value.status_code == 409
+
+
+async def test_llm_key_test_endpoint_reports_provider_errors(monkeypatch) -> None:
+    """The test endpoint must return ok=False instead of raising — the
+    provider's rejection IS the answer."""
+    from packages.storage import LlmApiKey
+
+    row = LlmApiKey(
+        id=uuid.uuid4(),
+        provider="moonshot",
+        name="broken",
+        key_value="sk-invalid-key-value-123",
+    )
+    monkeypatch.setattr(admin_router, "admin_session", lambda: LlmKeysSession([row]))
+
+    class FakeCompletions:
+        async def create(self, **kwargs: object) -> object:
+            raise RuntimeError("Error code: 401 - invalid api key")
+
+    class FakeClient:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            self.chat = SimpleNamespace(completions=FakeCompletions())
+
+    monkeypatch.setattr(admin_router, "AsyncOpenAI", FakeClient)
+
+    result = await admin_router.admin_test_llm_key(
+        row.id, AdminPrincipal(via="secret", actor=None)
+    )
+    assert result["ok"] is False
+    assert "invalid api key" in str(result["error"])
