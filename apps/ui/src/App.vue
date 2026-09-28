@@ -44,9 +44,9 @@ const router = useRouter()
 const settings = useSettingsStore()
 const session = useSessionStore()
 const { t } = useI18n()
-const showSettings = ref(
-  !settings.isConnected && !session.isAuthenticated || shouldOpenSettingsModal(route.query)
-)
+// No auto-open: unauthenticated visitors land on the /login auth window;
+// connection settings live here, opened explicitly from the sidebar.
+const showSettings = ref(shouldOpenSettingsModal(route.query))
 const sidebarCollapsed = ref(false)
 const isMobile = useMaxWidthMediaQuery(900)
 const mobileNavOpen = ref(false)
