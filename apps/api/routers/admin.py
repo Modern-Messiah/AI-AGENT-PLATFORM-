@@ -14,7 +14,7 @@ import uuid
 from datetime import timedelta
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from packages.analytics.clickhouse import ch_client
 from packages.storage import (
     AgentQueryLog,
@@ -53,8 +53,9 @@ from apps.api.schemas import (
     AdminUsageTotals,
     AdminUserInfo,
 )
+from apps.api.services.auth_rate_limit import enforce_admin_rate_limit
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(enforce_admin_rate_limit)])
 
 _OVERVIEW_DAILY_DAYS = 14
 _ANSWER_PREVIEW_CHARS = 240

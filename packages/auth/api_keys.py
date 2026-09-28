@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import hmac
 import secrets
 import time
 import uuid
@@ -31,6 +32,7 @@ from fastapi import Header, HTTPException
 from sqlalchemy import select, update
 
 from packages.auth.jwt_sessions import verify_session_token
+from packages.auth.session_revocation import is_user_denied
 from packages.core import settings
 from packages.storage.db import async_session
 from packages.storage.models import ApiKey, User
@@ -116,7 +118,10 @@ async def require_actor(
     """
     bearer = _bearer_token(authorization)
     if bearer is not None:
-        return actor_from_claims(verify_session_token(bearer))
+        actor = actor_from_claims(verify_session_token(bearer))
+        if await is_user_denied(actor.user_id):
+            raise HTTPException(status_code=401, detail="session revoked")
+        return actor
 
     if not isinstance(x_api_key, str) or not x_api_key.strip():
         raise HTTPException(
@@ -243,6 +248,8 @@ async def require_admin_principal(
         if actor.is_admin:
             return AdminPrincipal(via="session", actor=actor)
         raise HTTPException(status_code=403, detail="admin role required")
-    if isinstance(x_admin_secret, str) and x_admin_secret == settings.admin_secret:
+    if isinstance(x_admin_secret, str) and hmac.compare_digest(
+        x_admin_secret.encode(), settings.admin_secret.encode()
+    ):
         return AdminPrincipal(via="secret", actor=None)
     raise HTTPException(status_code=403, detail="invalid admin secret")
