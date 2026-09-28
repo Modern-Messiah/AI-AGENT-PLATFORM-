@@ -192,4 +192,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Validate Docker Compose config
-        run: docker compose config --quiet
+        run: |
+          docker compose config --quiet
+          docker compose --profile tls config --quiet
+          docker compose --profile observability config --quiet

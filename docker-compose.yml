@@ -340,6 +340,40 @@ services:
     command: python -m apps.worker.main
     restart: unless-stopped
 
+  # Optional metrics stack: docker compose --profile observability up -d
+  prometheus:
+    image: prom/prometheus:v3.4.1
+    container_name: aap-prometheus
+    profiles: ["observability"]
+    depends_on:
+      api:
+        condition: service_started
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "${HOST_BIND_ADDRESS:-127.0.0.1}:9090:9090"
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.5.2
+    container_name: aap-grafana
+    profiles: ["observability"]
+    depends_on:
+      prometheus:
+        condition: service_started
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "${HOST_BIND_ADDRESS:-127.0.0.1}:3001:3000"
+    restart: unless-stopped
+
   # Optional TLS termination: docker compose --profile tls up -d
   caddy:
     image: caddy:2-alpine
@@ -377,6 +411,8 @@ services:
 
 volumes:
   caddy_data:
+  prometheus_data:
+  grafana_data:
   caddy_config:
   pg_data:
   redis_data:
