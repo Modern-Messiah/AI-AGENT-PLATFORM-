@@ -43,11 +43,7 @@
           <AppIcon v-else name="refresh" :size="13" />
         </button>
         <span
-          v-if="session.isAdmin"
-          class="secret-pill"
-        >{{ session.displayName }} · admin</span>
-        <span
-          v-else
+          v-if="!session.isAdmin"
           class="secret-pill"
           :class="{ invalid: settings.isAdminInvalid }"
         >
