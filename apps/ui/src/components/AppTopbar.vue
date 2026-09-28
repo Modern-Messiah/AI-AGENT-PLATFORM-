@@ -14,7 +14,7 @@
     <span class="topbar-sub">{{ sub }}</span>
     <div class="topbar-right">
       <span v-if="session.isAuthenticated" class="badge badge-green">
-        <span class="dot-pulse"></span>{{ session.displayName }}
+        <span class="dot-pulse"></span>{{ t('app.connected') }}
       </span>
       <span v-else-if="settings.isConnected" class="badge badge-green">
         <span class="dot-pulse"></span>{{ t('app.apiReady') }}
