@@ -205,17 +205,28 @@ ai-agent-platform/
 
 ## API Overview
 
-Most endpoints require:
+Most endpoints accept either credential:
 
 ```http
 X-API-Key: <tenant-api-key>
+Authorization: Bearer <session-jwt>   # Google login (see below)
 ```
 
-Admin key creation requires:
+Admin endpoints (/admin/*, key/user management) accept an admin-role
+session or:
 
 ```http
 X-Admin-Secret: <ADMIN_SECRET>
 ```
+
+### Google login (user/admin cabinets)
+
+Set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` (OAuth Web credentials with
+redirect URI `<API base>/auth/google/callback`), `AUTH_JWT_SECRET`
+(`openssl rand -hex 32`) and `ADMIN_EMAILS` in `.env`. The UI then offers
+"Sign in with Google" at `/login`: emails in `ADMIN_EMAILS` land in the
+admin cabinet, everyone else in the user cabinet of `DEFAULT_TENANT_ID`.
+Without these variables the login page degrades to the API-key path.
 
 | Method | Path | Purpose |
 |---|---|---|
