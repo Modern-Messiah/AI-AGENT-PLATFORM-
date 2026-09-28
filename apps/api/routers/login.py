@@ -27,7 +27,13 @@ from urllib.parse import quote, urlencode, urlparse
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse
-from packages.auth import Actor, hash_password, require_actor, verify_password
+from packages.auth import (
+    Actor,
+    clear_user_denial,
+    hash_password,
+    require_actor,
+    verify_password,
+)
 from packages.auth.jwt_sessions import (
     AuthConfigError,
     create_oauth_state,
@@ -318,6 +324,9 @@ async def login(body: EmailLoginRequest) -> EmailLoginResponse:
     # Uniform error: never reveal whether the email exists.
     if user is None or not verify_password(body.password, user.password_hash):
         raise HTTPException(status_code=401, detail="invalid email or password")
+
+    # A fresh login supersedes any earlier session denial (password reset).
+    await clear_user_denial(user.id)
 
     # ADMIN_EMAILS may promote, but never demote an admin-granted role
     # (roles are also granted through the admin panel).
