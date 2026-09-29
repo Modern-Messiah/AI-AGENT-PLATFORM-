@@ -9,6 +9,10 @@ from packages.rag.citations import (
     select_diverse_chunks,
 )
 from packages.rag.embedder import embed_queries, embed_texts
+from packages.rag.faithfulness import (
+    FaithfulnessVerdict,
+    verify_answer_faithfulness,
+)
 from packages.rag.lang import detect_language
 from packages.rag.multilang_ocr import run_multilang_ocr, select_best_ocr
 from packages.rag.parser import parse_to_segments, parse_to_text
@@ -27,6 +31,7 @@ from packages.rag.summaries import (
 __all__ = [
     "CitationSource",
     "DocumentInsights",
+    "FaithfulnessVerdict",
     "NotebookInsightSource",
     "NotebookInsights",
     "build_citations",
@@ -51,4 +56,5 @@ __all__ = [
     "select_answer_sources",
     "select_best_ocr",
     "select_diverse_chunks",
+    "verify_answer_faithfulness",
 ]

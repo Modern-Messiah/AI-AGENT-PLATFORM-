@@ -1,0 +1,12 @@
+{"query": "как продлить доступ если удалёнка отваливается по таймауту сертификата", "expected_doc_substrings": ["срок жизни токена — 12 часов"]}
+{"query": "до какого времени ночное резервное копирование базы данных", "expected_doc_substrings": ["03:15 UTC"]}
+{"query": "how much does the team plan cost with an annual discount", "expected_doc_substrings": ["4900"]}
+{"query": "ошибка 3012 при входе в впн", "expected_doc_substrings": ["AUTH_MFA_FAIL_3012"]}
+{"query": "шлюз отдаёт 504 что делать с очередью", "expected_doc_substrings": ["10000"]}
+{"query": "на сколько блокируется пользователь после неверных кодов", "expected_doc_substrings": ["15 минут"]}
+{"query": "who rotates as the default reviewer for new engineers", "expected_doc_substrings": ["OWNERS"]}
+{"query": "как долго хранятся архивные копии базы", "expected_doc_substrings": ["30 days"]}
+{"query": "payments падает по соединению где смотреть лимит памяти", "expected_doc_substrings": ["512Mi"]}
+{"query": "можно ли пользоваться личным vpn для работы", "expected_doc_substrings": ["не подходят для корпоративного доступа"]}
+{"query": "какой уровень гарантии доступности на корпоративном тарифе", "expected_doc_substrings": ["99.9"]}
+{"query": "mandatory recovery exercise frequency for the on-call engineer", "expected_doc_substrings": ["quarterly"]}

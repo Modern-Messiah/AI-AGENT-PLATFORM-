@@ -239,13 +239,16 @@ def calibrate_confidence(
     selected_chunks: Sequence[RetrievedChunk],
     answer_sources: Sequence[CitationSource],
     answer: str,
+    *,
+    verdict: object | None = None,
 ) -> float:
     """Evidence-derived confidence in [0, 1].
 
     Replaces the hardcoded 0.85/0.2/0.0 that depended only on whether
     citation markers parsed: the value now tracks the retrieval scores of
-    the context actually handed to the model, and answers without cited
-    sources are capped low.
+    the context actually handed to the model, answers without cited
+    sources are capped low, and a failed faithfulness check pulls the
+    confidence down proportionally to the unsupported share.
     """
     if not answer.strip():
         return 0.0
@@ -254,9 +257,15 @@ def calibrate_confidence(
     top_scores = sorted((chunk.score for chunk in selected_chunks), reverse=True)[:3]
     semantic = max(0.0, min(1.0, sum(top_scores) / len(top_scores)))
     base = 0.35 + 0.55 * semantic
-    if answer_sources:
-        return round(min(0.95, base + 0.15), 2)
-    return round(min(base, 0.45), 2)
+    score = min(0.95, base + 0.15) if answer_sources else min(base, 0.45)
+    if verdict is not None:
+        ratio = float(getattr(verdict, "unsupported_ratio", 0.0) or 0.0)
+        error = getattr(verdict, "error", None)
+        if ratio:
+            score *= 1.0 - 0.7 * ratio  # up to a 70% cut for fully unsupported text
+        elif error and error != "disabled":
+            score = min(score, 0.75)  # unverified — do not show full confidence
+    return round(max(0.05, score), 2)
 
 
 def build_grounded_messages(
@@ -297,11 +306,19 @@ def build_grounded_messages(
         {
             "role": "system",
             "content": (
-                "You are a concise research assistant. Answer only from the provided "
-                "knowledge-base context. For every factual claim, append its citation "
-                "marker like [1] immediately after the supported sentence. You may cite "
-                "multiple sources. If the context is insufficient, say so directly. "
-                "Never invent facts, citation numbers, or filenames."
+                "You are a concise research assistant answering strictly from the "
+                "provided knowledge-base context.\n"
+                "Grounding rules, in order of priority:\n"
+                "1. Every factual sentence MUST carry a citation marker like [1] "
+                "immediately after it, referencing a source that actually states it.\n"
+                "2. Copy numbers, codes, names and dates verbatim from the context — "
+                "never calculate, guess or 'fix' them.\n"
+                "3. If the context does not contain the answer or contains only part "
+                "of it, say exactly what is missing and stop. A short honest "
+                "'not found in the sources' beats a plausible guess.\n"
+                "4. Never use outside knowledge, never invent facts, citation "
+                "numbers, or filenames. Uncited sentences will be removed.\n"
+                "5. Answer in the user's language."
             ),
         },
     ]

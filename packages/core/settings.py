@@ -102,6 +102,11 @@ class Settings(BaseSettings):
     # first-sentences heuristic; heuristic stays as the failure fallback.
     ai_document_insights_enabled: bool = True
 
+    # Post-answer faithfulness verification (weak model): every sentence is
+    # checked against the cited sources; the done-event carries the verdict
+    # and unsupported answers degrade to a refusal.
+    answer_verification_enabled: bool = True
+
     # Log a WARNING when a single LLM call costs more than this amount.
     budget_alert_usd_per_call: float = 0.10
 

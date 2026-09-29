@@ -181,7 +181,10 @@ def test_grounded_prompt_numbers_sources_and_requires_inline_markers() -> None:
         max_context_chars=8_000,
     )
 
-    assert "append its citation marker like [1]" in messages[0]["content"]
+    assert "MUST carry a citation marker like [1]" in messages[0]["content"]
+    # анти-галлюцинационные правила
+    assert "Never use outside knowledge" in messages[0]["content"]
+    assert "not found in the sources" in messages[0]["content"]
     assert "[1] contract.pdf (page 8, score=0.840)" in messages[1]["content"]
     assert "Evidence from contract.pdf, chunk 14." in messages[1]["content"]
 

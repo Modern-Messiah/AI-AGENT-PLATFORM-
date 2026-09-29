@@ -23,6 +23,7 @@ from packages.rag import (
     retrieve_chunks_with_expansion,
     select_answer_sources,
     select_diverse_chunks,
+    verify_answer_faithfulness,
 )
 from packages.storage import ChatMessage, ChatSession, Chunk, Document, DocumentStatus, Notebook
 from packages.storage.db import tenant_session
@@ -432,17 +433,28 @@ async def agent_stream(body: AgentStreamRequest, actor: ActorDep) -> StreamingRe
 
             answer = "".join(answer_parts).strip()
             structured_sources = select_answer_sources(answer, sources)
+            verdict = await verify_answer_faithfulness(answer, structured_sources)
+            if answer and verdict.unsupported_sentences and not verdict.supported_sentences:
+                # Nothing in the answer is grounded — refuse instead of
+                # streaming an invention through.
+                answer = (
+                    "Не удалось подтвердить ответ источниками — информация "
+                    "в базе знаний отсутствует или противоречива."
+                )
+                structured_sources = []
             output = AgentRunOutput(
                 answer=answer or "Не удалось получить ответ от модели.",
                 sources=structured_sources if answer else [],
-                confidence=calibrate_confidence(selected_chunks, structured_sources, answer),
+                confidence=calibrate_confidence(
+                    selected_chunks, structured_sources, answer, verdict=verdict
+                ),
                 cached=False,
             )
             latency_ms = int((time.monotonic() - request_t0) * 1000)
 
             yield (
                 "data: "
-                f"{json.dumps({'type': 'done', 'answer': output.answer, 'sources': serialize_sources(output.sources), 'confidence': output.confidence, 'cached': False})}\n\n"
+                f"{json.dumps({'type': 'done', 'answer': output.answer, 'sources': serialize_sources(output.sources), 'confidence': output.confidence, 'cached': False, 'verified': verdict.verified, 'unsupported_count': len(verdict.unsupported_sentences)})}\n\n"
             )
             log.info(
                 "agent_stream done | tenant=%s model=%s latency_ms=%d",

@@ -13,6 +13,7 @@ from sqlalchemy import ColumnElement, func, or_, select
 
 from packages.core import settings
 from packages.rag.embedder import embed_queries
+from packages.rag.lang import detect_language
 from packages.storage import Chunk, Document
 from packages.storage.db import tenant_session
 
@@ -156,13 +157,52 @@ def _title_page_metadata_relevance(query: str, chunk: RetrievedChunk) -> float:
     return 0.0
 
 
+def _exact_numbers_relevance(query: str, content: str) -> float:
+    """Numbers are high-precision evidence: queries ask for codes, sizes,
+    limits. A chunk carrying the query's numbers deserves a boost; a chunk
+    missing them must not outrank a chunk that has them."""
+    query_numbers = set(re.findall(r"\d+[.,]?\d*", query))
+    if not query_numbers:
+        return 0.0
+    content_numbers = set(re.findall(r"\d+[.,]?\d*", content))
+    matched = sum(1 for n in query_numbers if n in content_numbers)
+    if matched == len(query_numbers):
+        return 0.25
+    if matched:
+        return 0.0
+    return -0.15  # none of the asked-for numbers live in this chunk
+
+
+def _exact_phrase_relevance(query: str, content: str) -> float:
+    """Longest query n-gram found verbatim in the chunk (3+ words)."""
+    words = [w for w in _WORD_RE.findall(query.casefold()) if w not in _STOP_WORDS]
+    best = 0
+    for size in (5, 4, 3):
+        if len(words) < size:
+            continue
+        for start in range(len(words) - size + 1):
+            phrase = " ".join(words[start : start + size])
+            if phrase in content.casefold():
+                best = max(best, size)
+        if best:
+            break
+    return 0.15 if best >= 5 else (0.10 if best >= 4 else (0.06 if best == 3 else 0.0))
+
+
 def rerank_chunks(query: str, chunks: list[RetrievedChunk]) -> list[RetrievedChunk]:
-    """Blend semantic distance with deterministic Unicode lexical relevance."""
+    """Blend semantic distance with deterministic lexical evidence.
+
+    Lexical relevance, exact-number coverage and verbatim-phrase hits are
+    additive evidence on top of the vector score; number mismatches are a
+    small negative so numeric queries stop surfacing look-alike chunks.
+    """
     return sorted(
         chunks,
         key=lambda chunk: (
             chunk.score
             + 0.35 * _lexical_relevance(query, chunk.content)
+            + _exact_numbers_relevance(query, chunk.content)
+            + _exact_phrase_relevance(query, chunk.content)
             + _title_page_metadata_relevance(query, chunk),
             chunk.score,
             -chunk.chunk_idx,
@@ -171,11 +211,27 @@ def rerank_chunks(query: str, chunks: list[RetrievedChunk]) -> list[RetrievedChu
     )
 
 
+_SCRIPT_RANGES = {"ru": re.compile(r"[а-яё]"), "en": re.compile(r"[a-z]")}
+
+
+def _contains_language(text: str, lang: str, *, min_share: float = 0.3) -> bool:
+    """True when at least min_share of the text's letters belong to `lang`."""
+    pattern = _SCRIPT_RANGES.get(lang)
+    if pattern is None:
+        return True
+    letters = [ch for ch in text.casefold() if ch.isalpha()]
+    if not letters:
+        return True
+    hits = len(pattern.findall("".join(letters)))
+    return hits / len(letters) >= min_share
+
+
 def filter_unsupported_query_chunks(
     query: str,
     chunks: list[RetrievedChunk],
     *,
     min_semantic_score_without_lexical_support: float = 0.55,
+    min_semantic_score_crosslingual: float = 0.45,
 ) -> list[RetrievedChunk]:
     """Drop unscoped nearest-neighbour noise for clearly unsupported queries.
 
@@ -183,12 +239,35 @@ def filter_unsupported_query_chunks(
     corpus. If none of the retrieved chunks share meaningful lexical evidence
     with the query and the semantic scores are weak, treat the result as no
     knowledge instead of handing random context to the agent.
+
+    Cross-lingual queries (question language absent from the retrieved
+    corpus) legitimately have zero lexical overlap — the multilingual
+    embedding is the only signal — so they get a lower semantic bar instead
+    of being filtered as noise.
     """
     if not chunks:
         return []
     if any(_lexical_relevance(query, chunk.content) > 0 for chunk in chunks):
         return chunks
-    if max(chunk.score for chunk in chunks) >= min_semantic_score_without_lexical_support:
+    query_lang = detect_language(query)
+    best = max(chunks, key=lambda c: c.score)
+    best_lang = detect_language(best.content)
+    # The strongest evidence lives in another language than the question —
+    # zero lexical overlap is expected, not noise. Bilingual chunks (mixed
+    # scripts) still carry the question's language, so they stay on the
+    # strict bar and out-of-knowledge noise keeps being rejected.
+    crosslingual = (
+        query_lang is not None
+        and best_lang is not None
+        and query_lang != best_lang
+        and not _contains_language(best.content, query_lang)
+    )
+    bar = (
+        min_semantic_score_crosslingual
+        if crosslingual
+        else (min_semantic_score_without_lexical_support)
+    )
+    if max(chunk.score for chunk in chunks) >= bar:
         return chunks
     return []
 
