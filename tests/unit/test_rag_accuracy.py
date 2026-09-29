@@ -180,3 +180,57 @@ def test_confidence_penalised_by_unsupported_share() -> None:
     assert half < clean
     assert unverified <= 0.75
     assert clean >= unverified >= half or clean > half
+
+
+# ── stage-2 LLM reranker ─────────────────────────────────────────────────────
+
+
+def _rk(content: str, score: float, idx: int) -> RetrievedChunk:
+    return RetrievedChunk(
+        document_id="d",
+        chunk_id=f"c{idx}",
+        filename="doc.txt",
+        content=content,
+        score=score,
+        chunk_idx=idx,
+        metadata={},
+    )
+
+
+async def test_llm_rerank_reorders_by_judged_relevance(monkeypatch: pytest.MonkeyPatch) -> None:
+    import packages.rag.llm_rerank as lr
+
+    monkeypatch.setattr(settings, "llm_rerank_enabled", True)
+    monkeypatch.setattr(settings, "llm_rerank_max_chunks", 10)
+
+    async def fake(model: str, messages: object, *, max_tokens: int) -> str:
+        return '{"scores": {"1": 2, "2": 9}}'  # второй чанк релевантнее
+
+    monkeypatch.setattr(lr, "complete_chat_json", fake)
+
+    chunks = [_rk("первый про другое", 0.9, 0), _rk("второй с ответом", 0.4, 1)]
+    result = await lr.rerank_chunks_with_llm("вопрос", chunks)
+
+    assert result is not None
+    assert result[0].content == "второй с ответом"  # LLM-оценка победила семантику
+
+
+async def test_llm_rerank_outage_falls_back(monkeypatch: pytest.MonkeyPatch) -> None:
+    import packages.rag.llm_rerank as lr
+
+    monkeypatch.setattr(settings, "llm_rerank_enabled", True)
+
+    async def broken(model: str, messages: object, *, max_tokens: int) -> str:
+        raise RuntimeError("weak model down")
+
+    monkeypatch.setattr(lr, "complete_chat_json", broken)
+
+    chunks = [_rk("a", 0.9, 0), _rk("b", 0.8, 1)]
+    assert await lr.rerank_chunks_with_llm("q", chunks) is None  # детерминированный порядок
+
+
+async def test_llm_rerank_disabled_short_circuits(monkeypatch: pytest.MonkeyPatch) -> None:
+    import packages.rag.llm_rerank as lr
+
+    monkeypatch.setattr(settings, "llm_rerank_enabled", False)
+    assert await lr.rerank_chunks_with_llm("q", [_rk("a", 0.5, 0), _rk("b", 0.6, 1)]) is None
