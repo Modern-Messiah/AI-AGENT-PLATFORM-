@@ -14,6 +14,11 @@ from packages.storage import User
 SECRET_PRINCIPAL = AdminPrincipal(via="secret", actor=None)
 
 
+@pytest.fixture(autouse=True)
+def _auth_jwt(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "auth_jwt_secret", "unit-test-jwt-secret-0123456789ab")
+
+
 class Session:
     def __init__(self, user: User | None) -> None:
         self.user = user
