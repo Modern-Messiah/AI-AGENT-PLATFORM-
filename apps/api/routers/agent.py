@@ -353,6 +353,7 @@ async def agent_stream(body: AgentStreamRequest, actor: ActorDep) -> StreamingRe
             return
 
         try:
+
             def stage(name: str) -> str:
                 return f"data: {json.dumps({'type': 'stage', 'stage': name, 'elapsed_ms': int((time.monotonic() - request_t0) * 1000)})}\n\n"
 
