@@ -159,7 +159,7 @@ jobs:
       - name: Seed eval corpora
         run: |
           PYTHONPATH=. uv run python scripts/seed_eval_corpus.py
-          PYTHONPATH=. uv run python scripts.seed_eval_corpus \
+          PYTHONPATH=. uv run python scripts/seed_eval_corpus.py \
             --corpus evals/datasets/hard/corpus.json
 
       - name: Run retrieval eval (recall@5 >= 90%)
