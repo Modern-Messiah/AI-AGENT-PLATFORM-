@@ -115,80 +115,6 @@ services:
     ports:
       - "${HOST_BIND_ADDRESS:-127.0.0.1}:8233:8080"
 
-  langfuse-web:
-    image: langfuse/langfuse:3
-    container_name: aap-langfuse-web
-    depends_on:
-      postgres:
-        condition: service_healthy
-      clickhouse:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
-    environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/langfuse
-      CLICKHOUSE_URL: http://clickhouse:8123
-      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-default}
-      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?Set CLICKHOUSE_PASSWORD in .env}
-      CLICKHOUSE_MIGRATION_URL: clickhouse://clickhouse:9000
-      CLICKHOUSE_CLUSTER_ENABLED: "false"
-      REDIS_HOST: redis
-      REDIS_PORT: "6379"
-      LANGFUSE_S3_EVENT_UPLOAD_ENABLED: "true"
-      LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse
-      LANGFUSE_S3_EVENT_UPLOAD_REGION: auto
-      LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: ${MINIO_ROOT_USER:?Set MINIO_ROOT_USER in .env}
-      LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD in .env}
-      LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://minio:9000
-      LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
-      NEXTAUTH_URL: http://localhost:3000
-      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:?Set LANGFUSE_NEXTAUTH_SECRET in .env}
-      SALT: ${LANGFUSE_SALT:?Set LANGFUSE_SALT in .env}
-      ENCRYPTION_KEY: ${LANGFUSE_ENCRYPTION_KEY:?Set LANGFUSE_ENCRYPTION_KEY in .env}
-      TELEMETRY_ENABLED: "false"
-    ports:
-      - "${HOST_BIND_ADDRESS:-127.0.0.1}:3000:3000"
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://$$(hostname):3000/api/public/health | grep -q '\"status\"'"]
-      interval: 10s
-      timeout: 5s
-      retries: 20
-      start_period: 30s
-
-  langfuse-worker:
-    image: langfuse/langfuse-worker:3
-    container_name: aap-langfuse-worker
-    depends_on:
-      postgres:
-        condition: service_healthy
-      clickhouse:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
-    environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/langfuse
-      CLICKHOUSE_URL: http://clickhouse:8123
-      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-default}
-      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?Set CLICKHOUSE_PASSWORD in .env}
-      CLICKHOUSE_MIGRATION_URL: clickhouse://clickhouse:9000
-      CLICKHOUSE_CLUSTER_ENABLED: "false"
-      REDIS_HOST: redis
-      REDIS_PORT: "6379"
-      LANGFUSE_S3_EVENT_UPLOAD_ENABLED: "true"
-      LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse
-      LANGFUSE_S3_EVENT_UPLOAD_REGION: auto
-      LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: ${MINIO_ROOT_USER:?Set MINIO_ROOT_USER in .env}
-      LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD in .env}
-      LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://minio:9000
-      LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
-      SALT: ${LANGFUSE_SALT:?Set LANGFUSE_SALT in .env}
-      ENCRYPTION_KEY: ${LANGFUSE_ENCRYPTION_KEY:?Set LANGFUSE_ENCRYPTION_KEY in .env}
-      TELEMETRY_ENABLED: "false"
-
   # ── App ────────────────────────────────────────────────────────────────────
 
   migrate:
@@ -237,9 +163,6 @@ services:
       VISION_MODEL: ${VISION_MODEL:-moonshot/kimi-k2.6}
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2}
       EMBEDDING_DIM: ${EMBEDDING_DIM:-384}
-      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
-      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
-      LANGFUSE_HOST: http://langfuse-web:3000
       LOGFIRE_TOKEN: ${LOGFIRE_TOKEN:-}
       ADMIN_SECRET: ${ADMIN_SECRET:?Set ADMIN_SECRET in .env}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
@@ -322,9 +245,6 @@ services:
       CHUNK_OVERLAP: ${CHUNK_OVERLAP:-200}
       OCR_LANGUAGE: ${OCR_LANGUAGE:-ru}
       VISUAL_RENDER_MAX_DIMENSION: ${VISUAL_RENDER_MAX_DIMENSION:-1800}
-      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
-      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
-      LANGFUSE_HOST: http://langfuse-web:3000
       APP_ENV: ${APP_ENV:-local}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       HTTP_FETCH_ALLOWED_DOMAINS: ${HTTP_FETCH_ALLOWED_DOMAINS:-}
@@ -345,40 +265,6 @@ services:
       - fastembed_cache:/fastembed_cache
       - paddle_cache:/root/.paddlex
     command: python -m apps.worker.main
-    restart: unless-stopped
-
-  # Optional metrics stack: docker compose --profile observability up -d
-  prometheus:
-    image: prom/prometheus:v3.4.1
-    container_name: aap-prometheus
-    profiles: ["observability"]
-    depends_on:
-      api:
-        condition: service_started
-    volumes:
-      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - prometheus_data:/prometheus
-    ports:
-      - "${HOST_BIND_ADDRESS:-127.0.0.1}:9090:9090"
-    restart: unless-stopped
-
-  grafana:
-    image: grafana/grafana:11.5.2
-    container_name: aap-grafana
-    profiles: ["observability"]
-    depends_on:
-      prometheus:
-        condition: service_started
-    environment:
-      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
-      GF_USERS_ALLOW_SIGN_UP: "false"
-    volumes:
-      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
-      - ./infra/grafana/dashboards:/var/lib/grafana/dashboards:ro
-      - grafana_data:/var/lib/grafana
-    ports:
-      - "${HOST_BIND_ADDRESS:-127.0.0.1}:3001:3000"
     restart: unless-stopped
 
   # Optional TLS termination: docker compose --profile tls up -d
@@ -418,8 +304,6 @@ services:
 
 volumes:
   caddy_data:
-  prometheus_data:
-  grafana_data:
   caddy_config:
   pg_data:
   redis_data:

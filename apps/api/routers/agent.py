@@ -31,7 +31,6 @@ from starlette.responses import StreamingResponse
 from temporalio.client import Client
 
 from apps.api.deps import ActorDep
-from apps.api.metrics import agent_cache_requests_total, agent_tokens_total
 from apps.api.schemas import AgentRunApiResponse, AgentStreamRequest
 from apps.api.serializers import serialize_sources
 from apps.api.services.agent_limits import enforce_agent_limits, validate_agent_query
@@ -321,7 +320,6 @@ async def agent_stream(body: AgentStreamRequest, actor: ActorDep) -> StreamingRe
                 cached = await semantic_cache.get(retrieval_query, tenant_id)
             except Exception:
                 cached = None
-            agent_cache_requests_total.labels(result="hit" if cached is not None else "miss").inc()
             log.info(
                 "agent_stream cache lookup | tenant=%s hit=%s latency_ms=%d",
                 tenant_id,
@@ -450,12 +448,6 @@ async def agent_stream(body: AgentStreamRequest, actor: ActorDep) -> StreamingRe
                 model_name,
                 latency_ms,
             )
-
-            if prompt_tokens or completion_tokens:
-                agent_tokens_total.labels(model=model_name, kind="prompt").inc(prompt_tokens)
-                agent_tokens_total.labels(model=model_name, kind="completion").inc(
-                    completion_tokens
-                )
 
             with contextlib.suppress(Exception):
                 await record_usage(

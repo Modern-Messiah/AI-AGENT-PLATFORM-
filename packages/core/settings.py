@@ -24,14 +24,6 @@ class Settings(BaseSettings):
     weak_model: str = "deepseek/deepseek-v4-flash"
     vision_model: str = "moonshot/kimi-k2.6"
 
-    langfuse_public_key: str = ""
-    langfuse_secret_key: str = ""
-    langfuse_host: str = "http://localhost:3000"
-
-    # Pydantic Logfire (https://logfire.pydantic.dev): FastAPI + OpenAI
-    # instrumentation. Empty token = disabled, nothing changes.
-    logfire_token: str = ""
-
     temporal_address: str = "localhost:7233"
     temporal_namespace: str = "default"
     temporal_task_queue: str = "agent-tasks"
@@ -111,6 +103,10 @@ class Settings(BaseSettings):
 
     # Protect POST /auth/keys — change before deploying.
     admin_secret: str = _DEFAULT_ADMIN_SECRET
+
+    # Pydantic Logfire (https://logfire.pydantic.dev): FastAPI + OpenAI
+    # instrumentation. Empty token = disabled, nothing changes.
+    logfire_token: str = ""
 
     # ── Google OAuth login + JWT sessions ────────────────────────────────────
     # "Sign in with Google" for the user/admin cabinets. All four values must

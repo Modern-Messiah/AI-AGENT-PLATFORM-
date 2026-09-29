@@ -18,7 +18,6 @@ dependencies = [
     # LLM clients for OpenAI-compatible providers
     "openai>=1.50",
     # Observability — Langfuse + OpenTelemetry
-    "langfuse>=2.50,<3",
     # pydantic-ai <0.1 imports opentelemetry._events, which was dropped in
     # opentelemetry-api 1.44.0. Cap until the agent framework is upgraded.
     "opentelemetry-api>=1.27,<1.44",

@@ -40,7 +40,7 @@ streaming so the browser can show text as it is generated.
 | Object storage | MinIO | Original uploads and protected generated assets/previews |
 | Cache | Redis | Semantic cache and fast shared state |
 | Analytics | ClickHouse | LLM usage events, cost and latency aggregation |
-| Observability | Langfuse | Optional traces and prompt observability |
+| Observability | Pydantic Logfire | Optional FastAPI + LLM-call telemetry (`LOGFIRE_TOKEN`) |
 | Embeddings | fastembed | Local embedding generation for RAG chunks |
 | OCR | PaddleOCR | Russian/English OCR for images and scanned PDF pages |
 | PDF/image processing | PyMuPDF, Pillow | Page rendering, image conversion, visual extraction |
@@ -75,8 +75,8 @@ graph TD
     Agent --> Retriever["RAG retriever"]
     Retriever --> PG
     Agent --> LLM
-    API --> Langfuse["Langfuse optional traces"]
-    Worker --> Langfuse
+    API --> LF["Pydantic Logfire (optional)"]
+    Worker --> LF
 ```
 
 The browser talks only to the API. The API owns tenant authentication, starts Temporal
@@ -194,7 +194,7 @@ ai-agent-platform/
 │   ├── cache/                      # Redis and semantic cache
 │   ├── core/                       # Settings and tenant utilities
 │   ├── llm/                        # Provider/model factory and streaming helpers
-│   ├── observability/              # Langfuse/OpenTelemetry setup
+│   ├── observability/              # Optional Pydantic Logfire setup
 │   ├── rag/                        # Parsing, chunking, embeddings, retrieval, citations
 │   └── storage/                    # SQLAlchemy models, DB sessions, MinIO wrapper
 ├── migrations/versions/            # Alembic migrations
@@ -295,7 +295,6 @@ Important variables:
 | `APP_DB_PASSWORD` | yes | Runtime DB role password used by API/worker |
 | `CLICKHOUSE_PASSWORD` | yes | ClickHouse password |
 | `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD` | yes | Object storage credentials |
-| `LANGFUSE_NEXTAUTH_SECRET`, `LANGFUSE_SALT`, `LANGFUSE_ENCRYPTION_KEY` | yes for Langfuse | Generate locally with `openssl rand` |
 | `MOONSHOT_API_KEY` | yes for Kimi | Main/vision provider key |
 | `DEEPSEEK_API_KEY` | optional but expected | Weak/cheap model provider key |
 | `ADMIN_SECRET` | yes | Protects admin surface and key issuance |
@@ -350,7 +349,7 @@ Fill the required secrets in `.env`, including provider keys and `ADMIN_SECRET`.
 docker compose up -d --build
 ```
 
-This starts Postgres, Redis, ClickHouse, MinIO, Temporal, Langfuse, the API, the worker,
+This starts Postgres, Redis, ClickHouse, MinIO, Temporal, the API, the worker,
 the migration container, and the UI.
 
 ### 4. Create a tenant API key
@@ -376,7 +375,6 @@ before building the UI image. Do not confuse this tenant key with provider keys 
 | API | http://127.0.0.1:8000 |
 | OpenAPI | http://127.0.0.1:8000/openapi.json |
 | Temporal UI | http://127.0.0.1:8233 |
-| Langfuse | http://127.0.0.1:3000 |
 | MinIO console | http://127.0.0.1:9001 |
 | ClickHouse HTTP | http://127.0.0.1:8123 |
 
@@ -571,8 +569,7 @@ PYTHONPATH=$PWD python -m evals.runners.golden_eval \
   assets.
 - Large OCR workloads are CPU-heavy. First OCR calls may be slower because PaddleOCR
   warms up its models.
-- Langfuse is optional from the app's perspective. Missing Langfuse keys should not
-  stop local development.
+- Logfire is optional: without `LOGFIRE_TOKEN` the integration is a no-op.
 - ClickHouse analytics should not block the core answer path.
 - Temporal workflow code must remain deterministic. Keep network calls, LLM calls,
   random values, wall-clock time, and file I/O inside activities or API handlers.
@@ -592,4 +589,4 @@ PYTHONPATH=$PWD python -m evals.runners.golden_eval \
 - Vue: https://vuejs.org/
 - pgvector: https://github.com/pgvector/pgvector
 - PaddleOCR: https://github.com/PaddlePaddle/PaddleOCR
-- Langfuse: https://langfuse.com/docs
+- Pydantic Logfire: https://logfire.pydantic.dev

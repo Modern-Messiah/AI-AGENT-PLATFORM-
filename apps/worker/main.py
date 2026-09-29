@@ -10,8 +10,8 @@ import asyncio
 import logging
 
 from packages.core import settings
+from packages.observability import setup_logfire
 from packages.llm.keyring import keyring_refresh_loop, refresh_from_db
-from packages.observability import setup_logfire, setup_tracing
 from packages.rag.embedder import embed_texts
 from temporalio.client import Client
 from temporalio.worker import Worker
@@ -37,7 +37,6 @@ log = logging.getLogger(__name__)
 
 
 async def main() -> None:
-    setup_tracing("aap-worker")
     setup_logfire("aap-worker")
     log.info("warming up embedding model...")
     try:

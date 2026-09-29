@@ -178,9 +178,6 @@ jobs:
       CLICKHOUSE_PASSWORD: ci-clickhouse-password
       MINIO_ROOT_USER: aap_minio
       MINIO_ROOT_PASSWORD: ci-minio-password
-      LANGFUSE_NEXTAUTH_SECRET: ci-nextauth-secret
-      LANGFUSE_SALT: ci-langfuse-salt
-      LANGFUSE_ENCRYPTION_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
       ADMIN_SECRET: ci-admin-secret
       MOONSHOT_API_KEY: ""
       DEEPSEEK_API_KEY: ""

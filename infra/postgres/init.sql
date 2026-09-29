@@ -1,9 +1,9 @@
--- Bootstrap databases for app, Temporal and Langfuse.
+-- Bootstrap databases for app and Temporal.
 -- Runs once on first postgres start.
 
 CREATE DATABASE temporal;
 CREATE DATABASE temporal_visibility;
-CREATE DATABASE langfuse;
+
 
 \connect app
 CREATE EXTENSION IF NOT EXISTS vector;
