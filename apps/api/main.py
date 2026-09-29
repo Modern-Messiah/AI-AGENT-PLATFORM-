@@ -54,7 +54,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from packages.auth import revocation_listener
 from packages.core import settings
 from packages.llm.keyring import keyring_refresh_loop, refresh_from_db
-from packages.observability import setup_tracing
+from packages.observability import instrument_fastapi_app, setup_logfire, setup_tracing
 from packages.rag.embedder import embed_texts
 from temporalio.client import Client
 
@@ -137,6 +137,7 @@ log = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     setup_tracing("aap-api")
+    setup_logfire("aap-api")
     weak_provider = settings.weak_model.split("/", 1)[0]
     weak_key = {"moonshot": settings.moonshot_api_key, "deepseek": settings.deepseek_api_key}.get(
         weak_provider
@@ -175,6 +176,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+instrument_fastapi_app(app)
 
 app.include_router(health_router)
 app.include_router(login_router)
