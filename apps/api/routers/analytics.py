@@ -5,18 +5,21 @@ from typing import cast
 from fastapi import APIRouter, HTTPException, Query
 from packages.analytics.clickhouse import ch_client
 
-from apps.api.deps import TenantID
+from apps.api.deps import ActorDep
 
 router = APIRouter()
 
 
 @router.get("/analytics/usage")
 async def get_usage(
-    tenant_id: TenantID,
+    actor: ActorDep,
     days: int = Query(default=30, ge=1, le=365),
 ) -> dict[str, object]:
-    """Aggregate LLM cost and token usage for the authenticated tenant over N days."""
-    sql = """
+    """Personal usage for session logins; tenant-wide for unbound API keys."""
+    tenant_id = actor.tenant_id
+    user_id = str(actor.user_id) if actor.user_id else ""
+    scope_filter = "AND user_id = {user_id:String}" if user_id else ""
+    sql = f"""
         SELECT
             model,
             provider,
@@ -27,12 +30,13 @@ async def get_usage(
             round(avg(latency_ms))  AS avg_latency_ms,
             count()                 AS call_count
         FROM analytics.llm_usage_events
-        WHERE tenant_id = {tenant_id:String}
-          AND event_time >= now() - toIntervalDay({days:UInt32})
+        WHERE tenant_id = {{tenant_id:String}}
+          {scope_filter}
+          AND event_time >= now() - toIntervalDay({{days:UInt32}})
         GROUP BY model, provider
         ORDER BY total_cost_usd DESC
     """
-    daily_sql = """
+    daily_sql = f"""
         SELECT
             toDate(event_time)       AS day,
             sum(total_tokens)        AS total_tokens,
@@ -40,20 +44,25 @@ async def get_usage(
             round(avg(latency_ms))   AS avg_latency_ms,
             count()                  AS call_count
         FROM analytics.llm_usage_events
-        WHERE tenant_id = {tenant_id:String}
-          AND event_time >= now() - toIntervalDay({days:UInt32})
+        WHERE tenant_id = {{tenant_id:String}}
+          {scope_filter}
+          AND event_time >= now() - toIntervalDay({{days:UInt32}})
         GROUP BY day
         ORDER BY day ASC
     """
+    params: dict[str, object] = {"tenant_id": tenant_id, "days": days}
+    if user_id:
+        params["user_id"] = user_id
     try:
-        rows = await ch_client.query(sql, {"tenant_id": tenant_id, "days": days})
-        daily_rows = await ch_client.query(daily_sql, {"tenant_id": tenant_id, "days": days})
+        rows = await ch_client.query(sql, params)
+        daily_rows = await ch_client.query(daily_sql, params)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"ClickHouse error: {e}") from e
 
     total_cost = sum(cast(float, r.get("total_cost_usd") or 0) for r in rows)
     return {
         "tenant_id": tenant_id,
+        "scope": "user" if user_id else "tenant",
         "days": days,
         "total_cost_usd": round(total_cost, 6),
         "breakdown": rows,

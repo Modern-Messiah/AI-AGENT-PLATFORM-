@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS analytics.llm_usage_events (
     total_tokens    UInt32,
     cost_usd        Float64,
     latency_ms      UInt32,
+    user_id         String DEFAULT '',
     status          LowCardinality(String),
     error           String
 )

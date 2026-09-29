@@ -16,6 +16,7 @@ _TABLE = "analytics.llm_usage_events"
 _COLUMNS = [
     "event_time",
     "tenant_id",
+    "user_id",
     "workflow_id",
     "run_id",
     "model",
@@ -41,6 +42,7 @@ class UsageEvent:
     latency_ms: int
     status: str = "ok"
     error: str = ""
+    user_id: str = ""  # owner attribution for per-user analytics
     event_time: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     @property
@@ -67,6 +69,7 @@ async def record_usage(event: UsageEvent) -> None:
         [
             event.event_time,
             event.tenant_id,
+            event.user_id,
             event.workflow_id,
             event.run_id,
             event.model_short,

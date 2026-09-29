@@ -61,6 +61,7 @@ from apps.api.schemas import (
     AdminUsageResponse,
     AdminUsageTotals,
     AdminUserInfo,
+    AdminUserUsage,
     CreateAdminUserRequest,
     CreateLlmKeyRequest,
     LlmKeyInfo,
@@ -814,3 +815,64 @@ async def admin_delete_llm_key(key_id: uuid.UUID, _principal: AdminDep) -> None:
             raise HTTPException(status_code=404, detail="llm key not found")
         await db.execute(sa_delete(LlmApiKey).where(LlmApiKey.id == key_id))
     await refresh_keyring()
+
+
+# ── Per-user analytics ───────────────────────────────────────────────────────
+
+
+@router.get("/admin/analytics/users", response_model=list[AdminUserUsage])
+async def admin_user_analytics(
+    _principal: AdminDep,
+    days: int = Query(default=7, ge=1, le=90),
+    tenant_id: str | None = Query(default=None, max_length=64),
+) -> list[AdminUserUsage]:
+    """Usage broken down per user: cost/tokens/calls/latency, top of the list first.
+
+    Rows with empty user_id aggregate events recorded via unbound API keys.
+    """
+    tenant_filter = "AND tenant_id = {tenant_id:String}" if tenant_id else ""
+    sql = f"""
+        SELECT
+            user_id,
+            round(sum(cost_usd), 6)  AS cost_usd,
+            sum(total_tokens)        AS total_tokens,
+            count()                  AS calls,
+            round(avg(latency_ms))   AS avg_latency_ms
+        FROM analytics.llm_usage_events
+        WHERE event_time >= now() - toIntervalDay({{days:UInt32}})
+          {tenant_filter}
+        GROUP BY user_id
+        ORDER BY cost_usd DESC
+    """
+    params: dict[str, object] = {"days": days}
+    if tenant_id:
+        params["tenant_id"] = tenant_id
+    try:
+        rows = await ch_client.query(sql, params)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"ClickHouse error: {e}") from e
+
+    async with admin_session() as db:
+        users = (await db.execute(select(User))).scalars().all()
+    by_id = {str(u.id): u for u in users}
+
+    items = []
+    for row in rows:
+        uid = str(row.get("user_id") or "")
+        user = by_id.get(uid)
+        raw_cost: Any = row.get("cost_usd")
+        raw_tokens: Any = row.get("total_tokens")
+        raw_calls: Any = row.get("calls")
+        raw_latency: Any = row.get("avg_latency_ms")
+        items.append(
+            AdminUserUsage(
+                user_id=uid or None,
+                user_name=user.name if user else None,
+                email=user.email if user else None,
+                cost_usd=float(raw_cost or 0),
+                total_tokens=int(raw_tokens or 0),
+                calls=int(raw_calls or 0),
+                avg_latency_ms=int(raw_latency or 0),
+            )
+        )
+    return items

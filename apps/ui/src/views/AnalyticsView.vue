@@ -15,7 +15,7 @@
         <AppIcon v-else name="refresh" :size="13" />
       </button>
       <span class="tenant-label">
-        {{ data ? `tenant: ${data.tenant_id}` : t('analytics.noData') }}
+        {{ data ? (data.scope === 'user' ? t('analytics.personalScope') : `tenant: ${data.tenant_id}`) : t('analytics.noData') }}
       </span>
     </div>
 

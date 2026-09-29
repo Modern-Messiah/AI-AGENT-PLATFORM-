@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import logging
 
+from packages.analytics.clickhouse import ensure_usage_schema
 from packages.core import settings
 from packages.llm.keyring import keyring_refresh_loop, refresh_from_db
 from packages.observability import setup_tracing
@@ -44,6 +45,7 @@ async def main() -> None:
         log.info("embedding model ready")
     except Exception as exc:
         log.warning("embedding model warmup failed (%s) — will retry on first use", exc)
+    await ensure_usage_schema()
     await refresh_from_db()
     # Runs alongside the worker until process exit; no need to await it.
     keyring_task = asyncio.create_task(keyring_refresh_loop())
