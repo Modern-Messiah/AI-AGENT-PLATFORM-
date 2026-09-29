@@ -21,6 +21,7 @@ export const useChatStore = defineStore('chat', () => {
   const loadedKey = ref(null)
   const streamTick = ref(0)  // incremented on each streaming token to trigger scroll
   const activeStreamController = ref(null)
+  const pipelineStage = ref(null)
   const isStreaming = computed(() => activeStreamController.value !== null)
 
   // sessId → [{ workflowId, time }, ...]  (array to support multiple pending workflows per session)
