@@ -49,7 +49,16 @@
               v-html="renderedMarkdown(msg)"
             ></div>
             <template v-else>
-              {{ msg.text }}<span v-if="msg.streaming" class="streaming-cursor">▋</span>
+              <template v-if="!msg.text && msg.streaming && chat.pipelineStage">
+                <div class="stage-inline">
+                  <span class="stage-icon-sm">{{ stageIcon(chat.pipelineStage.name) }}</span>
+                  <span class="stage-text-sm">{{ stageLabel(chat.pipelineStage.name) }}</span>
+                  <span class="stage-timer-sm">{{ stageElapsed(chat.pipelineStage) }}</span>
+                </div>
+              </template>
+              <template v-else>
+                {{ msg.text }}<span v-if="msg.streaming" class="streaming-cursor">▋</span>
+              </template>
             </template>
           </div>
           <div class="msg-meta">
@@ -169,8 +178,20 @@
       </div>
     </template>
 
-    <!-- Typing indicator -->
-    <div v-if="chat.isActiveSessionLoading()" class="msg agent">
+    <!-- Pipeline stage indicator -->
+    <div v-if="chat.pipelineStage" class="msg agent">
+      <div class="msg-avatar"><AppIcon name="agent" /></div>
+      <div class="msg-body">
+        <div class="stage-indicator">
+          <div class="stage-icon">{{ stageIcon(chat.pipelineStage.name) }}</div>
+          <div class="stage-text">{{ stageLabel(chat.pipelineStage.name) }}</div>
+          <div class="stage-timer">{{ stageElapsed(chat.pipelineStage) }}</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Typing indicator (fallback when no stage info) -->
+    <div v-else-if="chat.isActiveSessionLoading()" class="msg agent">
       <div class="msg-avatar"><AppIcon name="agent" /></div>
       <div class="msg-body">
         <div class="typing-bubble">
@@ -216,6 +237,32 @@ const openCitationKey = ref(null)
 // reactivity tick otherwise, and message text only changes while streaming
 // (when the plain-text branch is used anyway).
 const markdownCache = new Map()
+
+function stageIcon(name) {
+  const icons = {
+    retrieval: '🔍',
+    generation: '✍️',
+    verification: '✓',
+    cache: '⚡',
+  }
+  return icons[name] || '⏳'
+}
+
+function stageLabel(name) {
+  const labels = {
+    retrieval: t('chat.stageRetrieval'),
+    generation: t('chat.stageGeneration'),
+    verification: t('chat.stageVerification'),
+    cache: t('chat.stageCache'),
+  }
+  return labels[name] || t('chat.stageWorking')
+}
+
+function stageElapsed(stage) {
+  if (!stage?.startedAt) return ''
+  const seconds = Math.max(0, Math.round((Date.now() - stage.startedAt) / 1000))
+  return seconds < 60 ? seconds + 's' : Math.floor(seconds / 60) + 'm ' + (seconds % 60) + 's'
+}
 
 function renderedMarkdown(msg) {
   const cached = markdownCache.get(msg.id)
@@ -501,4 +548,31 @@ watch([() => chat.isActiveSessionLoading(), () => chat.streamTick], () => scroll
   0%, 100% { opacity: 1; }
   50%       { opacity: 0; }
 }
+</style>
+
+<style scoped>
+.stage-indicator {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--s1);
+  font-size: 13px;
+}
+.stage-icon { font-size: 18px; }
+.stage-text { color: var(--text); font-weight: 600; }
+.stage-timer { margin-left: auto; color: var(--muted); font-family: var(--mono); font-size: 11px; }
+.stage-inline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  font-size: 12.5px;
+  color: var(--muted2);
+}
+.stage-icon-sm { font-size: 15px; }
+.stage-text-sm { font-weight: 600; }
+.stage-timer-sm { font-family: var(--mono); font-size: 11px; color: var(--muted); }
 </style>
