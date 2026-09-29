@@ -10,8 +10,8 @@ import asyncio
 import logging
 
 from packages.core import settings
-from packages.observability import setup_logfire
 from packages.llm.keyring import keyring_refresh_loop, refresh_from_db
+from packages.observability import setup_logfire
 from packages.rag.embedder import embed_texts
 from temporalio.client import Client
 from temporalio.worker import Worker

@@ -53,8 +53,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from packages.auth import revocation_listener
 from packages.core import settings
-from packages.observability import instrument_fastapi_app, setup_logfire
 from packages.llm.keyring import keyring_refresh_loop, refresh_from_db
+from packages.observability import instrument_fastapi_app, setup_logfire
 from packages.rag.embedder import embed_texts
 from temporalio.client import Client
 
@@ -160,7 +160,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     retention_task = asyncio.create_task(retention_loop())
     keyring_task = asyncio.create_task(keyring_refresh_loop())
     yield
-    setup_logfire("aap-api")
     revocation_task.cancel()
     retention_task.cancel()
     keyring_task.cancel()
