@@ -10,19 +10,40 @@
     >
       <AppIcon name="docs" :size="14" />
     </button>
-    <button
-      class="scope-pill-btn"
-      :class="[`is-${scope?.type || 'global'}`, { 'is-locked': scopeLocked }]"
-      type="button"
-      :disabled="scopeLocked"
-      :title="scopeLocked ? t('chat.scopeLockedHint') : t('chat.scopeTooltip')"
-      @click="!scopeLocked && $emit('open-scope')"
-    >
-      <AppIcon :name="scope?.type === 'document' ? 'docs' : (scope?.type === 'notebook' ? 'book' : 'globe')" :size="12" />
-      <span class="scope-pill-text">{{ scope?.title || t('chat.scopeGlobalTitle') }}</span>
-      <AppIcon v-if="!scopeLocked" name="chevron-down" :size="10" />
-      <AppIcon v-else name="lock" :size="10" class="scope-pill-lock" />
-    </button>
+    <div class="scope-group">
+      <button
+        class="scope-pill-btn"
+        :class="[`is-${scope?.type || 'global'}`, { 'is-locked': scopeLocked }]"
+        type="button"
+        :disabled="scopeLocked"
+        :title="scopeLocked ? t('chat.scopeLockedHint') : t('chat.scopeTooltip')"
+        @click="!scopeLocked && $emit('open-scope')"
+      >
+        <AppIcon :name="scope?.type === 'document' ? 'docs' : (scope?.type === 'notebook' ? 'book' : 'globe')" :size="12" />
+        <span class="scope-pill-text">{{ scope?.title || t('chat.scopeGlobalTitle') }}</span>
+        <AppIcon v-if="!scopeLocked" name="chevron-down" :size="10" />
+        <AppIcon v-else name="lock" :size="10" class="scope-pill-lock" />
+      </button>
+
+      <button
+        v-if="!scopeLocked"
+        class="btn btn-ghost btn-xs scope-select-btn"
+        type="button"
+        :title="t('chat.scopeSelectSub')"
+        @click="$emit('open-scope')"
+      >
+        <AppIcon name="filter" :size="11" />
+        <span>{{ t('chat.changeScope') }}</span>
+      </button>
+
+      <RouterLink
+        v-if="scope?.backPath"
+        class="btn btn-ghost btn-xs scope-back-btn"
+        :to="scope.backPath"
+      >
+        {{ scope.backLabel }}
+      </RouterLink>
+    </div>
     <select
       v-if="session.isAdmin"
       class="model-select"
@@ -44,6 +65,7 @@
 </template>
 
 <script setup>
+import { RouterLink } from 'vue-router'
 import { useSettingsStore } from '@/stores/settings'
 import { useSessionStore } from '@/stores/session'
 import { useI18n } from '@/composables/useI18n'
@@ -72,6 +94,44 @@ const { t } = useI18n()
 </script>
 
 <style scoped>
+.scope-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.scope-select-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  color: var(--accent);
+  border: 1px solid color-mix(in oklch, var(--accent) 30%, var(--border));
+  background: color-mix(in oklch, var(--accent) 6%, transparent);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.scope-select-btn:hover {
+  background: color-mix(in oklch, var(--accent) 14%, transparent);
+  border-color: var(--accent);
+}
+
+.scope-back-btn {
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.scope-back-btn:hover {
+  color: var(--text);
+}
+
 .scope-pill-btn {
   display: inline-flex;
   align-items: center;

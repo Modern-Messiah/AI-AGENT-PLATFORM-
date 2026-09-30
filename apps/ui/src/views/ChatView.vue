@@ -39,45 +39,6 @@
         @toggle-history="mobileHistoryOpen = !mobileHistoryOpen"
         @open-scope="!isScopeLocked && (isScopeModalOpen = true)"
       />
-      <div class="scope-banner" :class="`is-${displayScope.type}`">
-        <div class="scope-content">
-          <div class="scope-header">
-            <span :class="['scope-badge', `is-${displayScope.type}`]">
-              <AppIcon :name="displayScope.type === 'document' ? 'docs' : (displayScope.type === 'notebook' ? 'book' : 'globe')" :size="11" />
-              {{ displayScopeBadge }}
-            </span>
-            <strong>{{ displayScope.title }}</strong>
-          </div>
-          <span class="scope-desc">{{ displayScope.description }}</span>
-        </div>
-        <div class="scope-actions">
-          <RouterLink v-if="displayScope.backPath" class="btn btn-ghost btn-sm" :to="displayScope.backPath">
-            {{ displayScope.backLabel }}
-          </RouterLink>
-          <button
-            v-if="!isScopeLocked && displayScope.type !== 'global'"
-            class="btn btn-ghost btn-sm"
-            type="button"
-            :title="t('chat.scopeToGlobalHint')"
-            @click="clearScope"
-          >
-            {{ t('chat.regularChat') }}
-          </button>
-          <button
-            v-if="!isScopeLocked"
-            class="btn btn-ghost btn-sm scope-change-btn"
-            type="button"
-            @click="isScopeModalOpen = true"
-          >
-            <AppIcon name="filter" :size="12" />
-            {{ t('chat.changeScope') }}
-          </button>
-          <span v-else class="scope-locked-badge" :title="t('chat.scopeLockedHint')">
-            <AppIcon name="lock" :size="11" />
-            {{ t('chat.scopeLocked') }}
-          </span>
-        </div>
-      </div>
       <ChatMessages @approve="approveHitl" @reject="rejectHitl" @regenerate="handleRegenerate" />
       <ChatInput :model="model" :require-approval="requireApproval" @send="handleSend" />
     </div>
@@ -170,12 +131,6 @@ const isScopeLocked = computed(() => {
     messages: chat.messages,
     isDraft: activeSession.value?.id ? chat.freshDraftIds.has(activeSession.value.id) : true,
   })
-})
-
-const displayScopeBadge = computed(() => {
-  if (displayScope.value.type === 'document') return t('chat.documentBadge')
-  if (displayScope.value.type === 'notebook') return t('chat.notebookBadge')
-  return t('chat.scopeGlobalBadge')
 })
 
 async function handleScopeSelect(selected) {
@@ -459,100 +414,6 @@ async function rejectHitl(workflowId) {
 </script>
 
 <style scoped>
-.scope-banner {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  margin: 12px 16px 0;
-  padding: 10px 14px;
-  border: 1px solid color-mix(in oklch, var(--purple) 42%, var(--border));
-  border-radius: 14px;
-  background: color-mix(in oklch, var(--purple) 9%, var(--s1));
-}
-.scope-banner.is-global {
-  border-color: color-mix(in oklch, var(--teal, var(--accent)) 30%, var(--border));
-  background: color-mix(in oklch, var(--teal, var(--accent)) 6%, var(--s1));
-}
-.scope-banner.is-document {
-  border-color: color-mix(in oklch, var(--purple) 38%, var(--border));
-  background: color-mix(in oklch, var(--purple) 8%, var(--s1));
-}
-.scope-banner.is-notebook {
-  border-color: color-mix(in oklch, var(--accent) 38%, var(--border));
-  background: color-mix(in oklch, var(--accent) 8%, var(--s1));
-}
-.scope-content {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-.scope-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.scope-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 7px;
-  border-radius: 999px;
-  font-family: var(--mono);
-  font-size: 10px;
-  font-weight: 500;
-  line-height: 1.2;
-}
-.scope-badge.is-global {
-  border: 1px solid color-mix(in oklch, var(--teal, var(--accent)) 35%, transparent);
-  background: color-mix(in oklch, var(--teal, var(--accent)) 12%, transparent);
-  color: var(--teal, var(--accent));
-}
-.scope-badge.is-document {
-  border: 1px solid color-mix(in oklch, var(--purple) 35%, transparent);
-  background: color-mix(in oklch, var(--purple) 12%, transparent);
-  color: var(--purple);
-}
-.scope-badge.is-notebook {
-  border: 1px solid color-mix(in oklch, var(--accent) 35%, transparent);
-  background: color-mix(in oklch, var(--accent) 12%, transparent);
-  color: var(--accent);
-}
-.scope-banner strong {
-  color: var(--text);
-  font-size: 13px;
-}
-.scope-desc {
-  margin-top: 3px;
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.4;
-}
-.scope-actions {
-  display: flex;
-  align-items: center;
-  flex-shrink: 0;
-  gap: 8px;
-}
-.scope-change-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-}
-.scope-locked-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 4px 10px;
-  font-size: 11.5px;
-  font-weight: 500;
-  color: var(--muted);
-  background: var(--s2);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  user-select: none;
-}
 .chat-history-resizer {
   position: relative;
   z-index: 3;
@@ -585,14 +446,5 @@ async function rejectHitl(workflowId) {
 }
 .chat-layout.is-resizing-history {
   user-select: none;
-}
-@media (max-width: 760px) {
-  .scope-banner {
-    align-items: stretch;
-    flex-direction: column;
-  }
-  .scope-actions {
-    flex-wrap: wrap;
-  }
 }
 </style>
