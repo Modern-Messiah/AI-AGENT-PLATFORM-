@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     langfuse_secret_key: str = ""
     langfuse_host: str = "http://localhost:3000"
 
+    # Pydantic Logfire (https://logfire.pydantic.dev): FastAPI + OpenAI
+    # instrumentation. Empty token = disabled, nothing changes.
+    logfire_token: str = ""
+
     temporal_address: str = "localhost:7233"
     temporal_namespace: str = "default"
     temporal_task_queue: str = "agent-tasks"
