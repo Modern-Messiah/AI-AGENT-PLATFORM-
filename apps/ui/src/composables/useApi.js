@@ -7,9 +7,9 @@ export function useApi() {
 
   // Session (Google login) takes precedence; API key stays as the fallback.
   function _tenantHeaders() {
-    return session.isAuthenticated
-      ? { Authorization: `Bearer ${session.token}` }
-      : { 'X-API-Key': settings.apiKey }
+    if (session.isAuthenticated) return { Authorization: `Bearer ${session.token}` }
+    // No credentials yet — send no header rather than an empty X-API-Key.
+    return settings.apiKey ? { 'X-API-Key': settings.apiKey } : {}
   }
 
   async function apiRawFetch(path, opts = {}) {

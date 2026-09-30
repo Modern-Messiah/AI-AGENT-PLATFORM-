@@ -31,7 +31,7 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import AppIcon from '@/components/AppIcon.vue'
 import { useI18n } from '@/composables/useI18n'
 
-const props = defineProps({
+defineProps({
   title:   { type: String, required: true },
   heading: { type: String, default: '' },
   warning: { type: String, default: '' },

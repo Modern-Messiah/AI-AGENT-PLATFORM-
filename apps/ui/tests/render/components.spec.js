@@ -1,7 +1,6 @@
 import { test, expect } from 'vitest'
 import { mount, config } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import { readFileSync } from 'node:fs'
 
 import ConfirmModal from '../../src/components/ConfirmModal.vue'
 import StatusBadge from '../../src/components/StatusBadge.vue'

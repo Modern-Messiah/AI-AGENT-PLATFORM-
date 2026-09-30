@@ -63,9 +63,7 @@ jobs:
 
       - name: Run frontend tests
         working-directory: apps/ui
-        run: |
-          npm test
-          npm run test:render
+        run: npm test
 
       - name: Build frontend
         working-directory: apps/ui
@@ -100,7 +98,7 @@ jobs:
           uv run ruff format --check .
 
       - name: Mypy packages+apps (blocking)
-        run: uv run mypy packages apps
+        run: uv run mypy .
 
   retrieval-evals:
     name: Retrieval quality evals

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from packages.rag import CitationSource
 from packages.storage import DocumentAssetStatus, DocumentStatus
@@ -48,7 +49,9 @@ class UpdateSessionRequest(BaseModel):
 
 
 class AddMessageRequest(BaseModel):
-    role: str
+    # The stored role feeds conversation history for query condensation —
+    # free-form client values (e.g. "system") would poison it.
+    role: Literal["user", "agent"]
     content: str
     sources: list[str | CitationSource] = []
     cached: bool = False

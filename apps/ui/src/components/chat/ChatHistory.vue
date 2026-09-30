@@ -68,6 +68,7 @@
 <script setup>
 import { ref } from 'vue'
 import { useChatStore } from '@/stores/chat'
+import { useApi } from '@/composables/useApi'
 import { useSettingsStore } from '@/stores/settings'
 import { useI18n } from '@/composables/useI18n'
 import AppIcon from '@/components/AppIcon.vue'

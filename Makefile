@@ -43,7 +43,7 @@ test: ## Run tests
 lint: ## Lint code (same gates as CI; tests are not mypy-typed)
 	uv run ruff check .
 	uv run ruff format --check .
-	uv run mypy packages apps
+	uv run mypy .
 
 format: ## Format code
 	uv run ruff format .

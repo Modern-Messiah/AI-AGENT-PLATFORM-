@@ -237,6 +237,21 @@ const openCitationKey = ref(null)
 // reactivity tick otherwise, and message text only changes while streaming
 // (when the plain-text branch is used anyway).
 const markdownCache = new Map()
+const MARKDOWN_CACHE_MAX = 500
+
+function cacheMarkdown(id, entry) {
+  // Long-lived chats with streaming messages would grow the map without
+  // bound; drop the oldest entries past the cap.
+  if (markdownCache.size >= MARKDOWN_CACHE_MAX) {
+    let overflow = markdownCache.size - MARKDOWN_CACHE_MAX + 1
+    for (const key of markdownCache.keys()) {
+      if (overflow <= 0) break
+      markdownCache.delete(key)
+      overflow -= 1
+    }
+  }
+  markdownCache.set(id, entry)
+}
 
 function stageIcon(name) {
   const icons = {
@@ -268,7 +283,7 @@ function renderedMarkdown(msg) {
   const cached = markdownCache.get(msg.id)
   if (cached && cached.text === msg.text) return cached.html
   const entry = { text: msg.text, html: renderMarkdown(msg.text) }
-  markdownCache.set(msg.id, entry)
+  cacheMarkdown(msg.id, entry)
   return entry.html
 }
 

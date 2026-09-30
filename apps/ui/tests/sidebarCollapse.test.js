@@ -4,7 +4,6 @@ import assert from 'node:assert/strict'
 import {
   SIDEBAR_COLLAPSED_STORAGE_KEY,
   readStoredSidebarCollapsed,
-  storeSidebarCollapsed,
   toggleSidebarCollapsed,
 } from '../src/utils/sidebarCollapse.js'
 

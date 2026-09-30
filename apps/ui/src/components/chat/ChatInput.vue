@@ -39,7 +39,7 @@ import { useSettingsStore } from '@/stores/settings'
 import { useI18n } from '@/composables/useI18n'
 import AppIcon from '@/components/AppIcon.vue'
 
-const props = defineProps({
+defineProps({
   model: String,
   requireApproval: Boolean
 })
