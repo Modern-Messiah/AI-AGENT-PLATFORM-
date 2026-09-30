@@ -123,6 +123,19 @@ test('ChatToolbar renders scope pill and emits open-scope', async () => {
 })
 
 
+test('ChatToolbar disables scope button and does not emit open-scope when scope is locked', async () => {
+  const wrapper = withSetup(ChatToolbar, {
+    scope: { type: 'document', title: 'Doc 1' },
+    scopeLocked: true,
+  })
+  const pill = wrapper.find('.scope-pill-btn')
+  expect(pill.classes()).toContain('is-locked')
+  expect(pill.attributes('disabled')).toBeDefined()
+  await pill.trigger('click')
+  expect(wrapper.emitted('open-scope')).toBeUndefined()
+})
+
+
 test('ChatScopeModal renders options and emits select with global scope', async () => {
   const origFetch = globalThis.fetch
   globalThis.fetch = async () => ({

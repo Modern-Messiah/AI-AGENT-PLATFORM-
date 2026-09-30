@@ -35,8 +35,9 @@
         v-model:requireApproval="requireApproval"
         :show-history-toggle="isMobile"
         :scope="displayScope"
+        :scope-locked="isScopeLocked"
         @toggle-history="mobileHistoryOpen = !mobileHistoryOpen"
-        @open-scope="isScopeModalOpen = true"
+        @open-scope="!isScopeLocked && (isScopeModalOpen = true)"
       />
       <div class="scope-banner" :class="`is-${displayScope.type}`">
         <div class="scope-content">
@@ -54,7 +55,7 @@
             {{ displayScope.backLabel }}
           </RouterLink>
           <button
-            v-if="displayScope.type !== 'global'"
+            v-if="!isScopeLocked && displayScope.type !== 'global'"
             class="btn btn-ghost btn-sm"
             type="button"
             :title="t('chat.scopeToGlobalHint')"
@@ -63,6 +64,7 @@
             {{ t('chat.regularChat') }}
           </button>
           <button
+            v-if="!isScopeLocked"
             class="btn btn-ghost btn-sm scope-change-btn"
             type="button"
             @click="isScopeModalOpen = true"
@@ -70,6 +72,10 @@
             <AppIcon name="filter" :size="12" />
             {{ t('chat.changeScope') }}
           </button>
+          <span v-else class="scope-locked-badge" :title="t('chat.scopeLockedHint')">
+            <AppIcon name="lock" :size="11" />
+            {{ t('chat.scopeLocked') }}
+          </span>
         </div>
       </div>
       <ChatMessages @approve="approveHitl" @reject="rejectHitl" @regenerate="handleRegenerate" />
@@ -101,6 +107,7 @@ import {
   scopeSessionTitle,
   scopeSendOptions,
   scopeWelcomeMessage,
+  isChatScopeLocked,
 } from '@/utils/chatScope'
 import {
   CHAT_HISTORY_DEFAULT_WIDTH,
@@ -157,6 +164,14 @@ const displayScope = computed(() => {
   return scope
 })
 
+const isScopeLocked = computed(() => {
+  return isChatScopeLocked({
+    session: activeSession.value,
+    messages: chat.messages,
+    isDraft: activeSession.value?.id ? chat.freshDraftIds.has(activeSession.value.id) : true,
+  })
+})
+
 const displayScopeBadge = computed(() => {
   if (displayScope.value.type === 'document') return t('chat.documentBadge')
   if (displayScope.value.type === 'notebook') return t('chat.notebookBadge')
@@ -165,16 +180,30 @@ const displayScopeBadge = computed(() => {
 
 async function handleScopeSelect(selected) {
   isScopeModalOpen.value = false
+  if (isScopeLocked.value) return
+
+  const prevSessionId = activeSession.value?.id
+  const prevIsEmpty = prevSessionId && chat.messages.every(m => m.role !== 'user')
+
   if (selected.type === 'global') {
+    if (prevSessionId) {
+      chat.lockSessionScope(prevSessionId)
+    }
     await clearScope()
     return
   }
   if (selected.type === 'document') {
+    if (prevIsEmpty && prevSessionId) {
+      try { await chat.deleteSession(prevSessionId) } catch {}
+    }
     const r = buildDocumentChatRoute(selected.documentId, selected.title, settings.locale)
     await router.replace(r)
     return
   }
   if (selected.type === 'notebook') {
+    if (prevIsEmpty && prevSessionId) {
+      try { await chat.deleteSession(prevSessionId) } catch {}
+    }
     const r = buildNotebookChatRoute(selected.notebookId, selected.title, settings.locale)
     await router.replace(r)
   }
@@ -510,6 +539,19 @@ async function rejectHitl(workflowId) {
   display: inline-flex;
   align-items: center;
   gap: 5px;
+}
+.scope-locked-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--muted);
+  background: var(--s2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  user-select: none;
 }
 .chat-history-resizer {
   position: relative;

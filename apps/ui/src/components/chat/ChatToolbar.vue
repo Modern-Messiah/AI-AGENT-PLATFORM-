@@ -12,14 +12,16 @@
     </button>
     <button
       class="scope-pill-btn"
-      :class="`is-${scope?.type || 'global'}`"
+      :class="[`is-${scope?.type || 'global'}`, { 'is-locked': scopeLocked }]"
       type="button"
-      :title="t('chat.scopeTooltip')"
-      @click="$emit('open-scope')"
+      :disabled="scopeLocked"
+      :title="scopeLocked ? t('chat.scopeLockedHint') : t('chat.scopeTooltip')"
+      @click="!scopeLocked && $emit('open-scope')"
     >
       <AppIcon :name="scope?.type === 'document' ? 'docs' : (scope?.type === 'notebook' ? 'book' : 'globe')" :size="12" />
       <span class="scope-pill-text">{{ scope?.title || t('chat.scopeGlobalTitle') }}</span>
-      <AppIcon name="chevron-down" :size="10" />
+      <AppIcon v-if="!scopeLocked" name="chevron-down" :size="10" />
+      <AppIcon v-else name="lock" :size="10" class="scope-pill-lock" />
     </button>
     <select
       v-if="session.isAdmin"
@@ -57,6 +59,10 @@ defineProps({
     type: Object,
     default: () => ({ type: 'global', title: '' }),
   },
+  scopeLocked: {
+    type: Boolean,
+    default: false,
+  },
 })
 defineEmits(['update:model', 'update:requireApproval', 'toggle-history', 'open-scope'])
 
@@ -84,6 +90,20 @@ const { t } = useI18n()
 .scope-pill-btn:hover {
   background: var(--s3);
   border-color: color-mix(in oklch, var(--accent) 50%, var(--border));
+}
+
+.scope-pill-btn.is-locked {
+  cursor: default;
+}
+
+.scope-pill-btn.is-locked:hover {
+  background: var(--s2);
+  border-color: var(--border);
+}
+
+.scope-pill-lock {
+  opacity: 0.65;
+  flex-shrink: 0;
 }
 
 .scope-pill-btn.is-global {
