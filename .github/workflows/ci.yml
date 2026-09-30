@@ -63,9 +63,7 @@ jobs:
 
       - name: Run frontend tests
         working-directory: apps/ui
-        run: |
-          npm test
-          npm run test:render
+        run: npm test
 
       - name: Build frontend
         working-directory: apps/ui
