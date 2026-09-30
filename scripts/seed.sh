@@ -9,6 +9,5 @@ docker run --rm --network host \
 
 docker run --rm --network host \
   -e MC_HOST_local="http://${MINIO_ROOT_USER:-minioadmin}:${MINIO_ROOT_PASSWORD:-minioadmin}@localhost:9002" \
-  minio/mc:latest mb -p "local/langfuse" || true
 
 echo "→ Done"

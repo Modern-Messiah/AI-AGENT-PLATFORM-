@@ -55,11 +55,10 @@ from packages.analytics.clickhouse import ensure_usage_schema
 from packages.auth import revocation_listener
 from packages.core import settings
 from packages.llm.keyring import keyring_refresh_loop, refresh_from_db
-from packages.observability import instrument_fastapi_app, setup_logfire, setup_tracing
+from packages.observability import instrument_fastapi_app, setup_logfire
 from packages.rag.embedder import embed_texts
 from temporalio.client import Client
 
-from apps.api.metrics import MetricsMiddleware
 from apps.api.routers import (
     admin_router,
     agent_router,
@@ -137,8 +136,6 @@ log = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    setup_tracing("aap-api")
-    setup_logfire("aap-api")
     weak_provider = settings.weak_model.split("/", 1)[0]
     weak_key = {"moonshot": settings.moonshot_api_key, "deepseek": settings.deepseek_api_key}.get(
         weak_provider
@@ -160,6 +157,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     )
     await ensure_usage_schema()
     await refresh_from_db()
+    setup_logfire("aap-api")
     revocation_task = asyncio.create_task(revocation_listener())
     retention_task = asyncio.create_task(retention_loop())
     keyring_task = asyncio.create_task(keyring_refresh_loop())
@@ -171,15 +169,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(title="AI Agent Platform", lifespan=lifespan)
 
-app.add_middleware(MetricsMiddleware)
+instrument_fastapi_app(app)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origins or ["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-instrument_fastapi_app(app)
 
 app.include_router(health_router)
 app.include_router(login_router)

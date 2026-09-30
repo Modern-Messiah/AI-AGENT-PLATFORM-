@@ -1,17 +1,6 @@
-"""Fetch system prompts from Langfuse with a hardcoded fallback.
-
-Langfuse stores prompts under a name + label (e.g. "research-agent" / "production").
-The SDK caches responses internally so each call does not hit the network.
-If Langfuse is unreachable or the prompt doesn't exist yet, the fallback is used.
-"""
+"""System prompts for the agents (static, in-repo)."""
 
 from __future__ import annotations
-
-import logging
-from functools import lru_cache
-from typing import Any, cast
-
-log = logging.getLogger(__name__)
 
 STREAMING_SYSTEM_PROMPT = """\
 You are a helpful research assistant with access to the user's knowledge base.
@@ -53,19 +42,6 @@ If a retrieved chunk was not helpful, do not include its filename. Never invent 
 """
 
 
-@lru_cache(maxsize=1)
-def _langfuse() -> Any:
-    from langfuse import Langfuse
-
-    from packages.core import settings
-
-    return Langfuse(
-        public_key=settings.langfuse_public_key,
-        secret_key=settings.langfuse_secret_key,
-        host=settings.langfuse_host,
-    )
-
-
 def get_streaming_system_prompt() -> str:
     return STREAMING_SYSTEM_PROMPT
 
@@ -74,15 +50,5 @@ def get_system_prompt(
     name: str = "research-agent",
     label: str = "production",
 ) -> str:
-    """Return the compiled prompt from Langfuse, or the fallback if unavailable."""
-    from packages.core import settings
-
-    if not settings.langfuse_public_key or not settings.langfuse_secret_key:
-        return FALLBACK_SYSTEM_PROMPT
-
-    try:
-        prompt = _langfuse().get_prompt(name, label=label, fallback=FALLBACK_SYSTEM_PROMPT)
-        return cast(str, prompt.compile())
-    except Exception as exc:
-        log.warning("Langfuse prompt fetch failed (%s) — using fallback", exc)
-        return FALLBACK_SYSTEM_PROMPT
+    """Static research-agent prompt; name/label kept for API compatibility."""
+    return FALLBACK_SYSTEM_PROMPT
