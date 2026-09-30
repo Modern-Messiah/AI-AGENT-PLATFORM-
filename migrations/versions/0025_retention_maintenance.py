@@ -1,6 +1,6 @@
 """maintenance DELETE policy for chat session retention
 
-Revision ID: 0025_session_retention_maintenance
+Revision ID: 0025_retention_maintenance
 Revises: 0024_llm_api_keys
 Create Date: 2026-09-30
 
@@ -18,7 +18,7 @@ on the referencing table).
 
 from alembic import op
 
-revision: str = "0025_session_retention_maintenance"
+revision: str = "0025_retention_maintenance"
 down_revision: str | None = "0024_llm_api_keys"
 branch_labels = None
 depends_on = None
