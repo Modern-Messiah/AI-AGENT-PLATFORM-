@@ -35,7 +35,7 @@ async def delete_stale_sessions(cutoff: datetime) -> int:
 
     Runs across tenants: chat_sessions has FORCE RLS and the runtime role is
     NOBYPASSRLS, so the app.maintenance flag (policy retention_maintenance,
-    migration 0025) must be set in the same transaction — a plain DELETE
+    migration 0027) must be set in the same transaction — a plain DELETE
     would silently match 0 rows. Messages cascade with the session.
     """
     async with async_session() as session, session.begin():
