@@ -501,6 +501,7 @@ async def reindex_document(
     tenant_id: TenantID,
     request: Request,
 ) -> DocumentReindexResponse:
+    # Phase 1 — short read transaction: is the document reindexable right now?
     async with tenant_session(tenant_id) as s:
         doc = (
             await s.execute(
@@ -512,15 +513,43 @@ async def reindex_document(
         if doc.status in {DocumentStatus.pending, DocumentStatus.processing}:
             raise HTTPException(status_code=409, detail="document is already being indexed")
 
-        if getattr(doc, "source_type", "file") in {"url", "github"}:
-            if not doc.source_url:
-                raise HTTPException(status_code=409, detail="external document has no source URL")
-            try:
-                fetched = await fetch_url_source(doc.source_url)
-            except UrlSourceError as exc:
-                raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+        is_external = getattr(doc, "source_type", "file") in {"url", "github"}
+        source_url = getattr(doc, "source_url", None)
+        object_key = doc.object_key
+        status_before = doc.status
 
-            changed = await _url_source_objects_changed(doc.object_key, fetched)
+    if is_external and not source_url:
+        raise HTTPException(status_code=409, detail="external document has no source URL")
+
+    # Phase 2 — external fetch + object-store I/O with NO transaction open:
+    # a slow or malicious source (10s timeout per hop) must not pin pooled
+    # DB connections; a handful of concurrent reindexes used to exhaust them.
+    fetched: FetchedUrlSource | None = None
+    changed = False
+    if is_external:
+        try:
+            fetched = await fetch_url_source(source_url)
+        except UrlSourceError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+        changed = await _url_source_objects_changed(object_key, fetched)
+        if changed or status_before != DocumentStatus.done:
+            await _store_url_source_objects(object_key, fetched)
+
+    # Phase 3 — short write transaction: re-check (the document may have been
+    # deleted or picked up by another reindex while we were fetching), apply,
+    # queue.
+    async with tenant_session(tenant_id) as s:
+        doc = (
+            await s.execute(
+                select(Document).where(Document.id == document_id, Document.tenant_id == tenant_id)
+            )
+        ).scalar_one_or_none()
+        if doc is None:
+            raise HTTPException(status_code=404, detail="document not found")
+        if doc.status in {DocumentStatus.pending, DocumentStatus.processing}:
+            raise HTTPException(status_code=409, detail="document is already being indexed")
+
+        if fetched is not None:
             _apply_url_source_metadata(doc, fetched)
             if not changed and doc.status == DocumentStatus.done:
                 await s.flush()
@@ -529,7 +558,6 @@ async def reindex_document(
                     changed=False,
                     workflow_started=False,
                 )
-            await _store_url_source_objects(doc.object_key, fetched)
 
         doc.status = DocumentStatus.pending
         doc.processing_stage = "queued"
