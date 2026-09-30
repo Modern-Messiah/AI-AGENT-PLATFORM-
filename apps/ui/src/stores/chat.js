@@ -25,6 +25,15 @@ export const useChatStore = defineStore('chat', () => {
   const activeStreamController = shallowRef(null)
   const pipelineStage = ref(null)
   const isStreaming = computed(() => activeStreamController.value !== null)
+  const freshDraftIds = ref(new Set())
+
+  function lockSessionScope(sessId) {
+    if (sessId && freshDraftIds.value.has(sessId)) {
+      const next = new Set(freshDraftIds.value)
+      next.delete(sessId)
+      freshDraftIds.value = next
+    }
+  }
 
   // sessId → [{ workflowId, time }, ...]  (array to support multiple pending workflows per session)
   // Persisted to localStorage so pending HITL cards survive page refresh.
@@ -68,6 +77,7 @@ export const useChatStore = defineStore('chat', () => {
     loadingSessionId.value = null
     sessLoading.value = false
     loadedKey.value = null
+    freshDraftIds.value = new Set()
   }
 
   function _startLoading(sessId) {
@@ -162,6 +172,11 @@ export const useChatStore = defineStore('chat', () => {
     sessions.value = [sess, ...sessions.value]
     activeId.value = sess.id
     messages.value = [{ id: 'w', role: 'agent', text: welcomeText, time: nowTime(), sources: [] }]
+    if (!options.documentId && !options.notebookId) {
+      freshDraftIds.value = new Set([...freshDraftIds.value, sess.id])
+    } else {
+      lockSessionScope(sess.id)
+    }
     return sess
   }
 
@@ -170,6 +185,11 @@ export const useChatStore = defineStore('chat', () => {
     await apiFetch(`/sessions/${id}`, { method: 'DELETE' })
     const remaining = sessions.value.filter(s => s.id !== id)
     sessions.value = remaining
+    if (freshDraftIds.value.has(id)) {
+      const nextDrafts = new Set(freshDraftIds.value)
+      nextDrafts.delete(id)
+      freshDraftIds.value = nextDrafts
+    }
     if (pendingHitl.value.has(id)) {
       pendingHitl.value.delete(id)
       _savePendingHitl()
@@ -206,6 +226,8 @@ export const useChatStore = defineStore('chat', () => {
       sessions.value = [sess, ...sessions.value]
       activeId.value = sessId
     }
+
+    lockSessionScope(sessId)
 
     const userMsg = { id: 'u' + Date.now(), role: 'user', text: query, time: nowTime(), sources: [] }
     messages.value = messages.value.filter(x => x.id !== 'w').concat(userMsg)
@@ -472,6 +494,7 @@ export const useChatStore = defineStore('chat', () => {
     sessions, activeId, messages, loading, loadingSessionId, sessLoading, loadedKey, streamTick,
     isStreaming,
     pipelineStage,
+    freshDraftIds, lockSessionScope,
     reset, loadSessions, selectSession, newChat, deleteSession,
     sendMessage, cancelStreaming, dropLastAgentMessage, isActiveSessionLoading, approveHitl, rejectHitl
   }

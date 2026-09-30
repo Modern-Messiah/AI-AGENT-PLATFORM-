@@ -242,3 +242,41 @@ test('HITL card is created, re-injected on session switch, and removed on reject
     restore()
   }
 })
+
+test('manages fresh draft session IDs and locks scope on message or explicit lock', async () => {
+  const { store, restore } = withStore(defaultHandler({
+    'POST /api/sessions': (url, opts) => {
+      const parsed = JSON.parse(opts.body || '{}')
+      return jsonResponse({
+        id: parsed.document_id ? 'sess-doc' : 'sess-global',
+        title: parsed.title,
+        document_id: parsed.document_id || null,
+        notebook_id: parsed.notebook_id || null,
+      })
+    },
+    'POST /api/agent/stream': () => sseResponse([{ type: 'done', answer: 'ok', sources: [] }]),
+    'DELETE /api/sessions/sess-doc': () => jsonResponse({ ok: true }),
+  }))
+  try {
+    // 1. newChat without documentId adds to freshDraftIds
+    const s1 = await store.newChat('model')
+    assert.equal(store.freshDraftIds.has(s1.id), true)
+
+    // 2. lockSessionScope removes it
+    store.lockSessionScope(s1.id)
+    assert.equal(store.freshDraftIds.has(s1.id), false)
+
+    // 3. newChat with documentId is not added to freshDraftIds
+    const s2 = await store.newChat('model', { documentId: 'doc-1' })
+    assert.equal(store.freshDraftIds.has(s2.id), false)
+
+    // 4. sending a message locks draft scope
+    const s3 = await store.newChat('model')
+    assert.equal(store.freshDraftIds.has(s3.id), true)
+    await store.sendMessage('testing query', 'model')
+    assert.equal(store.freshDraftIds.has(s3.id), false)
+  } finally {
+    restore()
+  }
+})
+
