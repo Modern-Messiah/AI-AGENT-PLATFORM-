@@ -7,6 +7,7 @@ workflow is durable, and activities will be re-dispatched.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 
 from packages.analytics.clickhouse import ensure_usage_schema
@@ -47,7 +48,8 @@ async def main() -> None:
         log.warning("embedding model warmup failed (%s) — will retry on first use", exc)
     await ensure_usage_schema()
     await refresh_from_db()
-    # Runs alongside the worker until process exit; no need to await it.
+    # Runs alongside the worker; cancelled in the finally block below so its
+    # cleanup completes before process exit.
     keyring_task = asyncio.create_task(keyring_refresh_loop())
     keyring_task.set_name("keyring-refresh")
     client = await Client.connect(settings.temporal_address, namespace=settings.temporal_namespace)
@@ -75,7 +77,15 @@ async def main() -> None:
             mark_failed,
         ],
     )
-    await worker.run()
+    try:
+        await worker.run()
+    finally:
+        keyring_task.cancel()
+        with contextlib.suppress(Exception):
+            await keyring_task
+        # The Temporal client has no close(): temporalio's Core runtime owns
+        # the connections for the process lifetime (no public shutdown API
+        # as of temporalio 1.32).
 
 
 if __name__ == "__main__":
