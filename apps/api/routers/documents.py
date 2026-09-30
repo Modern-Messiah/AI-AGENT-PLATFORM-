@@ -32,6 +32,7 @@ from apps.api.serializers import (
     metadata_page,
 )
 from apps.api.services.cache import invalidate_semantic_cache
+from apps.api.services.filenames import safe_upload_filename
 from apps.api.services.url_source_limits import enforce_url_ingest_limit
 from apps.api.services.url_sources import (
     FetchedUrlSource,
@@ -127,7 +128,8 @@ async def upload_document(
         raise HTTPException(status_code=400, detail="empty file")
 
     document_id = uuid.uuid4()
-    object_key = f"{tenant_id}/{document_id}/{file.filename}"
+    filename = safe_upload_filename(file.filename)
+    object_key = f"{tenant_id}/{document_id}/{filename}"
     await asyncio.to_thread(
         object_store.put,
         object_key,
@@ -140,7 +142,7 @@ async def upload_document(
             Document(
                 id=document_id,
                 tenant_id=tenant_id,
-                filename=file.filename or "unnamed",
+                filename=filename,
                 mime_type=file.content_type or "application/octet-stream",
                 object_key=object_key,
                 size_bytes=len(data),
@@ -158,7 +160,7 @@ async def upload_document(
                 document_id=str(document_id),
                 tenant_id=tenant_id,
                 object_key=object_key,
-                filename=file.filename or "unnamed",
+                filename=filename,
             ),
             id=f"ingest-{tenant_id}-{document_id}",
             task_queue=settings.temporal_task_queue,
@@ -224,7 +226,8 @@ async def upload_documents_bulk(
 
     for file, data in validated:
         document_id = uuid.uuid4()
-        object_key = f"{tenant_id}/{document_id}/{file.filename}"
+        filename = safe_upload_filename(file.filename)
+        object_key = f"{tenant_id}/{document_id}/{filename}"
         await asyncio.to_thread(
             object_store.put,
             object_key,
@@ -236,7 +239,7 @@ async def upload_documents_bulk(
                 Document(
                     id=document_id,
                     tenant_id=tenant_id,
-                    filename=file.filename or "unnamed",
+                    filename=filename,
                     mime_type=file.content_type or "application/octet-stream",
                     object_key=object_key,
                     size_bytes=len(data),
@@ -251,7 +254,7 @@ async def upload_documents_bulk(
                     document_id=str(document_id),
                     tenant_id=tenant_id,
                     object_key=object_key,
-                    filename=file.filename or "unnamed",
+                    filename=filename,
                 ),
                 id=f"ingest-{tenant_id}-{document_id}",
                 task_queue=settings.temporal_task_queue,

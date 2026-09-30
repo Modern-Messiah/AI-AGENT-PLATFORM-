@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { computed, ref } from 'vue'
+import { computed, ref, shallowRef } from 'vue'
 import { useApi } from '@/composables/useApi'
 import { useSettingsStore } from '@/stores/settings'
 import { formatLocaleTime, translate } from '@/i18n'
@@ -20,7 +20,9 @@ export const useChatStore = defineStore('chat', () => {
   const sessLoading = ref(false)
   const loadedKey = ref(null)
   const streamTick = ref(0)  // incremented on each streaming token to trigger scroll
-  const activeStreamController = ref(null)
+  // shallowRef: deep reactivity would proxy the controller and break the
+  // identity checks that guard cleanup (abort/done must match THIS stream).
+  const activeStreamController = shallowRef(null)
   const pipelineStage = ref(null)
   const isStreaming = computed(() => activeStreamController.value !== null)
 

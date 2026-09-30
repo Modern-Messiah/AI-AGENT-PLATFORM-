@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from packages.auth import deny_user_sessions, generate_key, publish_revocation
 from packages.storage import ApiKey, User, async_session
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from apps.api.deps import AdminDep
 from apps.api.schemas import (
@@ -114,19 +115,24 @@ async def create_user(
 ) -> UserInfo:
     """Register a user within a tenant. Protected by X-Admin-Secret."""
     user_id = uuid.uuid4()
-    async with async_session() as s, s.begin():
-        existing = (
-            await s.execute(
-                select(User).where(
-                    User.tenant_id == body.tenant_id,
-                    User.name == body.name,
+    try:
+        async with async_session() as s, s.begin():
+            existing = (
+                await s.execute(
+                    select(User).where(
+                        User.tenant_id == body.tenant_id,
+                        User.name == body.name,
+                    )
                 )
-            )
-        ).scalar_one_or_none()
-        if existing is not None:
-            raise HTTPException(status_code=409, detail="user name already exists in tenant")
-        s.add(User(id=user_id, tenant_id=body.tenant_id, name=body.name, role=body.role))
-        row = (await s.execute(select(User).where(User.id == user_id))).scalar_one()
+            ).scalar_one_or_none()
+            if existing is not None:
+                raise HTTPException(status_code=409, detail="user name already exists in tenant")
+            s.add(User(id=user_id, tenant_id=body.tenant_id, name=body.name, role=body.role))
+            row = (await s.execute(select(User).where(User.id == user_id))).scalar_one()
+    except IntegrityError:
+        # Race past the SELECT: the unique (tenant_id, name) index decides —
+        # the loser gets 409, not 500.
+        raise HTTPException(status_code=409, detail="user name already exists in tenant") from None
 
     return UserInfo(
         id=str(row.id),

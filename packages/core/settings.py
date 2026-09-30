@@ -138,6 +138,10 @@ class Settings(BaseSettings):
     oauth_api_base_url: str = ""
     # Hours before a session token expires; users re-login afterwards.
     auth_session_ttl_hours: int = 12
+    # Also issue the session JWT as an httpOnly SameSite=Strict cookie on
+    # login (and accept it as a credential). For same-origin UI deployments;
+    # the token-in-response path stays available either way.
+    auth_session_cookie_enabled: bool = False
     # Comma-separated Google emails that get the admin cabinet on login.
     admin_emails: Annotated[list[str], NoDecode] = []
     # Who may sign in at all — consulted only when open_registration is false.

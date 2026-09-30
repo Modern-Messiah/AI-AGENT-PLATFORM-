@@ -25,7 +25,7 @@ from typing import Annotated
 from urllib.parse import quote, urlencode, urlparse
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import RedirectResponse
 from packages.auth import (
     Actor,
@@ -35,6 +35,7 @@ from packages.auth import (
     verify_password,
 )
 from packages.auth.jwt_sessions import (
+    SESSION_COOKIE_NAME,
     AuthConfigError,
     create_oauth_state,
     create_session_token,
@@ -46,6 +47,7 @@ from packages.core import settings
 from packages.storage import User
 from packages.storage.db import async_session
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from apps.api.schemas import (
     EmailLoginRequest,
@@ -219,7 +221,10 @@ async def google_login_callback(
         role=role,
     )
     log.info("google login | tenant=%s email=%s role=%s", user.tenant_id, identity["email"], role)
-    return RedirectResponse(url=f"{frontend_redirect}#token={session_token}", status_code=302)
+    redirect = RedirectResponse(url=f"{frontend_redirect}#token={session_token}", status_code=302)
+    if settings.auth_session_cookie_enabled:
+        _set_session_cookie(redirect, session_token)
+    return redirect
 
 
 @router.get("/auth/me", response_model=SessionInfo)
@@ -273,8 +278,28 @@ def _session_response(user: User, role: str) -> EmailLoginResponse:
     )
 
 
+def _set_session_cookie(response: Response, token: str) -> None:
+    """Attach the session JWT as an httpOnly cookie when the option is on.
+
+    SameSite=Strict means the browser never attaches the cookie to
+    cross-site requests, which closes the CSRF window for the cookie path;
+    the assumption is a same-origin UI deployment (the compose nginx proxy
+    serves the UI and /api from one origin). The token-in-response path
+    stays available regardless.
+    """
+    response.set_cookie(
+        SESSION_COOKIE_NAME,
+        token,
+        max_age=settings.auth_session_ttl_hours * 3600,
+        httponly=True,
+        secure=settings.app_env.strip().lower() != "local",
+        samesite="strict",
+        path="/",
+    )
+
+
 @router.post("/auth/register", response_model=EmailLoginResponse, status_code=201)
-async def register(body: RegisterRequest) -> EmailLoginResponse:
+async def register(body: RegisterRequest, response: Response) -> EmailLoginResponse:
     """Create an email+password account and sign in immediately.
 
     Open by default (OPEN_REGISTRATION=true): any email may register as a
@@ -293,26 +318,36 @@ async def register(body: RegisterRequest) -> EmailLoginResponse:
     if not _signup_allowed(email):
         raise HTTPException(status_code=403, detail="this email is not allowed to register")
 
-    async with async_session() as s, s.begin():
-        existing = (await s.execute(select(User).where(User.email == email))).scalar_one_or_none()
-        if existing is not None:
-            raise HTTPException(status_code=409, detail="email is already registered")
-        user = User(
-            id=uuid.uuid4(),
-            tenant_id=settings.default_tenant_id,
-            name=body.name.strip() or email.split("@")[0],
-            email=email,
-            password_hash=hash_password(body.password),
-            role=_role_for(email),
-        )
-        s.add(user)
+    try:
+        async with async_session() as s, s.begin():
+            existing = (
+                await s.execute(select(User).where(User.email == email))
+            ).scalar_one_or_none()
+            if existing is not None:
+                raise HTTPException(status_code=409, detail="email is already registered")
+            user = User(
+                id=uuid.uuid4(),
+                tenant_id=settings.default_tenant_id,
+                name=body.name.strip() or email.split("@")[0],
+                email=email,
+                password_hash=hash_password(body.password),
+                role=_role_for(email),
+            )
+            s.add(user)
+    except IntegrityError:
+        # Two registrations of the same email racing past the SELECT: the
+        # unique index uq_users_email decides — the loser gets 409, not 500.
+        raise HTTPException(status_code=409, detail="email is already registered") from None
 
     log.info("email register | tenant=%s email=%s role=%s", user.tenant_id, email, user.role)
-    return _session_response(user, user.role)
+    result = _session_response(user, user.role)
+    if settings.auth_session_cookie_enabled:
+        _set_session_cookie(response, result.token)
+    return result
 
 
 @router.post("/auth/login", response_model=EmailLoginResponse)
-async def login(body: EmailLoginRequest) -> EmailLoginResponse:
+async def login(body: EmailLoginRequest, response: Response) -> EmailLoginResponse:
     """Sign in with email + password; issues the same session JWT as Google."""
     if not settings.auth_jwt_secret:
         raise HTTPException(status_code=503, detail="email login is not configured")
@@ -337,7 +372,22 @@ async def login(body: EmailLoginRequest) -> EmailLoginResponse:
             s.add(user)
 
     log.info("email login | tenant=%s email=%s role=%s", user.tenant_id, email, role)
-    return _session_response(user, role)
+    result = _session_response(user, role)
+    if settings.auth_session_cookie_enabled:
+        _set_session_cookie(response, result.token)
+    return result
+
+
+@router.post("/auth/logout", status_code=204)
+async def logout(response: Response) -> None:
+    """Clear the session cookie (no-op for the token-in-response path).
+
+    State tokens are not server-side, so a client holding the raw token
+    simply drops it; the endpoint exists so cookie-based clients can log
+    out without waiting for the cookie to expire.
+    """
+    response.delete_cookie(SESSION_COOKIE_NAME, path="/")
+    return None
 
 
 @router.post("/auth/password", status_code=204)
