@@ -388,7 +388,7 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from "vue";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { useApi } from "@/composables/useApi";
 import { useSettingsStore } from "@/stores/settings";
@@ -426,6 +426,13 @@ const documentsLoadedCount = ref(0);
 const documentsHasMore = ref(false);
 const documentsLoadingMore = ref(false);
 const activeStatusPolls = new Set();
+// Set on unmount: in-flight poll loops check this and stop instead of
+// fetching into detached refs for up to 10 minutes after navigation.
+let statusPollsCancelled = false;
+
+onBeforeUnmount(() => {
+    statusPollsCancelled = true;
+});
 
 function documentListPath(offset) {
     return `/documents?limit=${DOCUMENT_PAGE_SIZE + 1}&offset=${offset}`;
@@ -698,7 +705,9 @@ function updateDoc(id, patch) {
 async function pollStatus(docId, options = {}) {
     // Poll for up to 10 minutes (120 × 5s). Check immediately, then wait between attempts.
     for (let i = 0; i < 120; i++) {
+        if (statusPollsCancelled) return;
         if (i > 0) await new Promise((r) => setTimeout(r, 5000));
+        if (statusPollsCancelled) return;
         try {
             const data = await apiFetch(`/documents/${docId}`);
             const normalized = normalizeDocument(data, settings.locale);
