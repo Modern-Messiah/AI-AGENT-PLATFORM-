@@ -15,7 +15,7 @@ from sqlalchemy import select, update
 from starlette.responses import Response
 from temporalio.client import Client
 
-from apps.api.deps import TenantID, read_with_limit
+from apps.api.deps import TenantID, content_length_exceeds, read_with_limit
 from apps.api.schemas import (
     AddUrlDocumentRequest,
     DocumentAssetResponse,
@@ -116,8 +116,7 @@ async def upload_document(
 ) -> DocumentResponse:
     # Early rejection before reading body (Content-Length may include multipart overhead,
     # so use a 2x guard here; exact byte-level check happens inside read_with_limit).
-    cl = request.headers.get("content-length")
-    if cl and int(cl) > settings.max_upload_bytes * 2:
+    if content_length_exceeds(request, settings.max_upload_bytes * 2):
         raise HTTPException(
             status_code=413,
             detail=f"file exceeds {settings.max_upload_bytes // (1024 * 1024)} MB limit",
@@ -193,8 +192,7 @@ async def upload_documents_bulk(
 
     # Phase 1: read and validate ALL files before starting any workflow.
     # This prevents partial state where some workflows fire but a later file fails validation.
-    cl = request.headers.get("content-length")
-    if cl and int(cl) > settings.max_upload_bytes * len(files) * 2:
+    if content_length_exceeds(request, settings.max_upload_bytes * len(files) * 2):
         raise HTTPException(status_code=413, detail="request body too large")
 
     validated: list[tuple[UploadFile, bytes]] = []
@@ -223,6 +221,7 @@ async def upload_documents_bulk(
     # Phase 2: store objects + DB rows + start workflows only after full validation.
     client: Client = request.app.state.temporal
     responses: list[DocumentResponse] = []
+    workflow_start_failures = 0
 
     for file, data in validated:
         document_id = uuid.uuid4()
@@ -259,7 +258,14 @@ async def upload_documents_bulk(
                 id=f"ingest-{tenant_id}-{document_id}",
                 task_queue=settings.temporal_task_queue,
             )
-        except Exception:
+        except Exception as exc:
+            workflow_start_failures += 1
+            log.warning(
+                "bulk upload: ingestion workflow failed to start | tenant=%s document=%s error=%s",
+                tenant_id,
+                document_id,
+                exc,
+            )
             async with tenant_session(tenant_id) as s:
                 await s.execute(
                     update(Document)
@@ -272,6 +278,11 @@ async def upload_documents_bulk(
             doc = (await s.execute(select(Document).where(Document.id == document_id))).scalar_one()
         responses.append(document_response(doc))
 
+    if workflow_start_failures == len(validated):
+        # Total outage: same contract as the single-upload path — the client
+        # must learn the batch never reached ingestion, not dig per-file
+        # statuses out of a 202 body.
+        raise HTTPException(status_code=503, detail="ingestion service unavailable")
     return responses
 
 
