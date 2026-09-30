@@ -945,6 +945,11 @@ async def test_check_url_document_returns_github_metadata(monkeypatch) -> None:
 
     monkeypatch.setattr(documents_router, "fetch_url_source", fake_fetch)
 
+    async def fake_limit(*args, **kwargs) -> None:
+        return None
+
+    monkeypatch.setattr(documents_router, "enforce_url_ingest_limit", fake_limit)
+
     response = await documents_router.check_url_document(
         documents_router.UrlCheckRequest(url="https://github.com/acme/docs"),
         "tenant-a",
@@ -1023,6 +1028,11 @@ async def test_add_url_document_persists_metadata_and_starts_ingestion(monkeypat
         return fetched
 
     monkeypatch.setattr(documents_router, "fetch_url_source", fake_fetch)
+
+    async def fake_limit(*args, **kwargs) -> None:
+        return None
+
+    monkeypatch.setattr(documents_router, "enforce_url_ingest_limit", fake_limit)
     monkeypatch.setattr(
         documents_router,
         "tenant_session",

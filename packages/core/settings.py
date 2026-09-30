@@ -70,6 +70,9 @@ class Settings(BaseSettings):
     # Interactive agent guardrails.
     agent_query_max_chars: int = 12_000
     agent_rate_limit_per_minute: int = 20
+    # URL-source ingestion (external fetches) per hour per tenant; each
+    # /documents/url* call drives full outbound HTTP fetches. 0 disables.
+    url_ingest_rate_per_hour: int = 20
     # Fail-open preserves chat availability when Redis is down (default).
     # Set true to reject agent requests instead (503) when the limiter
     # cannot be consulted.
