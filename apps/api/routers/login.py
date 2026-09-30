@@ -155,6 +155,11 @@ async def _verify_google_id_token(id_token: str) -> dict[str, str]:
     }
 
 
+async def _lookup_google_user(email: str) -> User | None:
+    async with async_session() as s:
+        return (await s.execute(select(User).where(User.email == email))).scalar_one_or_none()
+
+
 async def _upsert_google_user(email: str, name: str, role: str) -> User:
     tenant_id = settings.default_tenant_id
     async with async_session() as s, s.begin():
@@ -206,6 +211,13 @@ async def google_login_callback(
         log.warning("google login denied | email=%s (not in allowlist)", identity["email"])
         return RedirectResponse(
             url=f"{frontend_redirect}#error={quote('account is not allowed to sign in')}",
+            status_code=302,
+        )
+
+    existing = await _lookup_google_user(identity["email"])
+    if existing is not None and getattr(existing, "is_active", None) is False:
+        return RedirectResponse(
+            url=f"{frontend_redirect}#error={quote('account is blocked')}",
             status_code=302,
         )
 
@@ -324,6 +336,8 @@ async def login(body: EmailLoginRequest) -> EmailLoginResponse:
     # Uniform error: never reveal whether the email exists.
     if user is None or not verify_password(body.password, user.password_hash):
         raise HTTPException(status_code=401, detail="invalid email or password")
+    if getattr(user, "is_active", None) is False:
+        raise HTTPException(status_code=403, detail="account is blocked")
 
     # A fresh login supersedes any earlier session denial (password reset).
     await clear_user_denial(user.id)

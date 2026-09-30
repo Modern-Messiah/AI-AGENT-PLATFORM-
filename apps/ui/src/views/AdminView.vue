@@ -230,6 +230,7 @@
                 <th>{{ t('login.email') }}</th>
                 <th>{{ t('admin.tenant') }}</th>
                 <th>{{ t('admin.role') }}</th>
+                <th>{{ t('admin.keyStatus') }}</th>
                 <th>{{ t('admin.keys') }}</th>
                 <th>{{ t('admin.queriesTotal') }}</th>
                 <th>{{ t('admin.queries7d') }}</th>
@@ -245,6 +246,11 @@
                 <td>
                   <span :class="['badge', user.role === 'admin' ? 'badge-purple' : 'badge-blue']">
                     {{ user.role }}
+                  </span>
+                </td>
+                <td>
+                  <span :class="['badge', user.is_active ? 'badge-green' : 'badge-red']">
+                    {{ user.is_active ? t('admin.keyActive') : t('admin.userBlocked') }}
                   </span>
                 </td>
                 <td class="td-mono">{{ user.active_keys }}/{{ user.keys }}</td>
@@ -329,6 +335,41 @@
           </div>
         </div>
       </div>
+
+      <!-- ── Config ──────────────────────────────────────────────── -->
+      <template v-if="activeTab === 'config'">
+        <div v-if="configData" class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">{{ t('admin.configTitle') }}</div>
+              <div class="card-sub">{{ t('admin.configSub') }}</div>
+            </div>
+          </div>
+          <div class="config-grid">
+            <div
+              v-for="flag in configFlags"
+              :key="flag.label"
+              class="health-check"
+              :class="flag.on ? 'good' : 'bad'"
+            >
+              <div class="health-dot"></div>
+              <div>
+                <div class="health-name">{{ flag.label }}</div>
+                <div class="health-state">{{ flag.on ? t('admin.configOn') : t('admin.configOff') }}</div>
+              </div>
+            </div>
+          </div>
+          <div class="config-models">
+            <div v-for="(value, key) in configData.models" :key="key" class="mini-metric" style="margin: 6px">
+              <span>{{ key }}</span>
+              <strong class="td-mono">{{ value }}</strong>
+            </div>
+          </div>
+          <div class="language-hint" style="padding: 0 18px 16px">
+            {{ t('admin.configHint', { tenant: configData.default_tenant_id, emails: configData.admin_emails.join(', ') || '—' }) }}
+          </div>
+        </div>
+      </template>
 
       <!-- ── LLM provider keys ────────────────────────────────────── -->
       <template v-if="activeTab === 'llm'">
@@ -470,6 +511,7 @@
                 <th>{{ t('admin.progress') }}</th>
                 <th>{{ t('admin.size') }}</th>
                 <th>{{ t('admin.created') }}</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
@@ -485,6 +527,18 @@
                 </td>
                 <td class="td-mono">{{ fmtBytes(doc.size_bytes) }}</td>
                 <td class="td-mono">{{ fmtDateTime(doc.created_at) }}</td>
+                <td class="llm-row-actions">
+                  <button
+                    v-if="doc.status !== 'processing' && doc.status !== 'pending'"
+                    class="btn btn-ghost btn-sm"
+                    @click="adminReindexDoc(doc)"
+                  >
+                    {{ docReindexTarget === doc.id ? '⏳' : t('admin.reindexDoc') }}
+                  </button>
+                  <button class="btn btn-danger btn-sm" @click="adminDeleteDoc(doc)">
+                    {{ docDeleteTarget === doc.id ? t('admin.confirmDelete') : t('common.delete') }}
+                  </button>
+                </td>
               </tr>
             </tbody>
           </table>
@@ -740,6 +794,7 @@ const tabs = [
   { id: 'documents', labelKey: 'admin.tabDocuments' },
   { id: 'usage', labelKey: 'admin.tabUsage' },
   { id: 'health', labelKey: 'admin.tabHealth' },
+  { id: 'config', labelKey: 'admin.tabConfig' },
 ]
 
 const activeTab = ref('overview')
@@ -771,6 +826,10 @@ const resetTarget = ref(null)
 const resetPasswordValue = ref('')
 const resetSaving = ref(false)
 const resetError = ref('')
+const userDeleteTarget = ref(null)
+const docReindexTarget = ref(null)
+const docDeleteTarget = ref(null)
+const configData = ref(null)
 const llmTesting = ref({})
 const llmTestResults = ref({})
 
@@ -815,6 +874,74 @@ function loadUsers() {
 }
 function loadLlmKeys() {
   return _call('/admin/llm-keys', (data) => { llmKeys.value = data })
+}
+
+async function toggleUserRole(user) {
+  const newRole = user.role === 'admin' ? 'member' : 'admin'
+  try {
+    await apiAdminFetch(`/admin/users/${user.id}/role`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role: newRole }),
+    })
+    loadUsers()
+  } catch (e) {
+    error.value = e.message
+  }
+}
+
+async function toggleUserBlock(user) {
+  try {
+    await apiAdminFetch(`/admin/users/${user.id}/${user.is_active ? 'block' : 'unblock'}`, { method: 'POST' })
+    loadUsers()
+  } catch (e) {
+    error.value = e.message
+  }
+}
+
+async function deleteUserRow(user) {
+  if (userDeleteTarget.value?.id === user.id) {
+    userDeleteTarget.value = null
+    try {
+      await apiAdminFetch(`/auth/users/${user.id}`, { method: 'DELETE' })
+      loadUsers()
+    } catch (e) {
+      error.value = e.message
+    }
+    return
+  }
+  userDeleteTarget.value = user
+  setTimeout(() => { if (userDeleteTarget.value?.id === user.id) userDeleteTarget.value = null }, 3000)
+}
+
+async function adminReindexDoc(doc) {
+  docReindexTarget.value = doc.id
+  try {
+    await apiAdminFetch(`/admin/documents/${doc.id}/reindex`, { method: 'POST' })
+  } catch (e) {
+    error.value = e.message
+  }
+  setTimeout(() => loadDocuments(), 1500)
+  setTimeout(() => { docReindexTarget.value = null }, 4000)
+}
+
+async function adminDeleteDoc(doc) {
+  if (docDeleteTarget.value === doc.id) {
+    docDeleteTarget.value = null
+    try {
+      await apiAdminFetch(`/admin/documents/${doc.id}`, { method: 'DELETE' })
+      loadDocuments()
+    } catch (e) {
+      error.value = e.message
+    }
+    return
+  }
+  docDeleteTarget.value = doc.id
+  setTimeout(() => { if (docDeleteTarget.value === doc.id) docDeleteTarget.value = null }, 3000)
+}
+
+function loadConfig() {
+  return _call('/admin/config', (data) => { configData.value = data })
 }
 
 async function resetPassword() {
@@ -939,6 +1066,7 @@ function load() {
   else if (activeTab.value === 'documents') loadDocuments()
   else if (activeTab.value === 'usage') { loadUsage(); loadUserUsage() }
   else if (activeTab.value === 'health') loadHealth()
+  else if (activeTab.value === 'config') loadConfig()
 }
 
 function refresh() {
@@ -950,6 +1078,7 @@ function refresh() {
   else if (activeTab.value === 'documents') docs.value = null
   else if (activeTab.value === 'usage') { usage.value = null; userUsage.value = null }
   else if (activeTab.value === 'health') health.value = null
+  else if (activeTab.value === 'config') configData.value = null
   load()
 }
 
@@ -990,6 +1119,20 @@ const overviewCards = computed(() => {
       value: String(data.queries.total),
       sub: `${t('admin.today')}: ${data.queries.today} · ${t('admin.errors')}: ${data.queries.errors}`,
     },
+  ]
+})
+
+const configFlags = computed(() => {
+  const c = configData.value
+  if (!c) return []
+  return [
+    { label: t('admin.flagOpenRegistration'), on: c.open_registration },
+    { label: t('admin.flagLlmRerank'), on: c.llm_rerank_enabled },
+    { label: t('admin.flagVerification'), on: c.answer_verification_enabled },
+    { label: t('admin.flagExpansion'), on: c.query_expansion_enabled },
+    { label: t('admin.flagCondensation'), on: c.query_condensation_enabled },
+    { label: t('admin.flagInsights'), on: c.ai_document_insights_enabled },
+    { label: t('admin.flagCodeExec'), on: c.enable_code_exec },
   ]
 })
 
@@ -1281,6 +1424,18 @@ function docBadge(status) {
 </style>
 
 <style scoped>
+.config-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+  padding: 18px;
+}
+.config-models {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 8px;
+  padding: 0 18px 8px;
+}
 .llm-row-actions {
   white-space: nowrap;
 }

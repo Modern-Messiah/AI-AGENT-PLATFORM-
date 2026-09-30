@@ -311,6 +311,8 @@ class User(Base):
     # scrypt$<salt>$<hash>; NULL until a password is set.
     password_hash: Mapped[str | None] = mapped_column(String(512), nullable=True)
     role: Mapped[str] = mapped_column(String(32), default="member", nullable=False)
+    # Blocked by an admin: password login fails and live sessions are revoked.
+    is_active: Mapped[bool] = mapped_column(default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

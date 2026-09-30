@@ -10,6 +10,7 @@ app.admin_read flag enables the FOR SELECT RLS policies (migration 0019).
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import uuid
 from datetime import timedelta
@@ -42,6 +43,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from apps.api.deps import AdminDep
 from apps.api.routers.health import _CHECK_NAMES, _run_check
 from apps.api.schemas import (
+    AdminConfigResponse,
     AdminDailyQueries,
     AdminDocumentCounts,
     AdminDocumentListItem,
@@ -54,6 +56,7 @@ from apps.api.schemas import (
     AdminPromptListItem,
     AdminPromptListResponse,
     AdminQueryCounts,
+    AdminRoleChangeRequest,
     AdminTenantSummary,
     AdminUsageByModel,
     AdminUsageByTenant,
@@ -308,6 +311,7 @@ async def admin_users(
                 email=user.email,
                 has_password=bool(user.password_hash),
                 role=user.role,
+                is_active=getattr(user, "is_active", True),
                 created_at=user.created_at,
                 keys=keys,
                 active_keys=active_keys,
@@ -373,6 +377,82 @@ async def admin_reset_user_password(
     await deny_user_sessions(user_id)
     log.info("admin reset password | user_id=%s", user_id)
     return None
+
+
+@router.post("/admin/users/{user_id}/role", response_model=AdminUserInfo)
+async def admin_change_user_role(
+    user_id: uuid.UUID, body: AdminRoleChangeRequest, _principal: AdminDep
+) -> AdminUserInfo:
+    """Grant or revoke the admin role (panel is the only surface for this)."""
+    async with admin_session() as db:
+        user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+        if user is None:
+            raise HTTPException(status_code=404, detail="user not found")
+        user.role = body.role
+    log.info("admin changed role | user_id=%s role=%s", user_id, body.role)
+    return AdminUserInfo(
+        id=str(user.id),
+        tenant_id=user.tenant_id,
+        name=user.name,
+        email=user.email,
+        has_password=bool(user.password_hash),
+        role=user.role,
+        is_active=user.is_active,
+        created_at=user.created_at,
+        keys=0,
+        active_keys=0,
+        queries_total=0,
+        queries_7d=0,
+    )
+
+
+@router.post("/admin/users/{user_id}/block", status_code=204)
+async def admin_block_user(user_id: uuid.UUID, _principal: AdminDep) -> None:
+    """Block logins and kill live sessions without deleting the account."""
+    async with admin_session() as db:
+        user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+        if user is None:
+            raise HTTPException(status_code=404, detail="user not found")
+        user.is_active = False
+    await deny_user_sessions(user_id)
+    log.info("admin blocked user | user_id=%s", user_id)
+    return None
+
+
+@router.post("/admin/users/{user_id}/unblock", status_code=204)
+async def admin_unblock_user(user_id: uuid.UUID, _principal: AdminDep) -> None:
+    async with admin_session() as db:
+        user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+        if user is None:
+            raise HTTPException(status_code=404, detail="user not found")
+        user.is_active = True
+    log.info("admin unblocked user | user_id=%s", user_id)
+    return None
+
+
+@router.get("/admin/config", response_model=AdminConfigResponse)
+async def admin_config(_principal: AdminDep) -> AdminConfigResponse:
+    """Read-only feature-flag overview (the kill-switches live in .env)."""
+    return AdminConfigResponse(
+        open_registration=settings.open_registration,
+        # getattr: the RAG flags land with the rag-accuracy branch; keep the
+        # config tab working whatever the merge order is.
+        llm_rerank_enabled=bool(getattr(settings, "llm_rerank_enabled", False)),
+        rerank_candidate_k=int(getattr(settings, "rerank_candidate_k", 0)),
+        answer_verification_enabled=bool(getattr(settings, "answer_verification_enabled", False)),
+        query_expansion_enabled=settings.query_expansion_enabled,
+        query_condensation_enabled=settings.query_condensation_enabled,
+        ai_document_insights_enabled=settings.ai_document_insights_enabled,
+        enable_code_exec=settings.enable_code_exec,
+        models={
+            "strong": settings.strong_model,
+            "weak": settings.weak_model,
+            "vision": settings.vision_model,
+            "embedding": settings.embedding_model,
+        },
+        admin_emails=settings.admin_emails,
+        default_tenant_id=settings.default_tenant_id,
+    )
 
 
 # ── API keys (access control + activity) ─────────────────────────────────────
@@ -700,6 +780,65 @@ async def admin_health(
     checks = dict(results)
     ready = all(status == "ok" for status in checks.values())
     return AdminHealthResponse(status="ok" if ready else "unavailable", checks=checks)
+
+
+@router.post("/admin/documents/{document_id}/reindex", status_code=202)
+async def admin_reindex_document(
+    document_id: uuid.UUID, _principal: AdminDep, request: Request
+) -> dict[str, str]:
+    """Cross-tenant reindex (same workflow as the tenant's own button)."""
+    async with admin_session() as db:
+        doc = (
+            await db.execute(select(Document).where(Document.id == document_id))
+        ).scalar_one_or_none()
+        if doc is None:
+            raise HTTPException(status_code=404, detail="document not found")
+        if doc.status in (DocumentStatus.pending, DocumentStatus.processing):
+            raise HTTPException(status_code=409, detail="document is already being processed")
+        tenant_id = doc.tenant_id
+    from apps.worker.workflows.ingestion import IngestionWorkflow
+
+    client = request.app.state.temporal
+    workflow_id = f"reindex-{tenant_id}-{document_id}-{uuid.uuid4()}"
+    await client.start_workflow(
+        IngestionWorkflow.run,
+        {"tenant_id": tenant_id, "document_id": str(document_id)},
+        id=workflow_id,
+        task_queue=settings.temporal_task_queue,
+    )
+    return {"workflow_id": workflow_id, "status": "started"}
+
+
+@router.delete("/admin/documents/{document_id}", status_code=204)
+async def admin_delete_document(document_id: uuid.UUID, _principal: AdminDep) -> None:
+    """Remove any tenant's document: DB row (cascade) + stored objects."""
+    async with admin_session() as db:
+        doc = (
+            await db.execute(select(Document).where(Document.id == document_id))
+        ).scalar_one_or_none()
+        if doc is None:
+            raise HTTPException(status_code=404, detail="document not found")
+        object_key, tenant_id = doc.object_key, doc.tenant_id
+        from packages.storage import DocumentAsset
+
+        asset_rows = (
+            (
+                await db.execute(
+                    select(DocumentAsset).where(DocumentAsset.document_id == document_id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        preview_keys = [row.preview_object_key for row in asset_rows]
+        await db.delete(doc)
+    from packages.storage.object_store import object_store
+
+    for key in [object_key, *preview_keys]:
+        with contextlib.suppress(Exception):
+            await asyncio.to_thread(object_store.delete, key)
+    log.info("admin deleted document | id=%s tenant=%s", document_id, tenant_id)
+    return None
 
 
 # ── LLM provider keys (admin only) ───────────────────────────────────────────

@@ -270,6 +270,7 @@ class AdminUserInfo(BaseModel):
     email: str | None = None
     has_password: bool = False
     role: str
+    is_active: bool = True
     created_at: datetime
     keys: int
     active_keys: int
@@ -476,3 +477,23 @@ class AdminUserUsage(BaseModel):
     total_tokens: int
     calls: int
     avg_latency_ms: int
+
+
+class AdminRoleChangeRequest(BaseModel):
+    role: str = Field(pattern="^(member|admin)$")
+
+
+class AdminConfigResponse(BaseModel):
+    """Read-only feature-flag overview for the admin panel."""
+
+    open_registration: bool
+    llm_rerank_enabled: bool
+    rerank_candidate_k: int
+    answer_verification_enabled: bool
+    query_expansion_enabled: bool
+    query_condensation_enabled: bool
+    ai_document_insights_enabled: bool
+    enable_code_exec: bool
+    models: dict[str, str]
+    admin_emails: list[str]
+    default_tenant_id: str
