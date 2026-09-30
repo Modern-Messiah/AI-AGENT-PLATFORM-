@@ -94,6 +94,10 @@ python_version = "3.12"
 strict = true
 plugins = ["pydantic.mypy"]
 mypy_path = "."
+# Tests and evals are intentionally untyped (473+ errors of pure
+# annotation noise); excluding them makes `mypy .` locally identical to
+# the CI gate (packages apps migrations scripts) instead of failing.
+exclude = ["tests/", "evals/"]
 
 [[tool.mypy.overrides]]
 module = ["temporalio.*", "clickhouse_connect.*", "minio.*", "fitz.*", "paddleocr.*", "langfuse.*"]

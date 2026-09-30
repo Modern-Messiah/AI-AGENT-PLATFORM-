@@ -98,7 +98,7 @@ jobs:
           uv run ruff format --check .
 
       - name: Mypy packages+apps (blocking)
-        run: uv run mypy packages apps
+        run: uv run mypy .
 
   retrieval-evals:
     name: Retrieval quality evals

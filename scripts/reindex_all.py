@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import sys
 import time
+from typing import Any
 
 import httpx
 
@@ -41,7 +42,7 @@ def main() -> int:
         timeout=30.0,
     )
 
-    items: list[dict] = []
+    items: list[dict[str, Any]] = []
     offset = 0
     while True:
         page = client.get("/documents", params={"limit": 500, "offset": offset}).json()
