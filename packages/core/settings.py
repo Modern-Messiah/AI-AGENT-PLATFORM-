@@ -167,7 +167,9 @@ class Settings(BaseSettings):
     # Accepts JSON array  (HTTP_FETCH_ALLOWED_DOMAINS='["docs.python.org"]')
     # or comma-separated  (HTTP_FETCH_ALLOWED_DOMAINS=docs.python.org,api.github.com).
     # When non-empty ONLY these domains are reachable — fully prevents SSRF including DNS rebinding.
-    # When empty the tool falls back to an IP-based blocklist (still vulnerable to DNS rebinding).
+    # When empty the URL-source fetcher falls back to an IP-based blocklist and pins the
+    # connection to the validated address (resolve_fetch_target), so rebinding names
+    # cannot reconnect to a private IP after passing validation.
     http_fetch_allowed_domains: Annotated[list[str], NoDecode] = []
 
     # CORS allowed origins for the API.
