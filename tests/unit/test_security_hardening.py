@@ -149,6 +149,13 @@ class FakeRedis:
     async def zrem(self, key: str, member: str) -> int:
         return (self.zsets.get(key, {}).pop(member, None) is not None and 1) or 0
 
+    async def zrange(
+        self, key: str, start: int, end: int, *, withscores: bool
+    ) -> list[tuple[str, float]]:
+        assert start == 0 and end == 0 and withscores is True
+        ordered = sorted(self.zsets.get(key, {}).items(), key=lambda item: item[1])
+        return ordered[:1]
+
 
 class FakePipeline:
     def __init__(self, redis: FakeRedis) -> None:
