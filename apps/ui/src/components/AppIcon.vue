@@ -50,6 +50,21 @@
     <path d="M8 1.5 2.5 3.5V8c0 3.2 2.3 5.6 5.5 6.8 3.2-1.2 5.5-3.6 5.5-6.8V3.5L8 1.5Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/>
     <path d="M5.6 8.1 7.3 9.8l3.2-3.4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
   </svg>
+  <svg :width="size" :height="size" viewBox="0 0 16 16" fill="none" v-else-if="name === 'globe'">
+    <circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.3"/>
+    <ellipse cx="8" cy="8" rx="2.8" ry="6.5" stroke="currentColor" stroke-width="1.3"/>
+    <path d="M1.5 8h13" stroke="currentColor" stroke-width="1.3"/>
+  </svg>
+  <svg :width="size" :height="size" viewBox="0 0 16 16" fill="none" v-else-if="name === 'filter'">
+    <path d="M1.5 3h13l-5 5.5v4.5l-3-1.8v-2.7l-5-5.5z" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+  <svg :width="size" :height="size" viewBox="0 0 16 16" fill="none" v-else-if="name === 'chevron-down'">
+    <path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+  <svg :width="size" :height="size" viewBox="0 0 16 16" fill="none" v-else-if="name === 'book'">
+    <path d="M2.5 3.5A2 2 0 0 1 4.5 1.5h8A1.5 1.5 0 0 1 14 3v10.5a1.5 1.5 0 0 1-1.5 1.5h-8A2 2 0 0 1 2.5 13V3.5z" stroke="currentColor" stroke-width="1.3"/>
+    <path d="M2.5 12.5A2 2 0 0 1 4.5 10.5H14" stroke="currentColor" stroke-width="1.3"/>
+  </svg>
   <span v-else-if="name === 'agent'">A</span>
   <span v-else-if="name === 'user'">U</span>
 </template>
