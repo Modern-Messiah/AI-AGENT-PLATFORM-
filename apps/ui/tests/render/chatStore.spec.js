@@ -49,7 +49,7 @@ const ISO = '2026-09-30T10:00:00Z'
 function withStore(handler) {
   const calls = []
   const originalFetch = globalThis.fetch
-  globalThis.fetch = (url, opts) => handler(String(url), opts || {}, calls)
+  globalThis.fetch = (url, opts) => handler(String(url), opts, calls)
   globalThis.localStorage?.clear()
   globalThis.sessionStorage?.clear()
   const pinia = createPinia()
@@ -61,7 +61,7 @@ function withStore(handler) {
 function defaultHandler(extra = {}) {
   return (url, opts, calls) => {
     calls.push({ url, method: opts.method || 'GET', body: opts.body || null })
-    const route = extra[`${opts.method || 'GET'} ${url}`]
+    const route = extra[`${(opts && opts.method) || 'GET'} ${url}`]
     if (route) return route(url, opts)
     return jsonResponse([])
   }
@@ -139,7 +139,7 @@ test('token events build the message, done finalizes and persists it', async () 
 test('a late session response cannot overwrite the newer session view', async () => {
   const slow = deferred()
   const fast = deferred()
-  const { store, restore } = withStore((url, opts) => {
+  const { store, restore } = withStore((url) => {
     if (url === '/api/sessions/s1/messages') return slow.promise.then(() => jsonResponse([
       { id: 'm1', role: 'user', content: 'from-one', created_at: ISO, sources: [] },
     ]))

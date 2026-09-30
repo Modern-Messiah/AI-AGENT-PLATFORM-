@@ -21,7 +21,7 @@ async function api(path, init) {
   return response
 }
 
-test('chat answers a document question with citations', async ({ page, request }) => {
+test('chat answers a document question with citations', async ({ page }) => {
   test.setTimeout(240_000)
 
   // 1. throwaway tenant + key + document via the public API
@@ -31,8 +31,6 @@ test('chat answers a document question with citations', async ({ page, request }
     headers: { 'Content-Type': 'application/json', 'X-Admin-Secret': adminSecret() },
     body: JSON.stringify({ tenant_id: tenant, name: 'playwright' }),
   })).json()
-  const headers = { 'X-API-Key': created.raw_key, 'Content-Admin-Secret': '1' }
-
   const form = new FormData()
   form.append('file', new Blob(
     ['PLAYWRIGHT SENTINEL: the hybrid retrieval fusion constant K equals sixty. ' +
