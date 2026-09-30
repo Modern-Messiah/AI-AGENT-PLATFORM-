@@ -334,6 +334,7 @@ async def agent_stream(body: AgentStreamRequest, actor: ActorDep) -> StreamingRe
             )
 
         if cached is not None:
+            yield f"data: {json.dumps({'type': 'stage', 'stage': 'cache', 'elapsed_ms': int((time.monotonic() - request_t0) * 1000)})}\n\n"
             structured = [source for source in cached.sources if isinstance(source, CitationSource)]
             answer_sources: list[str | CitationSource] = list(cached.sources)
             if len(structured) == len(cached.sources):
@@ -352,7 +353,12 @@ async def agent_stream(body: AgentStreamRequest, actor: ActorDep) -> StreamingRe
             return
 
         try:
+
+            def stage(name: str) -> str:
+                return f"data: {json.dumps({'type': 'stage', 'stage': name, 'elapsed_ms': int((time.monotonic() - request_t0) * 1000)})}\n\n"
+
             retrieve_t0 = time.monotonic()
+            yield stage("retrieval")
             chunks = await retrieve_chunks_with_expansion(
                 retrieval_query,
                 tenant_id,
@@ -416,6 +422,7 @@ async def agent_stream(body: AgentStreamRequest, actor: ActorDep) -> StreamingRe
                 history=history,
             )
 
+            yield stage("generation")
             async for event in stream_chat_text(model_name, messages):
                 if event.type == "usage":
                     prompt_tokens = event.prompt_tokens
@@ -436,6 +443,7 @@ async def agent_stream(body: AgentStreamRequest, actor: ActorDep) -> StreamingRe
 
             answer = "".join(answer_parts).strip()
             structured_sources = select_answer_sources(answer, sources)
+            yield stage("verification")
             verdict = await verify_answer_faithfulness(answer, structured_sources)
             if answer and verdict.unsupported_sentences and not verdict.supported_sentences:
                 # Nothing in the answer is grounded — refuse instead of

@@ -21,6 +21,7 @@ export const useChatStore = defineStore('chat', () => {
   const loadedKey = ref(null)
   const streamTick = ref(0)  // incremented on each streaming token to trigger scroll
   const activeStreamController = ref(null)
+  const pipelineStage = ref(null)
   const isStreaming = computed(() => activeStreamController.value !== null)
 
   // sessId → [{ workflowId, time }, ...]  (array to support multiple pending workflows per session)
@@ -278,7 +279,9 @@ export const useChatStore = defineStore('chat', () => {
           let event
           try { event = JSON.parse(part.slice(6)) } catch { continue }
 
-          if (event.type === 'token') {
+          if (event.type === 'stage') {
+            pipelineStage.value = { name: event.stage, startedAt: Date.now(), elapsedMs: event.elapsed_ms }
+          } else if (event.type === 'token') {
             if (!streamMsg) {
               // First token: create message, hide typing indicator
               streamMsg = { id: 'a' + Date.now(), role: 'agent', text: '', time: nowTime(), sources: [], cached: false, streaming: true }
@@ -298,6 +301,7 @@ export const useChatStore = defineStore('chat', () => {
             }
 
           } else if (event.type === 'done') {
+            pipelineStage.value = null
             if (activeStreamController.value === streamController) activeStreamController.value = null
             _stopLoading(sessId)
             if (activeId.value === sessId) {
@@ -329,6 +333,7 @@ export const useChatStore = defineStore('chat', () => {
             return streamMsg
 
           } else if (event.type === 'error') {
+            pipelineStage.value = null
             if (activeStreamController.value === streamController) activeStreamController.value = null
             _stopLoading(sessId)
             const errMsg = { id: 'e' + Date.now(), role: 'agent', text: t('common.error', { message: event.message }), time: nowTime(), sources: [], error: true }
@@ -457,6 +462,7 @@ export const useChatStore = defineStore('chat', () => {
   return {
     sessions, activeId, messages, loading, loadingSessionId, sessLoading, loadedKey, streamTick,
     isStreaming,
+    pipelineStage,
     reset, loadSessions, selectSession, newChat, deleteSession,
     sendMessage, cancelStreaming, dropLastAgentMessage, isActiveSessionLoading, approveHitl, rejectHitl
   }
