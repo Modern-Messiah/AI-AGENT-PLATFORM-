@@ -128,3 +128,11 @@ export function scopeWelcomeMessage(scope, locale = 'ru') {
   }
   return translate(locale, 'chat.scopeGlobalWelcome')
 }
+
+export function isChatScopeLocked({ session = null, messages = [], isDraft = false } = {}) {
+  if (session?.scope_type === 'document' || session?.scope_type === 'notebook') return true
+  if (session?.document_id || session?.notebook_id) return true
+  if (Array.isArray(messages) && messages.some(m => m.role === 'user')) return true
+  if (session && !isDraft) return true
+  return false
+}

@@ -65,6 +65,11 @@
     <path d="M2.5 3.5A2 2 0 0 1 4.5 1.5h8A1.5 1.5 0 0 1 14 3v10.5a1.5 1.5 0 0 1-1.5 1.5h-8A2 2 0 0 1 2.5 13V3.5z" stroke="currentColor" stroke-width="1.3"/>
     <path d="M2.5 12.5A2 2 0 0 1 4.5 10.5H14" stroke="currentColor" stroke-width="1.3"/>
   </svg>
+  <svg :width="size" :height="size" viewBox="0 0 16 16" fill="none" v-else-if="name === 'lock'">
+    <rect x="3" y="6.5" width="10" height="7.5" rx="1.5" stroke="currentColor" stroke-width="1.3"/>
+    <path d="M5.5 6.5V4.5a2.5 2.5 0 0 1 5 0v2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+    <circle cx="8" cy="10.2" r="0.9" fill="currentColor"/>
+  </svg>
   <span v-else-if="name === 'agent'">A</span>
   <span v-else-if="name === 'user'">U</span>
 </template>

@@ -346,6 +346,8 @@ const MESSAGES = {
       scopeTooltip: 'Область поиска в чате',
       scopeToGlobalHint: 'Переключиться на поиск по всей базе знаний',
       applyScope: 'Применить и начать чат',
+      scopeLocked: 'Область зафиксирована',
+      scopeLockedHint: 'Область поиска зафиксирована для этого чата. Чтобы выбрать другую область, создайте новый чат.',
       searchPlaceholder: 'Поиск по названию…',
     },
     documents: {
@@ -926,6 +928,8 @@ const MESSAGES = {
       scopeTooltip: 'Chat search scope',
       scopeToGlobalHint: 'Switch to search across the entire knowledge base',
       applyScope: 'Apply and start chat',
+      scopeLocked: 'Scope locked',
+      scopeLockedHint: 'Search scope is locked for this chat. Create a new chat to choose a different scope.',
       searchPlaceholder: 'Search by title…',
     },
     documents: {
