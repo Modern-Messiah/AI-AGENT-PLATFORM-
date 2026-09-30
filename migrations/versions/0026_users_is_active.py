@@ -1,6 +1,6 @@
 """users.is_active — admin block/unblock without deleting the account
 
-Revision ID: 0025_users_is_active
+Revision ID: 0026_users_is_active
 Revises: 0024_llm_api_keys
 Create Date: 2026-09-29
 
@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from alembic import op
 
-revision: str = "0025_users_is_active"
+revision: str = "0026_users_is_active"
 down_revision: str | None = "0024_llm_api_keys"
 branch_labels = None
 depends_on = None
