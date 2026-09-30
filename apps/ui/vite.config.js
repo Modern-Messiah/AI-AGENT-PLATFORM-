@@ -7,6 +7,19 @@ export default defineConfig({
   resolve: {
     alias: { '@': resolve(__dirname, 'src') }
   },
+  build: {
+    rollupOptions: {
+      output: {
+        // Split the heavy vendor libs out of the app chunk: the app code
+        // changes on every release, vendors rarely — cached separately.
+        manualChunks: {
+          vendor: ['vue', 'vue-router', 'pinia'],
+          markdown: ['markdown-it', 'dompurify', 'highlight.js'],
+          charts: ['chart.js'],
+        },
+      },
+    },
+  },
   server: {
     host: '0.0.0.0',
     port: 5173,
