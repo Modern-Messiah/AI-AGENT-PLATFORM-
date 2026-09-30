@@ -32,6 +32,7 @@ from apps.api.serializers import (
     metadata_page,
 )
 from apps.api.services.cache import invalidate_semantic_cache
+from apps.api.services.url_source_limits import enforce_url_ingest_limit
 from apps.api.services.url_sources import (
     FetchedUrlSource,
     UrlSourceError,
@@ -273,6 +274,7 @@ async def upload_documents_bulk(
 
 @router.post("/documents/url/check", response_model=UrlCheckResponse)
 async def check_url_document(body: UrlCheckRequest, tenant_id: TenantID) -> UrlCheckResponse:
+    await enforce_url_ingest_limit(tenant_id, "/documents/url/check")
     try:
         fetched = await fetch_url_source(body.url)
     except UrlSourceError as exc:
@@ -301,6 +303,7 @@ async def add_url_document(
     request: Request,
     tenant_id: TenantID,
 ) -> DocumentResponse:
+    await enforce_url_ingest_limit(tenant_id, "/documents/url")
     try:
         fetched = await fetch_url_source(body.url)
     except UrlSourceError as exc:
@@ -520,6 +523,9 @@ async def reindex_document(
 
     if is_external and not source_url:
         raise HTTPException(status_code=409, detail="external document has no source URL")
+
+    if is_external:
+        await enforce_url_ingest_limit(tenant_id, "/documents/reindex")
 
     # Phase 2 — external fetch + object-store I/O with NO transaction open:
     # a slow or malicious source (10s timeout per hop) must not pin pooled

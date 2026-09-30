@@ -112,6 +112,10 @@ async def test_reindex_document_starts_new_ingestion_workflow(monkeypatch) -> No
     assert kwargs["id"].startswith(f"reindex-tenant-a-{document_id}-")
 
 
+async def _noop_limit(*args, **kwargs) -> None:
+    return None
+
+
 async def test_reindex_url_document_refetches_source(monkeypatch) -> None:
     document_id = uuid.UUID("73e28adf-6f7a-442e-9077-4554fe49f6b3")
     checked_at = datetime(2026, 6, 7, tzinfo=UTC)
@@ -165,6 +169,7 @@ async def test_reindex_url_document_refetches_source(monkeypatch) -> None:
     monkeypatch.setattr(document_routes, "tenant_session", lambda tenant_id: fake_session)
     monkeypatch.setattr(api.app.state, "temporal", fake_temporal, raising=False)
     monkeypatch.setattr(document_routes, "fetch_url_source", fake_fetch_url_source)
+    monkeypatch.setattr(document_routes, "enforce_url_ingest_limit", _noop_limit)
     monkeypatch.setattr(document_routes.object_store, "get", fake_get)
     monkeypatch.setattr(document_routes.object_store, "put", fake_put)
 
@@ -263,6 +268,7 @@ async def test_reindex_github_document_rewrites_image_sidecar(monkeypatch) -> No
     monkeypatch.setattr(document_routes, "tenant_session", lambda tenant_id: fake_session)
     monkeypatch.setattr(api.app.state, "temporal", fake_temporal, raising=False)
     monkeypatch.setattr(document_routes, "fetch_url_source", fake_fetch_url_source)
+    monkeypatch.setattr(document_routes, "enforce_url_ingest_limit", _noop_limit)
     monkeypatch.setattr(document_routes.object_store, "get", fake_get)
     monkeypatch.setattr(document_routes.object_store, "put", fake_put)
 
@@ -369,6 +375,7 @@ async def test_reindex_github_document_reports_no_changes_without_workflow(monke
     monkeypatch.setattr(document_routes, "tenant_session", lambda tenant_id: fake_session)
     monkeypatch.setattr(api.app.state, "temporal", fake_temporal, raising=False)
     monkeypatch.setattr(document_routes, "fetch_url_source", fake_fetch_url_source)
+    monkeypatch.setattr(document_routes, "enforce_url_ingest_limit", _noop_limit)
     monkeypatch.setattr(document_routes.object_store, "get", fake_get)
     monkeypatch.setattr(document_routes.object_store, "put", fake_put)
     monkeypatch.setattr(document_routes, "invalidate_semantic_cache", fake_invalidate)
