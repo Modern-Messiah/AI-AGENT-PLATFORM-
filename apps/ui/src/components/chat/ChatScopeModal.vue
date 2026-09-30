@@ -261,10 +261,10 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   padding: 22px;
-  background: var(--surface);
-  border: 1px solid var(--border);
+  background: var(--s1);
+  border: 1px solid var(--border2);
   border-radius: 18px;
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 24px 80px var(--shadow-strong);
   color: var(--text);
 }
 
@@ -314,7 +314,7 @@ onUnmounted(() => {
   padding: 10px 14px;
   border-radius: 12px;
   border: 1px solid var(--border);
-  background: var(--s1);
+  background: var(--s2);
   color: var(--text);
   cursor: pointer;
   text-align: left;
@@ -323,12 +323,12 @@ onUnmounted(() => {
 
 .scope-tab:hover {
   border-color: color-mix(in oklch, var(--accent) 45%, var(--border));
-  background: color-mix(in oklch, var(--accent) 6%, var(--s1));
+  background: color-mix(in oklch, var(--accent) 8%, var(--s2));
 }
 
 .scope-tab.active {
   border-color: var(--accent);
-  background: color-mix(in oklch, var(--accent) 12%, var(--s1));
+  background: color-mix(in oklch, var(--accent) 14%, var(--s2));
 }
 
 .scope-tab-icon {
@@ -339,7 +339,7 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  background: var(--s2);
+  background: var(--s3);
 }
 
 .scope-tab-icon.is-global {
@@ -386,7 +386,7 @@ onUnmounted(() => {
   text-align: center;
   font-size: 12px;
   color: var(--muted);
-  background: var(--s1);
+  background: var(--s2);
   border-radius: 10px;
 }
 
@@ -420,7 +420,7 @@ onUnmounted(() => {
   padding: 7px 10px;
   border-radius: 8px;
   border: 1px solid transparent;
-  background: var(--s1);
+  background: var(--s2);
   color: var(--text);
   cursor: pointer;
   font-size: 12px;
@@ -428,12 +428,12 @@ onUnmounted(() => {
 }
 
 .scope-list-item:hover {
-  background: color-mix(in oklch, var(--accent) 8%, var(--s1));
+  background: color-mix(in oklch, var(--accent) 8%, var(--s2));
   border-color: color-mix(in oklch, var(--accent) 30%, transparent);
 }
 
 .scope-list-item.selected {
-  background: color-mix(in oklch, var(--accent) 15%, var(--s1));
+  background: color-mix(in oklch, var(--accent) 15%, var(--s2));
   border-color: var(--accent);
   font-weight: 500;
 }
