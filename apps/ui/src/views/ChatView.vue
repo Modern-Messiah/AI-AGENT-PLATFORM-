@@ -34,25 +34,54 @@
         v-model:model="model"
         v-model:requireApproval="requireApproval"
         :show-history-toggle="isMobile"
+        :scope="displayScope"
         @toggle-history="mobileHistoryOpen = !mobileHistoryOpen"
+        @open-scope="isScopeModalOpen = true"
       />
-      <div v-if="displayScope.type !== 'global'" class="scope-banner">
-        <div>
-          <strong>{{ displayScope.title }}</strong>
-          <span>{{ displayScope.description }}</span>
+      <div class="scope-banner" :class="`is-${displayScope.type}`">
+        <div class="scope-content">
+          <div class="scope-header">
+            <span :class="['scope-badge', `is-${displayScope.type}`]">
+              <AppIcon :name="displayScope.type === 'document' ? 'docs' : (displayScope.type === 'notebook' ? 'book' : 'globe')" :size="11" />
+              {{ displayScopeBadge }}
+            </span>
+            <strong>{{ displayScope.title }}</strong>
+          </div>
+          <span class="scope-desc">{{ displayScope.description }}</span>
         </div>
         <div class="scope-actions">
-          <RouterLink class="btn btn-ghost btn-sm" :to="displayScope.backPath">
+          <RouterLink v-if="displayScope.backPath" class="btn btn-ghost btn-sm" :to="displayScope.backPath">
             {{ displayScope.backLabel }}
           </RouterLink>
-          <button class="btn btn-ghost btn-sm" type="button" @click="clearScope">
+          <button
+            v-if="displayScope.type !== 'global'"
+            class="btn btn-ghost btn-sm"
+            type="button"
+            :title="t('chat.scopeToGlobalHint')"
+            @click="clearScope"
+          >
             {{ t('chat.regularChat') }}
+          </button>
+          <button
+            class="btn btn-ghost btn-sm scope-change-btn"
+            type="button"
+            @click="isScopeModalOpen = true"
+          >
+            <AppIcon name="filter" :size="12" />
+            {{ t('chat.changeScope') }}
           </button>
         </div>
       </div>
       <ChatMessages @approve="approveHitl" @reject="rejectHitl" @regenerate="handleRegenerate" />
       <ChatInput :model="model" :require-approval="requireApproval" @send="handleSend" />
     </div>
+
+    <ChatScopeModal
+      v-if="isScopeModalOpen"
+      :current-scope="displayScope"
+      @select="handleScopeSelect"
+      @cancel="isScopeModalOpen = false"
+    />
 
     <AppToast v-if="toast" v-bind="toast" @done="toast = null" />
   </div>
@@ -87,12 +116,18 @@ import ChatToolbar from '@/components/chat/ChatToolbar.vue'
 import ChatMessages from '@/components/chat/ChatMessages.vue'
 import ChatInput from '@/components/chat/ChatInput.vue'
 import AppToast from '@/components/AppToast.vue'
+import AppIcon from '@/components/AppIcon.vue'
+import ChatScopeModal from '@/components/chat/ChatScopeModal.vue'
+import { buildDocumentChatRoute } from '@/utils/documents'
+import { buildNotebookChatRoute } from '@/utils/notebooks'
 
 const chat = useChatStore()
 const settings = useSettingsStore()
 const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
+
+const isScopeModalOpen = ref(false)
 
 const model = ref('moonshot/kimi-k2.6')
 const requireApproval = ref(false)
@@ -121,6 +156,29 @@ const displayScope = computed(() => {
   }
   return scope
 })
+
+const displayScopeBadge = computed(() => {
+  if (displayScope.value.type === 'document') return t('chat.documentBadge')
+  if (displayScope.value.type === 'notebook') return t('chat.notebookBadge')
+  return t('chat.scopeGlobalBadge')
+})
+
+async function handleScopeSelect(selected) {
+  isScopeModalOpen.value = false
+  if (selected.type === 'global') {
+    await clearScope()
+    return
+  }
+  if (selected.type === 'document') {
+    const r = buildDocumentChatRoute(selected.documentId, selected.title, settings.locale)
+    await router.replace(r)
+    return
+  }
+  if (selected.type === 'notebook') {
+    const r = buildNotebookChatRoute(selected.notebookId, selected.title, settings.locale)
+    await router.replace(r)
+  }
+}
 
 function setToast(t) { toast.value = t }
 
@@ -378,20 +436,65 @@ async function rejectHitl(workflowId) {
   justify-content: space-between;
   gap: 14px;
   margin: 12px 16px 0;
-  padding: 12px 14px;
+  padding: 10px 14px;
   border: 1px solid color-mix(in oklch, var(--purple) 42%, var(--border));
   border-radius: 14px;
   background: color-mix(in oklch, var(--purple) 9%, var(--s1));
 }
-.scope-banner strong,
-.scope-banner span {
-  display: block;
+.scope-banner.is-global {
+  border-color: color-mix(in oklch, var(--teal, var(--accent)) 30%, var(--border));
+  background: color-mix(in oklch, var(--teal, var(--accent)) 6%, var(--s1));
+}
+.scope-banner.is-document {
+  border-color: color-mix(in oklch, var(--purple) 38%, var(--border));
+  background: color-mix(in oklch, var(--purple) 8%, var(--s1));
+}
+.scope-banner.is-notebook {
+  border-color: color-mix(in oklch, var(--accent) 38%, var(--border));
+  background: color-mix(in oklch, var(--accent) 8%, var(--s1));
+}
+.scope-content {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.scope-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.scope-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1.2;
+}
+.scope-badge.is-global {
+  border: 1px solid color-mix(in oklch, var(--teal, var(--accent)) 35%, transparent);
+  background: color-mix(in oklch, var(--teal, var(--accent)) 12%, transparent);
+  color: var(--teal, var(--accent));
+}
+.scope-badge.is-document {
+  border: 1px solid color-mix(in oklch, var(--purple) 35%, transparent);
+  background: color-mix(in oklch, var(--purple) 12%, transparent);
+  color: var(--purple);
+}
+.scope-badge.is-notebook {
+  border: 1px solid color-mix(in oklch, var(--accent) 35%, transparent);
+  background: color-mix(in oklch, var(--accent) 12%, transparent);
+  color: var(--accent);
 }
 .scope-banner strong {
   color: var(--text);
   font-size: 13px;
 }
-.scope-banner span {
+.scope-desc {
   margin-top: 3px;
   color: var(--muted);
   font-size: 12px;
@@ -399,8 +502,14 @@ async function rejectHitl(workflowId) {
 }
 .scope-actions {
   display: flex;
+  align-items: center;
   flex-shrink: 0;
   gap: 8px;
+}
+.scope-change-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
 }
 .chat-history-resizer {
   position: relative;

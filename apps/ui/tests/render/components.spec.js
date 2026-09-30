@@ -6,6 +6,8 @@ import ConfirmModal from '../../src/components/ConfirmModal.vue'
 import StatusBadge from '../../src/components/StatusBadge.vue'
 import AppIcon from '../../src/components/AppIcon.vue'
 import ChatMessages from '../../src/components/chat/ChatMessages.vue'
+import ChatToolbar from '../../src/components/chat/ChatToolbar.vue'
+import ChatScopeModal from '../../src/components/chat/ChatScopeModal.vue'
 import { translate } from '../../src/i18n/index.js'
 import { useChatStore } from '../../src/stores/chat.js'
 
@@ -107,3 +109,47 @@ test('ChatMessages keeps streaming answers on the plain-text path', async () => 
   expect(wrapper.find('.md-content').exists()).toBe(false)
   expect(wrapper.text()).toContain('частичный **ответ')
 })
+
+
+test('ChatToolbar renders scope pill and emits open-scope', async () => {
+  const wrapper = withSetup(ChatToolbar, {
+    scope: { type: 'global', title: 'По всей базе знаний' },
+  })
+  const pill = wrapper.find('.scope-pill-btn')
+  expect(pill.exists()).toBe(true)
+  expect(pill.text()).toContain('По всей базе знаний')
+  await pill.trigger('click')
+  expect(wrapper.emitted('open-scope')).toHaveLength(1)
+})
+
+
+test('ChatScopeModal renders options and emits select with global scope', async () => {
+  const origFetch = globalThis.fetch
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => [],
+    text: async () => '[]',
+  })
+  try {
+    const wrapper = withSetup(ChatScopeModal, {
+      currentScope: { type: 'global', documentId: null, notebookId: null },
+    })
+    expect(wrapper.text()).toContain('Вся база знаний')
+    expect(wrapper.text()).toContain('По документу')
+    expect(wrapper.text()).toContain('По блокноту')
+
+    const applyBtn = wrapper.find('button.btn-primary')
+    await applyBtn.trigger('click')
+    expect(wrapper.emitted('select')).toHaveLength(1)
+    expect(wrapper.emitted('select')[0][0]).toEqual({
+      type: 'global',
+      documentId: null,
+      notebookId: null,
+      title: '',
+    })
+  } finally {
+    globalThis.fetch = origFetch
+  }
+})
+
