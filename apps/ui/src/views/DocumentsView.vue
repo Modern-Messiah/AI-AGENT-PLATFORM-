@@ -537,7 +537,7 @@ async function loadMoreDocuments() {
     }
 }
 
-watch([() => settings.apiKey, () => settings.locale], loadDocs, {
+watch([() => settings.credentialKey, () => settings.locale], loadDocs, {
     immediate: true,
 });
 

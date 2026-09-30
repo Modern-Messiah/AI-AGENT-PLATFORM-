@@ -118,6 +118,7 @@ export const useSettingsStore = defineStore('settings', () => {
   // cabinet gates on this flag, not just the legacy API-key path.
   const _session = useSessionStore()
   const isConnected  = computed(() => !!apiKey.value || _session.isAuthenticated)
+  const credentialKey = computed(() => _session.token || apiKey.value || '')
   const hasAdminSecret = computed(() => !!adminSecret.value)
   const isAdminInvalid = computed(() => adminStatus.value === 'invalid')
   const isKeyInvalid = computed(() => keyStatus.value === 'invalid')
@@ -145,6 +146,7 @@ export const useSettingsStore = defineStore('settings', () => {
     keyMasked,
     adminMasked,
     isConnected,
+    credentialKey,
     hasAdminSecret,
     isAdminInvalid,
     isKeyInvalid,

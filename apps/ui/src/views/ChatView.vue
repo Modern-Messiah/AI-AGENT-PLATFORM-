@@ -313,7 +313,7 @@ onBeforeUnmount(() => {
   }
 })
 
-watch(() => settings.apiKey, async (key) => {
+watch(() => settings.credentialKey, async (key) => {
   if (!key) { chat.reset(); return }
   if (chat.loadedKey === key && (chat.sessions.length || chat.activeId)) return
   try { await chat.loadSessions(key) } catch {}

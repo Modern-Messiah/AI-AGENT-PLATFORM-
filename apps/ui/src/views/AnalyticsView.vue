@@ -207,7 +207,7 @@ async function load() {
   }
 }
 
-watch([days, () => settings.apiKey], load, { immediate: true })
+watch([days, () => settings.credentialKey], load, { immediate: true })
 
 const fmtTokens = formatTokens
 const fmtCost = formatCost

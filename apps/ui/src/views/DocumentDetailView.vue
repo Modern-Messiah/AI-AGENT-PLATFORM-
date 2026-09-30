@@ -243,7 +243,7 @@ const targetChunkId = computed(() => (
   typeof route.query.chunk === 'string' ? route.query.chunk : ''
 ))
 
-watch([() => settings.apiKey, documentId], () => loadDocument(), { immediate: true })
+watch([() => settings.credentialKey, documentId], () => loadDocument(), { immediate: true })
 watch(targetChunkId, () => scrollToTargetChunk())
 onBeforeUnmount(clearDocumentRefresh)
 

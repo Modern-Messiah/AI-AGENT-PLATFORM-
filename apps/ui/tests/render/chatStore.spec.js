@@ -280,3 +280,33 @@ test('manages fresh draft session IDs and locks scope on message or explicit loc
   }
 })
 
+
+test('loadSessions restores previously active session from localStorage', async () => {
+  const { store, restore } = withStore(defaultHandler({
+    'GET /api/sessions': () => jsonResponse([
+      { id: 's1', title: 'Chat 1' },
+      { id: 's2', title: 'Chat 2' },
+    ]),
+    'GET /api/sessions/s1/messages': () => jsonResponse([{ id: 'm1', role: 'user', content: 'hello s1', created_at: ISO }]),
+    'GET /api/sessions/s2/messages': () => jsonResponse([{ id: 'm2', role: 'user', content: 'hello s2', created_at: ISO }]),
+  }))
+  try {
+    // 1. Initial load selects first session
+    await store.loadSessions()
+    assert.equal(store.activeId, 's1')
+
+    // 2. Select session s2 — updates activeId and localStorage
+    await store.selectSession('s2')
+    assert.equal(store.activeId, 's2')
+    assert.equal(globalThis.sessionStorage?.getItem('aap_active_session_id'), 's2')
+
+    // 3. Simulating page refresh: loadSessions restores s2 instead of resetting to s1
+    await store.loadSessions()
+    assert.equal(store.activeId, 's2')
+    assert.equal(store.messages.some(m => m.text === 'hello s2'), true)
+  } finally {
+    restore()
+  }
+})
+
+

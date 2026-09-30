@@ -267,7 +267,7 @@ const addButtonLabel = computed(() => (
 ))
 const suggestedQuestions = computed(() => notebookOverviewQuestions(normalized.value))
 
-watch([() => settings.apiKey, () => settings.locale, notebookId], loadNotebook, { immediate: true })
+watch([() => settings.credentialKey, () => settings.locale, notebookId], loadNotebook, { immediate: true })
 
 async function loadNotebook() {
   if (!settings.isConnected || !notebookId.value) {

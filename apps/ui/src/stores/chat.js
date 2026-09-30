@@ -5,6 +5,21 @@ import { useSettingsStore } from '@/stores/settings'
 import { formatLocaleTime, translate } from '@/i18n'
 
 const LS_HITL_KEY = 'chatPendingHitl'
+const ACTIVE_SESSION_STORAGE_KEY = 'aap_active_session_id'
+
+function _chatStorage() {
+  try {
+    if (typeof sessionStorage !== 'undefined' && sessionStorage?.getItem) {
+      return sessionStorage
+    }
+  } catch {}
+  try {
+    if (typeof localStorage !== 'undefined' && localStorage?.getItem) {
+      return localStorage
+    }
+  } catch {}
+  return null
+}
 
 export const useChatStore = defineStore('chat', () => {
   const settings = useSettingsStore()
@@ -78,6 +93,7 @@ export const useChatStore = defineStore('chat', () => {
     sessLoading.value = false
     loadedKey.value = null
     freshDraftIds.value = new Set()
+    _chatStorage()?.removeItem(ACTIVE_SESSION_STORAGE_KEY)
   }
 
   function _startLoading(sessId) {
@@ -117,8 +133,20 @@ export const useChatStore = defineStore('chat', () => {
     sessLoading.value = true
     try {
       const data = await apiFetch('/sessions')
-      sessions.value = data
-      if (data.length > 0) await selectSession(data[0].id)
+      sessions.value = data || []
+      if (sessions.value.length > 0) {
+        const storedId = _chatStorage()?.getItem(ACTIVE_SESSION_STORAGE_KEY)
+        const target = (storedId && sessions.value.find(s => s.id === storedId)) || sessions.value[0]
+        await selectSession(target.id)
+      } else {
+        activeId.value = null
+        messages.value = [{ id: 'w', role: 'agent', text: welcome(), time: '—', sources: [] }]
+      }
+    } catch (e) {
+      sessions.value = []
+      activeId.value = null
+      messages.value = [{ id: 'w', role: 'agent', text: welcome(), time: '—', sources: [] }]
+      throw e
     } finally {
       sessLoading.value = false
       loadedKey.value = apiKey
@@ -128,6 +156,7 @@ export const useChatStore = defineStore('chat', () => {
   async function selectSession(id) {
     const { apiFetch } = useApi()
     activeId.value = id
+    _chatStorage()?.setItem(ACTIVE_SESSION_STORAGE_KEY, id)
     messages.value = []
     sessLoading.value = true
     try {
@@ -171,6 +200,7 @@ export const useChatStore = defineStore('chat', () => {
     })
     sessions.value = [sess, ...sessions.value]
     activeId.value = sess.id
+    _chatStorage()?.setItem(ACTIVE_SESSION_STORAGE_KEY, sess.id)
     messages.value = [{ id: 'w', role: 'agent', text: welcomeText, time: nowTime(), sources: [] }]
     if (!options.documentId && !options.notebookId) {
       freshDraftIds.value = new Set([...freshDraftIds.value, sess.id])
@@ -195,8 +225,13 @@ export const useChatStore = defineStore('chat', () => {
       _savePendingHitl()
     }
     if (activeId.value === id) {
-      if (remaining.length > 0) await selectSession(remaining[0].id)
-      else { activeId.value = null; messages.value = [] }
+      if (remaining.length > 0) {
+        await selectSession(remaining[0].id)
+      } else {
+        activeId.value = null
+        messages.value = [{ id: 'w', role: 'agent', text: welcome(), time: '—', sources: [] }]
+        _chatStorage()?.removeItem(ACTIVE_SESSION_STORAGE_KEY)
+      }
     }
   }
 
@@ -225,6 +260,7 @@ export const useChatStore = defineStore('chat', () => {
       sessId = sess.id
       sessions.value = [sess, ...sessions.value]
       activeId.value = sessId
+      _chatStorage()?.setItem(ACTIVE_SESSION_STORAGE_KEY, sessId)
     }
 
     lockSessionScope(sessId)
