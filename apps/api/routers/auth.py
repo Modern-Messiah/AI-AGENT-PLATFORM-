@@ -132,9 +132,7 @@ async def create_user(
     except IntegrityError:
         # Race past the SELECT: the unique (tenant_id, name) index decides —
         # the loser gets 409, not 500.
-        raise HTTPException(
-            status_code=409, detail="user name already exists in tenant"
-        ) from None
+        raise HTTPException(status_code=409, detail="user name already exists in tenant") from None
 
     return UserInfo(
         id=str(row.id),

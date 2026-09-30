@@ -28,10 +28,10 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import Header, HTTPException
+from fastapi import Cookie, Header, HTTPException
 from sqlalchemy import select, update
 
-from packages.auth.jwt_sessions import verify_session_token
+from packages.auth.jwt_sessions import SESSION_COOKIE_NAME, verify_session_token
 from packages.auth.session_revocation import is_user_denied
 from packages.core import settings
 from packages.storage.db import async_session
@@ -137,15 +137,20 @@ def _negative_cached(key_hash: str, now: float) -> bool:
 async def require_actor(
     x_api_key: str | None = Header(None, alias="X-API-Key"),
     authorization: str | None = Header(None, alias="Authorization"),
+    session_cookie: str | None = Cookie(None, alias=SESSION_COOKIE_NAME),
 ) -> Actor:
     """FastAPI dependency — resolves the acting principal.
 
-    Authorization: Bearer takes precedence (Google-login session); otherwise
+    Authorization: Bearer takes precedence (Google-login session), then the
+    optional httpOnly session cookie (AUTH_SESSION_COOKIE_ENABLED); otherwise
     the X-API-Key path runs.
     """
     bearer = _bearer_token(authorization)
-    if bearer is not None:
-        actor = actor_from_claims(verify_session_token(bearer))
+    # Direct (non-FastAPI) calls pass the raw Cookie default, not a string.
+    cookie = session_cookie if isinstance(session_cookie, str) and session_cookie else None
+    token = bearer or cookie
+    if token is not None:
+        actor = actor_from_claims(verify_session_token(token))
         if await is_user_denied(actor.user_id):
             raise HTTPException(status_code=401, detail="session revoked")
         return actor

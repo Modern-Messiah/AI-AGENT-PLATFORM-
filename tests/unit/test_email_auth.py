@@ -11,7 +11,7 @@ import uuid
 import pytest
 from apps.api.routers import login as login_router
 from apps.api.schemas import EmailLoginRequest, RegisterRequest
-from fastapi import HTTPException
+from fastapi import HTTPException, Response
 from packages.auth.passwords import hash_password, verify_password
 from packages.core import settings
 from packages.storage import User
@@ -79,7 +79,7 @@ def users(monkeypatch: pytest.MonkeyPatch) -> dict[str, User]:
 
 async def test_register_creates_member_and_issues_session(users) -> None:
     response = await login_router.register(
-        RegisterRequest(email=MEMBER_EMAIL, password="long-enough-pass", name="Bob")
+        RegisterRequest(email=MEMBER_EMAIL, password="long-enough-pass", name="Bob"), Response()
     )
 
     user = users[MEMBER_EMAIL]
@@ -94,7 +94,7 @@ async def test_register_creates_member_and_issues_session(users) -> None:
 
 async def test_register_admin_email_gets_admin_role(users) -> None:
     response = await login_router.register(
-        RegisterRequest(email=ADMIN_EMAIL, password="long-enough-pass", name="Root")
+        RegisterRequest(email=ADMIN_EMAIL, password="long-enough-pass", name="Root"), Response()
     )
     assert response.role == "admin"
     assert response.is_admin is True
@@ -103,16 +103,18 @@ async def test_register_admin_email_gets_admin_role(users) -> None:
 async def test_register_rejects_emails_outside_allowlist(users) -> None:
     with pytest.raises(HTTPException) as exc_info:
         await login_router.register(
-            RegisterRequest(email="stranger@example.com", password="long-enough-pass")
+            RegisterRequest(email="stranger@example.com", password="long-enough-pass"), Response()
         )
     assert exc_info.value.status_code == 403
 
 
 async def test_register_rejects_duplicate_email(users) -> None:
-    await login_router.register(RegisterRequest(email=MEMBER_EMAIL, password="long-enough-pass"))
+    await login_router.register(
+        RegisterRequest(email=MEMBER_EMAIL, password="long-enough-pass"), Response()
+    )
     with pytest.raises(HTTPException) as exc_info:
         await login_router.register(
-            RegisterRequest(email=MEMBER_EMAIL, password="another-long-pass")
+            RegisterRequest(email=MEMBER_EMAIL, password="another-long-pass"), Response()
         )
     assert exc_info.value.status_code == 409
 
@@ -142,7 +144,7 @@ async def test_register_race_on_unique_email_returns_409(
     monkeypatch.setattr(login_router, "async_session", lambda: _RaceSession({}))
     with pytest.raises(HTTPException) as exc_info:
         await login_router.register(
-            RegisterRequest(email=MEMBER_EMAIL, password="long-enough-pass", name="Bob")
+            RegisterRequest(email=MEMBER_EMAIL, password="long-enough-pass", name="Bob"), Response()
         )
     assert exc_info.value.status_code == 409
     assert exc_info.value.detail == "email is already registered"
@@ -157,7 +159,7 @@ async def test_register_closed_without_allowlist_rejects(
     monkeypatch.setattr(settings, "admin_emails", [])
     with pytest.raises(HTTPException) as exc_info:
         await login_router.register(
-            RegisterRequest(email=MEMBER_EMAIL, password="long-enough-pass")
+            RegisterRequest(email=MEMBER_EMAIL, password="long-enough-pass"), Response()
         )
     assert exc_info.value.status_code == 403
 
@@ -166,10 +168,12 @@ async def test_register_closed_without_allowlist_rejects(
 
 
 async def test_login_with_correct_password(users) -> None:
-    await login_router.register(RegisterRequest(email=MEMBER_EMAIL, password="long-enough-pass"))
+    await login_router.register(
+        RegisterRequest(email=MEMBER_EMAIL, password="long-enough-pass"), Response()
+    )
 
     response = await login_router.login(
-        EmailLoginRequest(email=MEMBER_EMAIL, password="long-enough-pass")
+        EmailLoginRequest(email=MEMBER_EMAIL, password="long-enough-pass"), Response()
     )
 
     assert response.email == MEMBER_EMAIL
@@ -178,17 +182,21 @@ async def test_login_with_correct_password(users) -> None:
 
 
 async def test_login_wrong_password_is_uniform_401(users) -> None:
-    await login_router.register(RegisterRequest(email=MEMBER_EMAIL, password="long-enough-pass"))
+    await login_router.register(
+        RegisterRequest(email=MEMBER_EMAIL, password="long-enough-pass"), Response()
+    )
 
     wrong = pytest.raises(HTTPException)
     with wrong as exc_info:
-        await login_router.login(EmailLoginRequest(email=MEMBER_EMAIL, password="wrong-password"))
+        await login_router.login(
+            EmailLoginRequest(email=MEMBER_EMAIL, password="wrong-password"), Response()
+        )
     assert exc_info.value.status_code == 401
 
     # unknown email answers identically (no account enumeration)
     with pytest.raises(HTTPException) as unknown:
         await login_router.login(
-            EmailLoginRequest(email="nobody@example.com", password="whatever-pass")
+            EmailLoginRequest(email="nobody@example.com", password="whatever-pass"), Response()
         )
     assert unknown.value.status_code == 401
     assert unknown.value.detail == exc_info.value.detail
@@ -206,7 +214,7 @@ async def test_login_promotes_admin_email_role(users) -> None:
     users[ADMIN_EMAIL] = user
 
     response = await login_router.login(
-        EmailLoginRequest(email=ADMIN_EMAIL, password="long-enough-pass")
+        EmailLoginRequest(email=ADMIN_EMAIL, password="long-enough-pass"), Response()
     )
     assert response.role == "admin"
 
@@ -228,7 +236,7 @@ def test_password_hashing_roundtrip_and_uniqueness() -> None:
 async def test_open_registration_allows_any_email(users, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "open_registration", True)
     response = await login_router.register(
-        RegisterRequest(email="random.person@gmail.com", password="long-enough-pass")
+        RegisterRequest(email="random.person@gmail.com", password="long-enough-pass"), Response()
     )
     assert response.email == "random.person@gmail.com"
     assert response.role == "member"
@@ -248,7 +256,65 @@ async def test_login_never_demotes_admin_granted_role(users) -> None:
     users[MEMBER_EMAIL] = user
 
     response = await login_router.login(
-        EmailLoginRequest(email=MEMBER_EMAIL, password="long-enough-pass")
+        EmailLoginRequest(email=MEMBER_EMAIL, password="long-enough-pass"), Response()
     )
     assert response.role == "admin"
     assert response.is_admin is True
+
+
+async def test_register_sets_httponly_session_cookie_when_enabled(
+    users, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "auth_session_cookie_enabled", True)
+    response = Response()
+
+    await login_router.register(
+        RegisterRequest(email=MEMBER_EMAIL, password="long-enough-pass", name="Bob"), response
+    )
+
+    cookie = response.headers.get("set-cookie", "")
+    assert cookie.startswith("aap_session=")
+    assert "HttpOnly" in cookie
+    assert "SameSite=strict" in cookie
+    assert "Path=/" in cookie
+
+
+async def test_register_sets_no_cookie_when_option_disabled(users) -> None:
+    response = Response()
+
+    await login_router.register(
+        RegisterRequest(email=MEMBER_EMAIL, password="long-enough-pass", name="Bob"), response
+    )
+
+    assert response.headers.get("set-cookie") is None
+
+
+async def test_logout_clears_session_cookie() -> None:
+    response = Response()
+
+    await login_router.logout(response)
+
+    assert 'aap_session=""' in response.headers.get("set-cookie", "")
+    assert "Max-Age=0" in response.headers.get("set-cookie", "")
+
+
+async def test_require_actor_accepts_session_cookie(monkeypatch: pytest.MonkeyPatch) -> None:
+    from packages.auth import api_keys
+
+    def fake_verify(token: str) -> dict:
+        assert token == "cookie-token"
+        sub = str(uuid.uuid4())
+        return {"type": "session", "tid": "main", "sub": sub, "name": "A", "role": "member"}
+
+    async def fake_denied(user_id: object) -> bool:
+        return False
+
+    monkeypatch.setattr(api_keys, "verify_session_token", fake_verify)
+    monkeypatch.setattr(api_keys, "is_user_denied", fake_denied)
+
+    actor = await api_keys.require_actor(
+        x_api_key=None, authorization=None, session_cookie="cookie-token"
+    )
+
+    assert actor.tenant_id == "main"
+    assert actor.role == "member"

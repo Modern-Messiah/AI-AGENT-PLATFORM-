@@ -4,6 +4,20 @@ import assert from 'node:assert/strict'
 import { resolveApiConfig } from '../src/utils/apiConfig.js'
 
 
+test('uses runtime-injected key before env and localStorage keys', () => {
+  const config = resolveApiConfig({
+    stored: { apiKey: 'stored-key', base: '/stored-api' },
+    env: { VITE_API_KEY: 'env-key', VITE_API_BASE_URL: '/env-api' },
+    runtime: { apiKey: 'runtime-key', baseUrl: '/runtime-api' },
+  })
+
+  assert.equal(config.apiKey, 'runtime-key')
+  assert.equal(config.baseUrl, '/runtime-api')
+  assert.equal(config.keySource, 'env')
+  assert.equal(config.isKeyManagedByEnv, true)
+})
+
+
 test('uses env API key before localStorage key', () => {
   const config = resolveApiConfig({
     stored: { apiKey: 'stored-key', base: '/stored-api' },
@@ -25,6 +39,20 @@ test('falls back to localStorage key when env key is missing', () => {
 
   assert.equal(config.apiKey, 'stored-key')
   assert.equal(config.baseUrl, '/stored-api')
+  assert.equal(config.keySource, 'localStorage')
+  assert.equal(config.isKeyManagedByEnv, false)
+})
+
+
+test('empty runtime config (plain vite dev) leaves the stored key in charge', () => {
+  const config = resolveApiConfig({
+    stored: { apiKey: 'stored-key' },
+    env: {},
+    runtime: { apiKey: '', baseUrl: '' },
+  })
+
+  assert.equal(config.apiKey, 'stored-key')
+  assert.equal(config.baseUrl, '/api')
   assert.equal(config.keySource, 'localStorage')
   assert.equal(config.isKeyManagedByEnv, false)
 })
