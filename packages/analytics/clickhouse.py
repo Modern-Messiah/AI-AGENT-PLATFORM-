@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import threading
 from urllib.parse import urlparse
 
@@ -46,3 +47,30 @@ class ClickHouseClient:
 
 
 ch_client = ClickHouseClient()
+
+
+_schema_checked = False
+
+
+async def ensure_usage_schema() -> None:
+    """Idempotent column additions for analytics.llm_usage_events.
+
+    init.sql only runs on the first ClickHouse boot; for existing stacks the
+    per-user analytics columns are added here, once per process.
+    """
+    global _schema_checked
+    if _schema_checked:
+        return
+    _schema_checked = True
+    try:
+        client = ch_client._client
+        await asyncio.to_thread(
+            client.command,
+            "ALTER TABLE analytics.llm_usage_events "
+            "ADD COLUMN IF NOT EXISTS user_id String DEFAULT ''",
+        )
+    except Exception:
+        log.warning("usage schema ensure failed — per-user analytics may lack attribution")
+
+
+log = logging.getLogger(__name__)

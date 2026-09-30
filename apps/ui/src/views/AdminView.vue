@@ -551,6 +551,39 @@
           <div class="trend-card-wrap"><TrendChart :days="usageTrend" /></div>
         </div>
 
+        <div v-if="userUsage" class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">{{ t('admin.byUserTitle') }}</div>
+              <div class="card-sub">{{ t('admin.byUserSub') }}</div>
+            </div>
+            <span class="badge badge-muted">{{ userUsage.length }}</span>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>{{ t('admin.user') }}</th>
+                <th>{{ t('login.email') }}</th>
+                <th>{{ t('analytics.callCount') }}</th>
+                <th>{{ t('analytics.tokens') }}</th>
+                <th>{{ t('admin.averageLatency') }}</th>
+                <th>{{ t('admin.cost') }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in userUsage" :key="row.user_id || 'unbound'">
+                <td class="file-name">{{ row.user_name || t('admin.unboundKey') }}</td>
+                <td class="td-mono">{{ row.email || '—' }}</td>
+                <td class="td-mono">{{ row.calls }}</td>
+                <td class="td-mono">{{ fmtTokens(row.total_tokens) }}</td>
+                <td class="td-mono">{{ fmtMs(row.avg_latency_ms) }}</td>
+                <td class="td-mono">{{ fmtCost(row.cost_usd) }}</td>
+              </tr>
+              <tr v-if="!userUsage.length"><td colspan="6" class="td-mono">—</td></tr>
+            </tbody>
+          </table>
+        </div>
+
         <div v-if="usage" class="usage-grid">
           <div class="card">
             <div class="card-header"><div class="card-title">{{ t('admin.byTenant') }}</div></div>
@@ -718,6 +751,7 @@ const tenants = ref([])
 const users = ref(null)
 const docs = ref(null)
 const usage = ref(null)
+const userUsage = ref(null)
 const health = ref(null)
 const detail = ref(null)
 
@@ -889,6 +923,9 @@ function loadDocuments() {
 function loadUsage() {
   return _call(`/admin/usage?days=${usageDays.value}`, (data) => { usage.value = data })
 }
+function loadUserUsage() {
+  return _call(`/admin/analytics/users?days=${usageDays.value}`, (data) => { userUsage.value = data })
+}
 function loadHealth() {
   return _call('/admin/health', (data) => { health.value = data })
 }
@@ -900,7 +937,7 @@ function load() {
   else if (activeTab.value === 'users') loadUsers()
   else if (activeTab.value === 'llm') loadLlmKeys()
   else if (activeTab.value === 'documents') loadDocuments()
-  else if (activeTab.value === 'usage') loadUsage()
+  else if (activeTab.value === 'usage') { loadUsage(); loadUserUsage() }
   else if (activeTab.value === 'health') loadHealth()
 }
 
@@ -911,7 +948,7 @@ function refresh() {
   else if (activeTab.value === 'users') users.value = null
   else if (activeTab.value === 'llm') llmKeys.value = null
   else if (activeTab.value === 'documents') docs.value = null
-  else if (activeTab.value === 'usage') usage.value = null
+  else if (activeTab.value === 'usage') { usage.value = null; userUsage.value = null }
   else if (activeTab.value === 'health') health.value = null
   load()
 }
@@ -921,10 +958,10 @@ function openPrompt(id) {
 }
 
 watch(activeTab, load, { immediate: true })
-watch(usageDays, loadUsage)
+watch(usageDays, () => { loadUsage(); loadUserUsage() })
 watch(() => settings.adminSecret, () => {
   overview.value = null; tenants.value = []; users.value = null; llmKeys.value = null
-  prompts.value = null; docs.value = null; usage.value = null; health.value = null
+  prompts.value = null; docs.value = null; usage.value = null; userUsage.value = null; health.value = null
   load()
 })
 

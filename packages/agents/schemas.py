@@ -5,6 +5,7 @@ from packages.rag.citations import CitationSource
 
 class AgentRunInput(BaseModel):
     tenant_id: str = Field(default="", description="Overridden from API key — do not set manually")
+    user_id: str = Field(default="", description="Owner attribution for analytics")
     user_query: str
     model: str | None = None
     require_approval: bool = Field(

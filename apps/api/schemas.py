@@ -464,3 +464,15 @@ class CreateLlmKeyRequest(BaseModel):
 
 class AdminPasswordResetRequest(BaseModel):
     new_password: str = Field(min_length=8, max_length=256)
+
+
+class AdminUserUsage(BaseModel):
+    """One user's share of the LLM spend (admin analytics)."""
+
+    user_id: str | None = None
+    user_name: str | None = None
+    email: str | None = None
+    cost_usd: float
+    total_tokens: int
+    calls: int
+    avg_latency_ms: int

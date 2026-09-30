@@ -51,6 +51,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from packages.analytics.clickhouse import ensure_usage_schema
 from packages.auth import revocation_listener
 from packages.core import settings
 from packages.llm.keyring import keyring_refresh_loop, refresh_from_db
@@ -156,6 +157,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.temporal = await Client.connect(
         settings.temporal_address, namespace=settings.temporal_namespace
     )
+    await ensure_usage_schema()
     await refresh_from_db()
     revocation_task = asyncio.create_task(revocation_listener())
     retention_task = asyncio.create_task(retention_loop())

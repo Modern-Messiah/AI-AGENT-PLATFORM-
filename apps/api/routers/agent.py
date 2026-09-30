@@ -86,7 +86,12 @@ async def run_agent(
         )
         return AgentRunApiResponse(answer=answer, confidence=1.0)
 
-    payload = payload.model_copy(update={"tenant_id": tenant_id})
+    payload = payload.model_copy(
+        update={
+            "tenant_id": tenant_id,
+            "user_id": str(actor.user_id) if actor.user_id else "",
+        }
+    )
     client: Client = request.app.state.temporal
     workflow_id = f"agent-run-{tenant_id}-{uuid.uuid4()}"
 
@@ -473,6 +478,7 @@ async def agent_stream(body: AgentStreamRequest, actor: ActorDep) -> StreamingRe
                 await record_usage(
                     UsageEvent(
                         tenant_id=tenant_id,
+                        user_id=str(actor.user_id) if actor.user_id else "",
                         workflow_id=f"stream-{uuid.uuid4().hex[:12]}",
                         run_id=f"stream-{uuid.uuid4().hex[:12]}",
                         model=model_name,
@@ -525,6 +531,7 @@ async def run_research(
     payload = payload.model_copy(
         update={
             "tenant_id": tenant_id,
+            "user_id": str(actor.user_id) if actor.user_id else "",
             "main_query": main_query,
             "sub_queries": sub_queries,
         }

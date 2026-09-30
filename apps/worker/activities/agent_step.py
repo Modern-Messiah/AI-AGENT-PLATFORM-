@@ -31,6 +31,7 @@ async def run_agent_step(payload: AgentRunInput) -> AgentRunOutput:
         await record_usage(
             UsageEvent(
                 tenant_id=payload.tenant_id,
+                user_id=getattr(payload, "user_id", "") or "",
                 workflow_id=info.workflow_id or "",
                 run_id=info.workflow_run_id or "",
                 model=payload.model or settings.strong_model,
@@ -69,6 +70,7 @@ async def run_agent_step(payload: AgentRunInput) -> AgentRunOutput:
     await record_usage(
         UsageEvent(
             tenant_id=payload.tenant_id,
+            user_id=getattr(payload, "user_id", "") or "",
             workflow_id=info.workflow_id or "",
             run_id=info.workflow_run_id or "",
             model=resolved_model,
