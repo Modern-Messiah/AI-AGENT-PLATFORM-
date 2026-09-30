@@ -315,7 +315,7 @@ function isTargetAsset(asset) {
 
 function scrollToTargetAsset() {
   if (!route.query.asset) return
-  const el = document.getElementById(assetDomId({ id: route.query.asset }))
+  const el = globalThis.document?.getElementById(assetDomId({ id: route.query.asset }))
   if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
 }
 

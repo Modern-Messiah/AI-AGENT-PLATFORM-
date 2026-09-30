@@ -70,6 +70,9 @@ class Settings(BaseSettings):
     # Interactive agent guardrails.
     agent_query_max_chars: int = 12_000
     agent_rate_limit_per_minute: int = 20
+    # URL-source ingestion (external fetches) per hour per tenant; each
+    # /documents/url* call drives full outbound HTTP fetches. 0 disables.
+    url_ingest_rate_per_hour: int = 20
     # Fail-open preserves chat availability when Redis is down (default).
     # Set true to reject agent requests instead (503) when the limiter
     # cannot be consulted.
@@ -164,7 +167,9 @@ class Settings(BaseSettings):
     # Accepts JSON array  (HTTP_FETCH_ALLOWED_DOMAINS='["docs.python.org"]')
     # or comma-separated  (HTTP_FETCH_ALLOWED_DOMAINS=docs.python.org,api.github.com).
     # When non-empty ONLY these domains are reachable — fully prevents SSRF including DNS rebinding.
-    # When empty the tool falls back to an IP-based blocklist (still vulnerable to DNS rebinding).
+    # When empty the URL-source fetcher falls back to an IP-based blocklist and pins the
+    # connection to the validated address (resolve_fetch_target), so rebinding names
+    # cannot reconnect to a private IP after passing validation.
     http_fetch_allowed_domains: Annotated[list[str], NoDecode] = []
 
     # CORS allowed origins for the API.

@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import logging
-import time
-import uuid
 from typing import Any
 
 from fastapi import HTTPException
 from packages.cache.redis import get_redis
 from packages.core import settings
+
+from apps.api.services.rate_limit import check_sliding_window_limit
 
 log = logging.getLogger(__name__)
 
@@ -31,33 +31,13 @@ async def check_agent_rate_limit(
     limit: int,
     now_ms: int | None = None,
 ) -> None:
-    window_ms = 60_000
-    now_ms = now_ms if now_ms is not None else int(time.time() * 1000)
-    key = f"rl:{tenant_id}:agent"
-    member = f"{now_ms}:{uuid.uuid4().hex}"
-    window_start = now_ms - window_ms
-
-    pipe = redis.pipeline(transaction=True)
-    pipe.zremrangebyscore(key, 0, window_start)
-    pipe.zadd(key, {member: now_ms})
-    pipe.zcard(key)
-    pipe.expire(key, 120)
-    _removed, _added, count, _expired = await pipe.execute()
-
-    if count <= limit:
-        return
-
-    await redis.zrem(key, member)
-    oldest = await redis.zrange(key, 0, 0, withscores=True)
-    oldest_score = float(oldest[0][1]) if oldest else float(now_ms)
-    retry_after = max(
-        1,
-        min(60, int((oldest_score + window_ms - now_ms + 999) // 1000)),
-    )
-    raise HTTPException(
-        status_code=429,
-        detail=f"rate limit exceeded: {limit} agent requests per minute",
-        headers={"Retry-After": str(retry_after)},
+    await check_sliding_window_limit(
+        redis,
+        f"rl:{tenant_id}:agent",
+        limit=limit,
+        window_ms=60_000,
+        label="agent requests per minute",
+        now_ms=now_ms,
     )
 
 

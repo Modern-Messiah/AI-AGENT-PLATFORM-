@@ -40,9 +40,10 @@ worker: ## Run Temporal worker
 test: ## Run tests
 	uv run pytest
 
-lint: ## Lint code
+lint: ## Lint code (same gates as CI; tests are not mypy-typed)
 	uv run ruff check .
-	uv run mypy .
+	uv run ruff format --check .
+	uv run mypy packages apps
 
 format: ## Format code
 	uv run ruff format .

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 
 from fastapi import APIRouter, HTTPException, Request
 from packages.agents import AgentRunOutput
@@ -12,6 +13,7 @@ from apps.api.deps import TenantID
 from apps.api.schemas import AgentRunApiResponse, WorkflowSignalResponse
 from apps.worker.workflows.agent_run import AgentRunWorkflow
 
+log = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -36,7 +38,10 @@ async def get_workflow_result(
     except TimeoutError:
         return AgentRunApiResponse(workflow_id=workflow_id, pending_approval=True)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        # Temporal errors carry gRPC addresses and workflow internals — log
+        # the details, return a generic message to the client.
+        log.exception("workflow result fetch failed | workflow=%s", workflow_id)
+        raise HTTPException(status_code=500, detail="workflow result unavailable") from e
 
 
 @router.post("/workflows/{workflow_id}/approve", response_model=WorkflowSignalResponse)

@@ -10,9 +10,12 @@ import posixpath
 import re
 import socket
 import zipfile
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
 from pathlib import PurePosixPath
+from typing import NamedTuple
 from urllib.parse import unquote, urljoin, urlparse, urlunparse
 
 import httpx
@@ -574,6 +577,105 @@ async def validate_fetch_url(url: str) -> str:
     return normalized
 
 
+class FetchTarget(NamedTuple):
+    """A validated fetch URL plus the resolved IP to pin the connection to.
+
+    pin_ip is None when pinning does not apply: allowlisted domains (trusted
+    by configuration) and IP-literal hosts (connecting to the validated
+    address directly). For DNS-resolved hosts in local mode the connection
+    MUST use pin_ip — see resolve_fetch_target.
+    """
+
+    url: str
+    pin_ip: str | None
+
+
+async def resolve_fetch_target(url: str) -> FetchTarget:
+    """Validate a URL and resolve the exact address the request must use.
+
+    Closes the DNS-rebinding TOCTOU: validate_fetch_url checks IPs via
+    getaddrinfo, but an unpinned httpx request resolves the host again at
+    connect time — a rebinding name passes validation with a public IP and
+    then connects to a private one. Here the pin comes from a resolution
+    that re-checks every address, and validated_stream() connects to it
+    while keeping the hostname for Host/SNI/certificate validation.
+    """
+    normalized = await validate_fetch_url(url)
+    parsed = urlparse(normalized)
+    host = parsed.hostname or ""
+
+    try:
+        ipaddress.ip_address(host)
+        return FetchTarget(url=normalized, pin_ip=None)  # IP literal: already validated
+    except ValueError:
+        pass
+
+    if settings.http_fetch_allowed_domains:
+        return FetchTarget(url=normalized, pin_ip=None)  # trusted by allowlist
+
+    loop = asyncio.get_running_loop()
+    try:
+        infos = await loop.run_in_executor(None, socket.getaddrinfo, host, None)
+    except OSError as exc:
+        raise UrlSourceError(f"DNS resolution failed: {exc}") from exc
+
+    addresses = [sockaddr[0] for (_, _, _, _, sockaddr) in infos if isinstance(sockaddr[0], str)]
+    for ip in addresses:
+        if _is_blocked_ip(ip):
+            raise UrlSourceError(
+                "requests to private or internal network addresses are not allowed"
+            )
+    if not addresses:
+        raise UrlSourceError(f"DNS resolution returned no addresses for {host}")
+
+    # Prefer IPv4 (single-family pin keeps Host/SNI handling simple); fall
+    # back to whatever the resolver offered.
+    pin = next((ip for ip in addresses if ":" not in ip), addresses[0])
+    return FetchTarget(url=normalized, pin_ip=pin)
+
+
+def _pin_url_parts(url: str, ip: str) -> tuple[str, str, str]:
+    """Rewrite the URL to connect to `ip`: (pinned_url, host_header, sni_host).
+
+    The hostname moves into the Host header and the sni_hostname extension,
+    so virtual hosting still routes and TLS validates the certificate
+    against the real name while the socket connects to the pinned address.
+    """
+    parsed = urlparse(url)
+    host = parsed.hostname
+    port = parsed.port
+    if host is None:
+        raise UrlSourceError("URL host is required")
+    bracketed = f"[{ip}]" if ":" in ip else ip
+    default_port = {"https": 443, "http": 80}.get(parsed.scheme)
+    if port is None or port == default_port:
+        return urlunparse(parsed._replace(netloc=bracketed)), host, host
+    netloc = f"{bracketed}:{port}"
+    return urlunparse(parsed._replace(netloc=netloc)), f"{host}:{port}", host
+
+
+@asynccontextmanager
+async def validated_stream(client: httpx.AsyncClient, url: str) -> AsyncIterator[httpx.Response]:
+    """Open a GET stream to a validated URL, pinning DNS-resolved hosts.
+
+    The connection uses exactly the address that passed SSRF validation —
+    the request cannot re-resolve to a different (possibly private) IP.
+    """
+    target = await resolve_fetch_target(url)
+    if target.pin_ip is None:
+        async with client.stream("GET", target.url) as response:
+            yield response
+        return
+    pinned_url, host_header, sni_host = _pin_url_parts(target.url, target.pin_ip)
+    async with client.stream(
+        "GET",
+        pinned_url,
+        headers={"Host": host_header},
+        extensions={"sni_hostname": sni_host},
+    ) as response:
+        yield response
+
+
 def _supported_content_type(content_type: str, url: str) -> str:
     normalized = _content_type_header(content_type)
     if normalized in _HTML_TYPES | _TEXT_TYPES | _PDF_TYPES:
@@ -588,64 +690,85 @@ def _supported_content_type(content_type: str, url: str) -> str:
     )
 
 
+class _FetchedResponse(NamedTuple):
+    """Result of a capped fetch: final URL after redirects, body, headers."""
+
+    url: str
+    data: bytes
+    headers: httpx.Headers
+    status_code: int
+
+
+async def read_body_capped(response: httpx.Response, max_bytes: int) -> bytes:
+    """Stream the body, aborting as soon as the size cap is exceeded.
+
+    A client.get() would buffer the whole body first (chunked encoding or a
+    lying Content-Length bypasses the header check), so count bytes as they
+    arrive instead of checking after the fact.
+    """
+    chunks: list[bytes] = []
+    received = 0
+    async for chunk in response.aiter_bytes():
+        received += len(chunk)
+        if received > max_bytes:
+            raise UrlSourceError(
+                f"URL content exceeds {max_bytes // (1024 * 1024)} MB limit",
+                status_code=413,
+            )
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
 async def _get_with_redirects(
     client: httpx.AsyncClient,
     url: str,
     *,
     max_bytes: int,
     allowed_statuses: set[int] | None = None,
-) -> tuple[str, httpx.Response]:
-    current_url = await validate_fetch_url(url)
+) -> _FetchedResponse:
+    current_url = url  # each hop is validated inside validated_stream()
     allowed_statuses = allowed_statuses or set()
     for _ in range(_MAX_REDIRECTS + 1):
         try:
-            response = await client.get(current_url)
+            async with validated_stream(client, current_url) as response:
+                if 300 <= response.status_code < 400 and response.headers.get("location"):
+                    redirect = urljoin(current_url, response.headers["location"])
+                    current_url = await validate_fetch_url(redirect)
+                    continue
+
+                if response.status_code not in allowed_statuses:
+                    try:
+                        response.raise_for_status()
+                    except httpx.HTTPStatusError as exc:
+                        status = exc.response.status_code
+                        if status in {401, 403}:
+                            raise UrlSourceError(
+                                "the site blocks automated access (HTTP 403/401): "
+                                "it requires a login or bot protection the fetcher cannot pass",
+                                status_code=400,
+                            ) from exc
+                        if status == 429:
+                            raise UrlSourceError(
+                                "the site is rate-limiting automated requests"
+                                " (HTTP 429): try again later",
+                                status_code=400,
+                            ) from exc
+                        raise UrlSourceError(
+                            f"URL returned HTTP {status}",
+                            status_code=400,
+                        ) from exc
+
+                length = response.headers.get("content-length")
+                if length and length.isdigit() and int(length) > max_bytes:
+                    raise UrlSourceError(
+                        f"URL content exceeds {max_bytes // (1024 * 1024)} MB limit",
+                        status_code=413,
+                    )
+
+                data = await read_body_capped(response, max_bytes)
+                return _FetchedResponse(current_url, data, response.headers, response.status_code)
         except httpx.RequestError as exc:
             raise UrlSourceError(f"URL request failed: {exc}") from exc
-
-        if 300 <= response.status_code < 400 and response.headers.get("location"):
-            current_url = await validate_fetch_url(
-                urljoin(current_url, response.headers["location"])
-            )
-            continue
-
-        if response.status_code in allowed_statuses:
-            return current_url, response
-
-        try:
-            response.raise_for_status()
-        except httpx.HTTPStatusError as exc:
-            status = exc.response.status_code
-            if status in {401, 403}:
-                raise UrlSourceError(
-                    "the site blocks automated access (HTTP 403/401): "
-                    "it requires a login or bot protection the fetcher cannot pass",
-                    status_code=400,
-                ) from exc
-            if status == 429:
-                raise UrlSourceError(
-                    "the site is rate-limiting automated requests (HTTP 429): try again later",
-                    status_code=400,
-                ) from exc
-            raise UrlSourceError(
-                f"URL returned HTTP {status}",
-                status_code=400,
-            ) from exc
-
-        length = response.headers.get("content-length")
-        if length and length.isdigit() and int(length) > max_bytes:
-            raise UrlSourceError(
-                f"URL content exceeds {max_bytes // (1024 * 1024)} MB limit",
-                status_code=413,
-            )
-
-        if len(response.content) > max_bytes:
-            raise UrlSourceError(
-                f"URL content exceeds {max_bytes // (1024 * 1024)} MB limit",
-                status_code=413,
-            )
-
-        return current_url, response
 
     raise UrlSourceError("URL redirected too many times")
 
@@ -932,13 +1055,13 @@ async def _fetch_github_blob_source(
             "unsupported GitHub file type; use Markdown, text, diagram source, README, or config files"
         )
     raw_url = _github_raw_url(source)
-    _, response = await _get_with_redirects(client, raw_url, max_bytes=max_bytes)
-    if len(response.content) > _GITHUB_MAX_FILE_BYTES:
+    fetched = await _get_with_redirects(client, raw_url, max_bytes=max_bytes)
+    if len(fetched.data) > _GITHUB_MAX_FILE_BYTES:
         raise UrlSourceError(
             f"GitHub file exceeds {_GITHUB_MAX_FILE_BYTES // 1024} KB limit",
             status_code=413,
         )
-    text = _decode_github_text(response.content, source.path)
+    text = _decode_github_text(fetched.data, source.path)
     files = [(source.path, text)]
     data = _github_data(
         source,
@@ -1028,17 +1151,17 @@ async def _fetch_github_archive_source(
         if not ref:
             continue
         archive_url = _github_archive_url(source, ref)
-        _, response = await _get_with_redirects(
+        fetched = await _get_with_redirects(
             client,
             archive_url,
             max_bytes=_GITHUB_MAX_ARCHIVE_BYTES,
             allowed_statuses={404},
         )
-        if response.status_code == 404:
+        if fetched.status_code == 404:
             last_404 = True
             continue
 
-        selection = _github_files_from_archive(source, response.content, max_bytes=max_bytes)
+        selection = _github_files_from_archive(source, fetched.data, max_bytes=max_bytes)
         files = selection.files
         data = _github_data(source, requested_url=requested_url, ref=ref, files=files)
         if len(data) > max_bytes:
@@ -1103,23 +1226,23 @@ async def fetch_url_source(url: str) -> FetchedUrlSource:
         follow_redirects=False,
         headers=URL_SOURCE_HEADERS,
     ) as client:
-        current_url, response = await _get_with_redirects(
+        fetched = await _get_with_redirects(
             client,
             requested_url,
             max_bytes=max_bytes,
         )
 
-    data = response.content
+    data = fetched.data
     original_type = _supported_content_type(
-        response.headers.get("content-type", ""),
-        current_url,
+        fetched.headers.get("content-type", ""),
+        fetched.url,
     )
-    content_type_header = response.headers.get("content-type", "")
+    content_type_header = fetched.headers.get("content-type", "")
     title = extract_html_title(data, content_type_header) if original_type in _HTML_TYPES else None
     image_sources: list[UrlImageSource] = []
 
     if original_type in _HTML_TYPES:
-        image_sources = extract_html_image_sources(data, current_url)
+        image_sources = extract_html_image_sources(data, fetched.url)
         text = html_to_text(data, content_type_header)
         if not text.strip():
             raise UrlSourceError(
@@ -1128,20 +1251,20 @@ async def fetch_url_source(url: str) -> FetchedUrlSource:
                 "try a direct link to the content or the print version",
                 status_code=400,
             )
-        data = _with_source_header(text, url=current_url, title=title)
+        data = _with_source_header(text, url=fetched.url, title=title)
         content_type = "text/plain; charset=utf-8"
     elif original_type in _TEXT_TYPES:
         text = data.decode("utf-8", errors="ignore")
-        data = _with_source_header(text, url=current_url, title=None)
-        content_type = response.headers.get("content-type") or "text/plain; charset=utf-8"
+        data = _with_source_header(text, url=fetched.url, title=None)
+        content_type = fetched.headers.get("content-type") or "text/plain; charset=utf-8"
     else:
-        content_type = response.headers.get("content-type") or "application/pdf"
+        content_type = fetched.headers.get("content-type") or "application/pdf"
 
     return FetchedUrlSource(
         requested_url=requested_url,
-        final_url=current_url,
+        final_url=fetched.url,
         title=title,
-        filename=safe_url_filename(current_url, title, original_type),
+        filename=safe_url_filename(fetched.url, title, original_type),
         content_type=content_type,
         data=data,
         image_sources=image_sources,

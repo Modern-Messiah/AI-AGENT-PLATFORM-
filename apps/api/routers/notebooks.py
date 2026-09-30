@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 from datetime import UTC, datetime
@@ -176,8 +177,11 @@ async def upload_notebook_document(
         if notebook is None:
             raise HTTPException(status_code=404, detail="notebook not found")
 
-        object_store.put(
-            object_key, data, content_type=file.content_type or "application/octet-stream"
+        await asyncio.to_thread(
+            object_store.put,
+            object_key,
+            data,
+            content_type=file.content_type or "application/octet-stream",
         )
         doc = Document(
             id=document_id,
@@ -269,7 +273,7 @@ async def rebuild_notebook_insights(
         )
         raise HTTPException(
             status_code=502,
-            detail=f"DeepSeek overview generation failed: {exc}",
+            detail="DeepSeek overview generation failed",
         ) from exc
 
     if not insights.summary:

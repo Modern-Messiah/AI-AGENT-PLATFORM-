@@ -26,6 +26,28 @@ from apps.api.services.url_sources import (
 from packages.storage import DocumentStatus
 
 
+class _FakeStream:
+    """Async context manager mimicking httpx.AsyncClient.stream()."""
+
+    def __init__(self, client, url: str) -> None:
+        self._client = client
+        self._url = url
+
+    async def __aenter__(self) -> httpx.Response:
+        return await self._client.get(self._url)
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        return None
+
+
+class _StreamsViaGet:
+    """Mixin: build stream() on top of the fake's get(), like httpx does."""
+
+    def stream(self, method: str, url: str) -> _FakeStream:
+        assert method == "GET"
+        return _FakeStream(self, url)
+
+
 def test_url_source_routes_are_registered() -> None:
     routes = {
         (path, method.upper())
@@ -294,7 +316,7 @@ async def test_fetch_url_source_sends_project_user_agent(monkeypatch) -> None:
     async def fake_validate(url: str) -> str:
         return url
 
-    class FakeAsyncClient:
+    class FakeAsyncClient(_StreamsViaGet):
         def __init__(self, **kwargs) -> None:
             captured.update(kwargs)
 
@@ -331,7 +353,7 @@ async def test_fetch_github_blob_source_uses_raw_file_without_github_api(monkeyp
     async def fake_validate(url: str) -> str:
         return url
 
-    class FakeAsyncClient:
+    class FakeAsyncClient(_StreamsViaGet):
         def __init__(self, **kwargs) -> None:
             pass
 
@@ -371,7 +393,7 @@ async def test_fetch_github_blob_collects_markdown_image_sources(monkeypatch) ->
     async def fake_validate(url: str) -> str:
         return url
 
-    class FakeAsyncClient:
+    class FakeAsyncClient(_StreamsViaGet):
         def __init__(self, **kwargs) -> None:
             pass
 
@@ -417,7 +439,7 @@ async def test_fetch_github_blob_resolves_root_relative_html_images(monkeypatch)
     async def fake_validate(url: str) -> str:
         return url
 
-    class FakeAsyncClient:
+    class FakeAsyncClient(_StreamsViaGet):
         def __init__(self, **kwargs) -> None:
             pass
 
@@ -457,7 +479,7 @@ async def test_fetch_github_blob_ignores_unsupported_raw_svg_images(monkeypatch)
     async def fake_validate(url: str) -> str:
         return url
 
-    class FakeAsyncClient:
+    class FakeAsyncClient(_StreamsViaGet):
         def __init__(self, **kwargs) -> None:
             pass
 
@@ -516,7 +538,7 @@ async def test_fetch_github_tree_source_filters_archive_path_and_noise(monkeypat
     async def fake_validate(url: str) -> str:
         return url
 
-    class FakeAsyncClient:
+    class FakeAsyncClient(_StreamsViaGet):
         def __init__(self, **kwargs) -> None:
             pass
 
@@ -568,7 +590,7 @@ async def test_fetch_github_tree_collects_markdown_image_sources(monkeypatch) ->
     async def fake_validate(url: str) -> str:
         return url
 
-    class FakeAsyncClient:
+    class FakeAsyncClient(_StreamsViaGet):
         def __init__(self, **kwargs) -> None:
             pass
 
@@ -631,7 +653,7 @@ async def test_fetch_github_repo_indexes_architecture_diagram_sources(monkeypatc
     async def fake_validate(url: str) -> str:
         return url
 
-    class FakeAsyncClient:
+    class FakeAsyncClient(_StreamsViaGet):
         def __init__(self, **kwargs) -> None:
             pass
 
@@ -679,7 +701,7 @@ async def test_fetch_github_tree_keeps_more_architecture_images(monkeypatch) -> 
     async def fake_validate(url: str) -> str:
         return url
 
-    class FakeAsyncClient:
+    class FakeAsyncClient(_StreamsViaGet):
         def __init__(self, **kwargs) -> None:
             pass
 
@@ -729,7 +751,7 @@ async def test_fetch_github_tree_skips_paired_diagram_images_when_source_is_inde
     async def fake_validate(url: str) -> str:
         return url
 
-    class FakeAsyncClient:
+    class FakeAsyncClient(_StreamsViaGet):
         def __init__(self, **kwargs) -> None:
             pass
 
@@ -769,7 +791,7 @@ async def test_fetch_github_tree_resolves_root_relative_images_from_tree_root(mo
     async def fake_validate(url: str) -> str:
         return url
 
-    class FakeAsyncClient:
+    class FakeAsyncClient(_StreamsViaGet):
         def __init__(self, **kwargs) -> None:
             pass
 
@@ -815,7 +837,7 @@ async def test_fetch_github_repo_root_tries_main_then_master(monkeypatch) -> Non
     async def fake_validate(url: str) -> str:
         return url
 
-    class FakeAsyncClient:
+    class FakeAsyncClient(_StreamsViaGet):
         def __init__(self, **kwargs) -> None:
             pass
 
@@ -869,7 +891,7 @@ async def test_fetch_github_tree_allows_large_archive_when_filtered_text_is_smal
     async def fake_validate(url: str) -> str:
         return url
 
-    class FakeAsyncClient:
+    class FakeAsyncClient(_StreamsViaGet):
         def __init__(self, **kwargs) -> None:
             pass
 
@@ -922,6 +944,11 @@ async def test_check_url_document_returns_github_metadata(monkeypatch) -> None:
         return fetched
 
     monkeypatch.setattr(documents_router, "fetch_url_source", fake_fetch)
+
+    async def fake_limit(*args, **kwargs) -> None:
+        return None
+
+    monkeypatch.setattr(documents_router, "enforce_url_ingest_limit", fake_limit)
 
     response = await documents_router.check_url_document(
         documents_router.UrlCheckRequest(url="https://github.com/acme/docs"),
@@ -1001,6 +1028,11 @@ async def test_add_url_document_persists_metadata_and_starts_ingestion(monkeypat
         return fetched
 
     monkeypatch.setattr(documents_router, "fetch_url_source", fake_fetch)
+
+    async def fake_limit(*args, **kwargs) -> None:
+        return None
+
+    monkeypatch.setattr(documents_router, "enforce_url_ingest_limit", fake_limit)
     monkeypatch.setattr(
         documents_router,
         "tenant_session",
@@ -1070,7 +1102,7 @@ async def test_fetch_reports_bot_blockade_clearly(monkeypatch) -> None:
     async def fake_validate(url: str) -> str:
         return url
 
-    class FakeAsyncClient:
+    class FakeAsyncClient(_StreamsViaGet):
         def __init__(self, **kwargs) -> None:
             pass
 
@@ -1098,3 +1130,175 @@ async def test_fetch_reports_bot_blockade_clearly(monkeypatch) -> None:
         raised = exc
     assert raised is not None
     assert "blocks automated access" in str(raised)
+
+
+async def test_resolve_fetch_target_pins_dns_host_to_validated_ip(monkeypatch) -> None:
+    monkeypatch.setattr(url_sources, "resolve_fetch_target", url_sources._real_resolve_fetch_target)
+
+    # Disable the conftest passthrough by patching the pieces it relies on:
+    # passthrough validation + a fake resolver returning a public address.
+    async def fake_validate(url: str) -> str:
+        return url
+
+    monkeypatch.setattr(url_sources, "validate_fetch_url", fake_validate)
+    monkeypatch.setattr(url_sources.settings, "http_fetch_allowed_domains", [])
+    monkeypatch.setattr(url_sources.settings, "app_env", "local")
+
+    def fake_getaddrinfo(host, port):
+        assert host == "docs.example.com"
+        return [(0, 0, 0, "", ("93.184.216.34", 0))]
+
+    monkeypatch.setattr(url_sources.socket, "getaddrinfo", fake_getaddrinfo)
+
+    target = await url_sources.resolve_fetch_target("https://docs.example.com/page")
+
+    assert target.url == "https://docs.example.com/page"
+    assert target.pin_ip == "93.184.216.34"
+
+
+async def test_resolve_fetch_target_rejects_rebind_to_private_ip(monkeypatch) -> None:
+    monkeypatch.setattr(url_sources, "resolve_fetch_target", url_sources._real_resolve_fetch_target)
+
+    async def fake_validate(url: str) -> str:
+        return url
+
+    monkeypatch.setattr(url_sources, "validate_fetch_url", fake_validate)
+    monkeypatch.setattr(url_sources.settings, "http_fetch_allowed_domains", [])
+    monkeypatch.setattr(url_sources.settings, "app_env", "local")
+
+    def fake_getaddrinfo(host, port):
+        return [(0, 0, 0, "", ("10.0.0.8", 0))]
+
+    monkeypatch.setattr(url_sources.socket, "getaddrinfo", fake_getaddrinfo)
+
+    with pytest.raises(url_sources.UrlSourceError) as exc_info:
+        await url_sources.resolve_fetch_target("https://rebind.example.com/")
+
+    assert "private or internal" in str(exc_info.value)
+
+
+async def test_resolve_fetch_target_skips_pinning_for_allowlisted_domain(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(url_sources, "resolve_fetch_target", url_sources._real_resolve_fetch_target)
+    monkeypatch.setattr(url_sources.settings, "http_fetch_allowed_domains", ["example.com"])
+
+    def real_dns_must_not_run(host, port):
+        raise AssertionError("allowlisted hosts must not be DNS-resolved for pinning")
+
+    monkeypatch.setattr(url_sources.socket, "getaddrinfo", real_dns_must_not_run)
+
+    target = await url_sources.resolve_fetch_target("https://docs.example.com/x")
+
+    assert target.pin_ip is None
+
+
+async def test_resolve_fetch_target_skips_pinning_for_ip_literal(monkeypatch) -> None:
+    monkeypatch.setattr(url_sources, "resolve_fetch_target", url_sources._real_resolve_fetch_target)
+
+    monkeypatch.setattr(url_sources.settings, "http_fetch_allowed_domains", [])
+
+    def real_dns_must_not_run(host, port):
+        raise AssertionError("IP literals must not be DNS-resolved")
+
+    monkeypatch.setattr(url_sources.socket, "getaddrinfo", real_dns_must_not_run)
+
+    target = await url_sources.resolve_fetch_target("https://93.184.216.34/x")
+
+    assert target.pin_ip is None
+
+
+def test_pin_url_parts_keeps_host_and_port() -> None:
+    pinned, host_header, sni = url_sources._pin_url_parts(
+        "https://docs.example.com:8443/a/b?q=1", "93.184.216.34"
+    )
+
+    assert pinned == "https://93.184.216.34:8443/a/b?q=1"
+    assert host_header == "docs.example.com:8443"
+    assert sni == "docs.example.com"
+
+
+def test_pin_url_parts_default_port_omitted() -> None:
+    pinned, host_header, sni = url_sources._pin_url_parts(
+        "https://docs.example.com/x", "93.184.216.34"
+    )
+
+    assert pinned == "https://93.184.216.34/x"
+    assert host_header == "docs.example.com"
+    assert sni == "docs.example.com"
+
+
+def test_pin_url_parts_brackets_ipv6() -> None:
+    pinned, host_header, sni = url_sources._pin_url_parts(
+        "http://docs.example.com/x", "2606:2800::1"
+    )
+
+    assert pinned == "http://[2606:2800::1]/x"
+    assert host_header == "docs.example.com"
+    assert sni == "docs.example.com"
+
+
+async def test_validated_stream_pins_connection_to_validated_ip(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeStreamCM:
+        def __init__(self, response) -> None:
+            self.response = response
+
+        async def __aenter__(self):
+            return self.response
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            return None
+
+    class FakeClient:
+        def stream(self, method, url, headers=None, extensions=None):
+            captured.update(method=method, url=url, headers=headers, extensions=extensions)
+            return FakeStreamCM(
+                httpx.Response(200, content=b"ok", request=httpx.Request("GET", url))
+            )
+
+    async def fake_resolve(url: str) -> url_sources.FetchTarget:
+        return url_sources.FetchTarget(url=url, pin_ip="93.184.216.34")
+
+    monkeypatch.setattr(url_sources, "resolve_fetch_target", fake_resolve)
+
+    async with url_sources.validated_stream(FakeClient(), "https://docs.example.com/page") as resp:
+        assert resp.status_code == 200
+
+    assert captured["url"] == "https://93.184.216.34/page"
+    assert captured["headers"] == {"Host": "docs.example.com"}
+    assert captured["extensions"] == {"sni_hostname": "docs.example.com"}
+
+
+async def test_validated_stream_connects_directly_without_pin(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeStreamCM:
+        def __init__(self, response) -> None:
+            self.response = response
+
+        async def __aenter__(self):
+            return self.response
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            return None
+
+    class FakeClient:
+        def stream(self, method, url, headers=None, extensions=None):
+            captured.update(method=method, url=url, headers=headers, extensions=extensions)
+            return FakeStreamCM(
+                httpx.Response(200, content=b"ok", request=httpx.Request("GET", url))
+            )
+
+    async def fake_resolve(url: str) -> url_sources.FetchTarget:
+        return url_sources.FetchTarget(url=url, pin_ip=None)
+
+    monkeypatch.setattr(url_sources, "resolve_fetch_target", fake_resolve)
+
+    async with url_sources.validated_stream(FakeClient(), "https://93.184.216.34/x") as resp:
+        assert resp.status_code == 200
+
+    assert captured["url"] == "https://93.184.216.34/x"
+    assert captured["headers"] is None
+    assert captured["extensions"] is None
