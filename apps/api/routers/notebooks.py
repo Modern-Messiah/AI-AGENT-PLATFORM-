@@ -15,7 +15,7 @@ from packages.storage.db import tenant_session
 from sqlalchemy import delete, select, update
 from temporalio.client import Client
 
-from apps.api.deps import TenantID, read_with_limit
+from apps.api.deps import TenantID, content_length_exceeds, read_with_limit
 from apps.api.schemas import (
     CreateNotebookRequest,
     DocumentResponse,
@@ -154,8 +154,7 @@ async def upload_notebook_document(
     tenant_id: TenantID,
     file: UploadFile = File(...),
 ) -> DocumentResponse:
-    cl = request.headers.get("content-length")
-    if cl and int(cl) > settings.max_upload_bytes * 2:
+    if content_length_exceeds(request, settings.max_upload_bytes * 2):
         raise HTTPException(
             status_code=413,
             detail=f"file exceeds {settings.max_upload_bytes // (1024 * 1024)} MB limit",
