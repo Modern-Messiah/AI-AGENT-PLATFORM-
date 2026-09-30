@@ -301,7 +301,11 @@ services:
       dockerfile: Dockerfile
       args:
         VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api}
-        VITE_API_KEY: ${VITE_API_KEY:-}
+    environment:
+      # Injected into runtime-config.js at container start — never into the
+      # JS bundle (Vite inlines VITE_* build args into public assets).
+      UI_API_KEY: ${VITE_API_KEY:-}
+      UI_API_BASE_URL: ${VITE_API_BASE_URL:-/api}
     container_name: aap-ui
     depends_on:
       api:

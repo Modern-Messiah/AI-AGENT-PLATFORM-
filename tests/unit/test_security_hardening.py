@@ -539,8 +539,10 @@ async def test_fresh_login_lifts_session_denial(monkeypatch) -> None:
     await deny_user_sessions(user.id)
     assert await is_user_denied(user.id) is True
 
+    from fastapi import Response
+
     response = await login_router.login(
-        EmailLoginRequest(email=user.email, password="long-enough-pass")
+        EmailLoginRequest(email=user.email, password="long-enough-pass"), Response()
     )
     assert len(response.token) > 50  # логин прошёл — блокировка снята
     assert await is_user_denied(user.id) is False

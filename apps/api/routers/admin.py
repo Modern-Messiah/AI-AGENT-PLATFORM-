@@ -338,8 +338,8 @@ async def admin_create_user(body: CreateAdminUserRequest, _principal: AdminDep) 
     try:
         async with admin_session() as db:
             existing = (
-                (await db.execute(select(User).where(User.email == email))).scalar_one_or_none()
-            )
+                await db.execute(select(User).where(User.email == email))
+            ).scalar_one_or_none()
             if existing is not None:
                 raise HTTPException(status_code=409, detail="email is already registered")
             user = User(

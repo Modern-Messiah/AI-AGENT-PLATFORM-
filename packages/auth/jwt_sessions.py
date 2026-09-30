@@ -27,6 +27,9 @@ log = logging.getLogger(__name__)
 _SESSION_TTL = timedelta(hours=settings.auth_session_ttl_hours)
 _STATE_TTL = timedelta(minutes=10)
 
+# Name of the optional httpOnly session cookie (AUTH_SESSION_COOKIE_ENABLED).
+SESSION_COOKIE_NAME = "aap_session"
+
 
 class AuthConfigError(HTTPException):
     """Raised when Google login is not configured — surfaced as 503."""
