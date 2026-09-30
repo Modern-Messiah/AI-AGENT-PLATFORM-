@@ -120,6 +120,9 @@ export const useChatStore = defineStore('chat', () => {
     sessLoading.value = true
     try {
       const msgs = await apiFetch(`/sessions/${id}/messages`)
+      // A newer selectSession may have started while this response was in
+      // flight — a late response must not overwrite the newer session's view.
+      if (activeId.value !== id) return
       if (msgs.length > 0) {
         messages.value = msgs.map(m => ({
           id: m.id, role: m.role, text: m.content,
@@ -129,6 +132,7 @@ export const useChatStore = defineStore('chat', () => {
         messages.value = [{ id: 'w', role: 'agent', text: welcome(), time: '—', sources: [] }]
       }
     } catch {
+      if (activeId.value !== id) return
       messages.value = [{ id: 'w', role: 'agent', text: welcome(), time: '—', sources: [] }]
     } finally {
       // Re-inject a pending HITL card if one exists for this session and the session is
@@ -139,8 +143,8 @@ export const useChatStore = defineStore('chat', () => {
             messages.value.push({ id: 'h' + Date.now(), role: 'hitl', time: hitl.time, workflowId: hitl.workflowId, sessId: id })
           }
         }
+        sessLoading.value = false
       }
-      sessLoading.value = false
     }
   }
 
@@ -176,7 +180,10 @@ export const useChatStore = defineStore('chat', () => {
 
   async function sendMessage(query, model, requireApproval = false, options = {}) {
     const { apiFetch, apiStreamFetch } = useApi()
-    if (!query.trim() || loading.value) return null
+    // loading clears on the first streamed token, long before the stream
+    // ends — guard on the stream controller too, or Enter mid-answer starts
+    // a second concurrent stream that interleaves with the first.
+    if (!query.trim() || loading.value || activeStreamController.value) return null
     const activeSession = sessions.value.find(s => s.id === activeId.value)
     const sessionScope = _sessionScopeOptions(activeSession)
     const documentId = options.documentId || sessionScope.documentId || null

@@ -118,7 +118,9 @@ async def run_agent(
                     workflow_id=workflow_id,
                 )
             )
-            raise HTTPException(status_code=500, detail=str(e)) from e
+            # Workflow startup errors carry Temporal gRPC internals — keep the
+            # detail in the query log, return a generic message to the client.
+            raise HTTPException(status_code=500, detail="agent run failed") from e
         await log_agent_query(
             QueryLogEntry(
                 tenant_id=tenant_id,
@@ -182,7 +184,7 @@ async def run_agent(
                 workflow_id=workflow_id,
             )
         )
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        raise HTTPException(status_code=500, detail="agent run failed") from e
 
 
 def resolve_chat_model(actor: Actor, requested: str | None) -> str:
@@ -504,7 +506,10 @@ async def agent_stream(body: AgentStreamRequest, actor: ActorDep) -> StreamingRe
 
         except Exception as exc:
             log.exception("agent_stream error | tenant=%s", tenant_id)
-            yield f"data: {json.dumps({'type': 'error', 'message': str(exc)})}\n\n"
+            # Provider/worker error bodies may carry internals — the full text
+            # is logged above and in the query log; the SSE client gets a
+            # generic message.
+            yield f"data: {json.dumps({'type': 'error', 'message': 'agent run failed'})}\n\n"
             await log_agent_query(log_entry(status="error", error=str(exc)))
 
     return StreamingResponse(
@@ -586,4 +591,4 @@ async def run_research(
                 workflow_id=workflow_id,
             )
         )
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        raise HTTPException(status_code=500, detail="research run failed") from e

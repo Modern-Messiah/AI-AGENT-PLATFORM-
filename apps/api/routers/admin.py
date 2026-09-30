@@ -719,7 +719,8 @@ async def admin_usage(
         model_rows = await ch_client.query(by_model_sql, {"days": days})
         daily_rows = await ch_client.query(daily_sql, {"days": days})
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"ClickHouse error: {e}") from e
+        log.exception("admin usage query failed")
+        raise HTTPException(status_code=500, detail="ClickHouse error") from e
 
     by_tenant = [
         AdminUsageByTenant(

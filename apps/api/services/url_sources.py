@@ -13,6 +13,7 @@ import zipfile
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
 from pathlib import PurePosixPath
+from typing import NamedTuple
 from urllib.parse import unquote, urljoin, urlparse, urlunparse
 
 import httpx
@@ -588,64 +589,85 @@ def _supported_content_type(content_type: str, url: str) -> str:
     )
 
 
+class _FetchedResponse(NamedTuple):
+    """Result of a capped fetch: final URL after redirects, body, headers."""
+
+    url: str
+    data: bytes
+    headers: httpx.Headers
+    status_code: int
+
+
+async def read_body_capped(response: httpx.Response, max_bytes: int) -> bytes:
+    """Stream the body, aborting as soon as the size cap is exceeded.
+
+    A client.get() would buffer the whole body first (chunked encoding or a
+    lying Content-Length bypasses the header check), so count bytes as they
+    arrive instead of checking after the fact.
+    """
+    chunks: list[bytes] = []
+    received = 0
+    async for chunk in response.aiter_bytes():
+        received += len(chunk)
+        if received > max_bytes:
+            raise UrlSourceError(
+                f"URL content exceeds {max_bytes // (1024 * 1024)} MB limit",
+                status_code=413,
+            )
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
 async def _get_with_redirects(
     client: httpx.AsyncClient,
     url: str,
     *,
     max_bytes: int,
     allowed_statuses: set[int] | None = None,
-) -> tuple[str, httpx.Response]:
+) -> _FetchedResponse:
     current_url = await validate_fetch_url(url)
     allowed_statuses = allowed_statuses or set()
     for _ in range(_MAX_REDIRECTS + 1):
         try:
-            response = await client.get(current_url)
+            async with client.stream("GET", current_url) as response:
+                if 300 <= response.status_code < 400 and response.headers.get("location"):
+                    redirect = urljoin(current_url, response.headers["location"])
+                    current_url = await validate_fetch_url(redirect)
+                    continue
+
+                if response.status_code not in allowed_statuses:
+                    try:
+                        response.raise_for_status()
+                    except httpx.HTTPStatusError as exc:
+                        status = exc.response.status_code
+                        if status in {401, 403}:
+                            raise UrlSourceError(
+                                "the site blocks automated access (HTTP 403/401): "
+                                "it requires a login or bot protection the fetcher cannot pass",
+                                status_code=400,
+                            ) from exc
+                        if status == 429:
+                            raise UrlSourceError(
+                                "the site is rate-limiting automated requests"
+                                " (HTTP 429): try again later",
+                                status_code=400,
+                            ) from exc
+                        raise UrlSourceError(
+                            f"URL returned HTTP {status}",
+                            status_code=400,
+                        ) from exc
+
+                length = response.headers.get("content-length")
+                if length and length.isdigit() and int(length) > max_bytes:
+                    raise UrlSourceError(
+                        f"URL content exceeds {max_bytes // (1024 * 1024)} MB limit",
+                        status_code=413,
+                    )
+
+                data = await read_body_capped(response, max_bytes)
+                return _FetchedResponse(current_url, data, response.headers, response.status_code)
         except httpx.RequestError as exc:
             raise UrlSourceError(f"URL request failed: {exc}") from exc
-
-        if 300 <= response.status_code < 400 and response.headers.get("location"):
-            current_url = await validate_fetch_url(
-                urljoin(current_url, response.headers["location"])
-            )
-            continue
-
-        if response.status_code in allowed_statuses:
-            return current_url, response
-
-        try:
-            response.raise_for_status()
-        except httpx.HTTPStatusError as exc:
-            status = exc.response.status_code
-            if status in {401, 403}:
-                raise UrlSourceError(
-                    "the site blocks automated access (HTTP 403/401): "
-                    "it requires a login or bot protection the fetcher cannot pass",
-                    status_code=400,
-                ) from exc
-            if status == 429:
-                raise UrlSourceError(
-                    "the site is rate-limiting automated requests (HTTP 429): try again later",
-                    status_code=400,
-                ) from exc
-            raise UrlSourceError(
-                f"URL returned HTTP {status}",
-                status_code=400,
-            ) from exc
-
-        length = response.headers.get("content-length")
-        if length and length.isdigit() and int(length) > max_bytes:
-            raise UrlSourceError(
-                f"URL content exceeds {max_bytes // (1024 * 1024)} MB limit",
-                status_code=413,
-            )
-
-        if len(response.content) > max_bytes:
-            raise UrlSourceError(
-                f"URL content exceeds {max_bytes // (1024 * 1024)} MB limit",
-                status_code=413,
-            )
-
-        return current_url, response
 
     raise UrlSourceError("URL redirected too many times")
 
@@ -932,13 +954,13 @@ async def _fetch_github_blob_source(
             "unsupported GitHub file type; use Markdown, text, diagram source, README, or config files"
         )
     raw_url = _github_raw_url(source)
-    _, response = await _get_with_redirects(client, raw_url, max_bytes=max_bytes)
-    if len(response.content) > _GITHUB_MAX_FILE_BYTES:
+    fetched = await _get_with_redirects(client, raw_url, max_bytes=max_bytes)
+    if len(fetched.data) > _GITHUB_MAX_FILE_BYTES:
         raise UrlSourceError(
             f"GitHub file exceeds {_GITHUB_MAX_FILE_BYTES // 1024} KB limit",
             status_code=413,
         )
-    text = _decode_github_text(response.content, source.path)
+    text = _decode_github_text(fetched.data, source.path)
     files = [(source.path, text)]
     data = _github_data(
         source,
@@ -1028,17 +1050,17 @@ async def _fetch_github_archive_source(
         if not ref:
             continue
         archive_url = _github_archive_url(source, ref)
-        _, response = await _get_with_redirects(
+        fetched = await _get_with_redirects(
             client,
             archive_url,
             max_bytes=_GITHUB_MAX_ARCHIVE_BYTES,
             allowed_statuses={404},
         )
-        if response.status_code == 404:
+        if fetched.status_code == 404:
             last_404 = True
             continue
 
-        selection = _github_files_from_archive(source, response.content, max_bytes=max_bytes)
+        selection = _github_files_from_archive(source, fetched.data, max_bytes=max_bytes)
         files = selection.files
         data = _github_data(source, requested_url=requested_url, ref=ref, files=files)
         if len(data) > max_bytes:
@@ -1103,23 +1125,23 @@ async def fetch_url_source(url: str) -> FetchedUrlSource:
         follow_redirects=False,
         headers=URL_SOURCE_HEADERS,
     ) as client:
-        current_url, response = await _get_with_redirects(
+        fetched = await _get_with_redirects(
             client,
             requested_url,
             max_bytes=max_bytes,
         )
 
-    data = response.content
+    data = fetched.data
     original_type = _supported_content_type(
-        response.headers.get("content-type", ""),
-        current_url,
+        fetched.headers.get("content-type", ""),
+        fetched.url,
     )
-    content_type_header = response.headers.get("content-type", "")
+    content_type_header = fetched.headers.get("content-type", "")
     title = extract_html_title(data, content_type_header) if original_type in _HTML_TYPES else None
     image_sources: list[UrlImageSource] = []
 
     if original_type in _HTML_TYPES:
-        image_sources = extract_html_image_sources(data, current_url)
+        image_sources = extract_html_image_sources(data, fetched.url)
         text = html_to_text(data, content_type_header)
         if not text.strip():
             raise UrlSourceError(
@@ -1128,20 +1150,20 @@ async def fetch_url_source(url: str) -> FetchedUrlSource:
                 "try a direct link to the content or the print version",
                 status_code=400,
             )
-        data = _with_source_header(text, url=current_url, title=title)
+        data = _with_source_header(text, url=fetched.url, title=title)
         content_type = "text/plain; charset=utf-8"
     elif original_type in _TEXT_TYPES:
         text = data.decode("utf-8", errors="ignore")
-        data = _with_source_header(text, url=current_url, title=None)
-        content_type = response.headers.get("content-type") or "text/plain; charset=utf-8"
+        data = _with_source_header(text, url=fetched.url, title=None)
+        content_type = fetched.headers.get("content-type") or "text/plain; charset=utf-8"
     else:
-        content_type = response.headers.get("content-type") or "application/pdf"
+        content_type = fetched.headers.get("content-type") or "application/pdf"
 
     return FetchedUrlSource(
         requested_url=requested_url,
-        final_url=current_url,
+        final_url=fetched.url,
         title=title,
-        filename=safe_url_filename(current_url, title, original_type),
+        filename=safe_url_filename(fetched.url, title, original_type),
         content_type=content_type,
         data=data,
         image_sources=image_sources,
