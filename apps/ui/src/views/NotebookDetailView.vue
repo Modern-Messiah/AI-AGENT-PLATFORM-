@@ -211,7 +211,7 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useApi } from '@/composables/useApi'
 import { useSettingsStore } from '@/stores/settings'
@@ -353,9 +353,19 @@ async function uploadFiles(files) {
   }
 }
 
+// Set on unmount: in-flight poll loops check this and stop instead of
+// fetching into detached refs for up to 10 minutes after navigation.
+let notebookPollsCancelled = false
+
+onBeforeUnmount(() => {
+  notebookPollsCancelled = true
+})
+
 async function pollUploadedDocument(documentId) {
   for (let i = 0; i < 120; i++) {
+    if (notebookPollsCancelled) return
     await new Promise(resolve => setTimeout(resolve, 5000))
+    if (notebookPollsCancelled) return
     try {
       const doc = await apiFetch(`/documents/${documentId}`)
       if (doc.status === 'done' || doc.status === 'failed') {
