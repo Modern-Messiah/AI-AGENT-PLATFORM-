@@ -111,6 +111,39 @@ test('ChatMessages keeps streaming answers on the plain-text path', async () => 
 })
 
 
+test('ChatMessages renders animated generation loader and prevents duplicate pending bubble', async () => {
+  const wrapper = withSetup(ChatMessages)
+  const chat = useChatStore()
+
+  // Scenario 1: pipeline stage active before any streaming message exists
+  chat.pipelineStage = { name: 'generation', startedAt: Date.now(), elapsedMs: 1200 }
+  chat.messages = []
+  await new Promise(resolve => setTimeout(resolve, 30))
+
+  expect(wrapper.find('.gen-pending-bubble').exists()).toBe(true)
+  expect(wrapper.find('.generation-loader').exists()).toBe(true)
+  expect(wrapper.find('.gen-wave').exists()).toBe(true)
+  expect(wrapper.text()).toContain('Генерирую ответ...')
+
+  // Scenario 2: token arrives and message streams — no duplicate pending bubble below
+  chat.messages = [
+    {
+      id: 's2',
+      role: 'agent',
+      text: 'Начало ответа...',
+      time: '12:02',
+      sources: [],
+      streaming: true,
+    },
+  ]
+  await new Promise(resolve => setTimeout(resolve, 30))
+
+  // The bottom pending bubble must NOT be rendered when a streaming message is active
+  expect(wrapper.find('.gen-pending-bubble').exists()).toBe(false)
+  expect(wrapper.text()).toContain('Начало ответа...')
+})
+
+
 test('ChatToolbar renders scope pill and emits open-scope', async () => {
   const wrapper = withSetup(ChatToolbar, {
     scope: { type: 'global', title: 'По всей базе знаний' },

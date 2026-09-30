@@ -49,15 +49,45 @@
               v-html="renderedMarkdown(msg)"
             ></div>
             <template v-else>
-              <template v-if="!msg.text && msg.streaming && chat.pipelineStage">
-                <div class="stage-inline">
-                  <span class="stage-icon-sm">{{ stageIcon(chat.pipelineStage.name) }}</span>
-                  <span class="stage-text-sm">{{ stageLabel(chat.pipelineStage.name) }}</span>
-                  <span class="stage-timer-sm">{{ stageElapsed(chat.pipelineStage) }}</span>
+              <!-- Agent streaming message waiting for the first token -->
+              <template v-if="msg.role === 'agent' && msg.streaming && !msg.text">
+                <div class="generation-loader">
+                  <div class="gen-icon-wrap" :class="activeStage">
+                    <svg v-if="activeStage === 'retrieval'" class="gen-icon-svg" viewBox="0 0 20 20" fill="none" stroke="currentColor">
+                      <circle cx="9" cy="9" r="6" stroke-width="2" />
+                      <path d="M13.5 13.5L18 18" stroke-width="2" stroke-linecap="round" />
+                    </svg>
+                    <svg v-else-if="activeStage === 'verification'" class="gen-icon-svg" viewBox="0 0 20 20" fill="none" stroke="currentColor">
+                      <path d="M10 2L3 5.5V10C3 14.5 6 17.5 10 19C14 17.5 17 14.5 17 10V5.5L10 2Z" stroke-width="1.8" />
+                      <path d="M7 10.5L9 12.5L13.5 8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+                    </svg>
+                    <svg v-else class="gen-icon-svg gen-sparkle-icon" viewBox="0 0 20 20" fill="currentColor">
+                      <path d="M10 1L12.2 7.8L19 10L12.2 12.2L10 19L7.8 12.2L1 10L7.8 7.8L10 1Z" />
+                    </svg>
+                  </div>
+                  <div class="gen-content">
+                    <div class="gen-status-row">
+                      <span class="gen-label">{{ activeStageLabel }}</span>
+                      <span class="gen-wave">
+                        <span class="gen-bar"></span>
+                        <span class="gen-bar"></span>
+                        <span class="gen-bar"></span>
+                        <span class="gen-bar"></span>
+                      </span>
+                    </div>
+                  </div>
+                  <span v-if="activeStageTimer" class="gen-timer">{{ activeStageTimer }}</span>
+                </div>
+              </template>
+              <template v-else-if="msg.streaming">
+                <div class="streaming-text">{{ msg.text }}<span class="streaming-cursor">▋</span></div>
+                <div v-if="chat.pipelineStage?.name === 'verification'" class="stage-subtle">
+                  <span class="gen-pulse-dot"></span>
+                  <span>{{ stageLabel('verification') }}</span>
                 </div>
               </template>
               <template v-else>
-                {{ msg.text }}<span v-if="msg.streaming" class="streaming-cursor">▋</span>
+                {{ msg.text }}
               </template>
             </template>
           </div>
@@ -178,26 +208,38 @@
       </div>
     </template>
 
-    <!-- Pipeline stage indicator -->
-    <div v-if="chat.pipelineStage" class="msg agent">
+    <!-- Pending response indicator (when waiting before streaming message is created) -->
+    <div v-if="showPendingIndicator" class="msg agent">
       <div class="msg-avatar"><AppIcon name="agent" /></div>
       <div class="msg-body">
-        <div class="stage-indicator">
-          <div class="stage-icon">{{ stageIcon(chat.pipelineStage.name) }}</div>
-          <div class="stage-text">{{ stageLabel(chat.pipelineStage.name) }}</div>
-          <div class="stage-timer">{{ stageElapsed(chat.pipelineStage) }}</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Typing indicator (fallback when no stage info) -->
-    <div v-else-if="chat.isActiveSessionLoading()" class="msg agent">
-      <div class="msg-avatar"><AppIcon name="agent" /></div>
-      <div class="msg-body">
-        <div class="typing-bubble">
-          <div class="typing-dot"></div>
-          <div class="typing-dot"></div>
-          <div class="typing-dot"></div>
+        <div class="msg-bubble gen-pending-bubble">
+          <div class="generation-loader">
+            <div class="gen-icon-wrap" :class="activeStage">
+              <svg v-if="activeStage === 'retrieval'" class="gen-icon-svg" viewBox="0 0 20 20" fill="none" stroke="currentColor">
+                <circle cx="9" cy="9" r="6" stroke-width="2" />
+                <path d="M13.5 13.5L18 18" stroke-width="2" stroke-linecap="round" />
+              </svg>
+              <svg v-else-if="activeStage === 'verification'" class="gen-icon-svg" viewBox="0 0 20 20" fill="none" stroke="currentColor">
+                <path d="M10 2L3 5.5V10C3 14.5 6 17.5 10 19C14 17.5 17 14.5 17 10V5.5L10 2Z" stroke-width="1.8" />
+                <path d="M7 10.5L9 12.5L13.5 8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+              <svg v-else class="gen-icon-svg gen-sparkle-icon" viewBox="0 0 20 20" fill="currentColor">
+                <path d="M10 1L12.2 7.8L19 10L12.2 12.2L10 19L7.8 12.2L1 10L7.8 7.8L10 1Z" />
+              </svg>
+            </div>
+            <div class="gen-content">
+              <div class="gen-status-row">
+                <span class="gen-label">{{ activeStageLabel }}</span>
+                <span class="gen-wave">
+                  <span class="gen-bar"></span>
+                  <span class="gen-bar"></span>
+                  <span class="gen-bar"></span>
+                  <span class="gen-bar"></span>
+                </span>
+              </div>
+            </div>
+            <span v-if="activeStageTimer" class="gen-timer">{{ activeStageTimer }}</span>
+          </div>
         </div>
       </div>
     </div>
@@ -206,7 +248,7 @@
 </template>
 
 <script setup>
-import { ref, watch, nextTick } from 'vue'
+import { ref, computed, watch, onUnmounted, nextTick } from 'vue'
 import { renderMarkdown } from '@/utils/markdown'
 import { confidenceBadgeClass, confidenceBand } from '@/utils/confidence'
 import 'highlight.js/styles/github-dark.css'
@@ -253,15 +295,18 @@ function cacheMarkdown(id, entry) {
   markdownCache.set(id, entry)
 }
 
-function stageIcon(name) {
-  const icons = {
-    retrieval: '🔍',
-    generation: '✍️',
-    verification: '✓',
-    cache: '⚡',
-  }
-  return icons[name] || '⏳'
-}
+const hasStreamingMessage = computed(() =>
+  chat.messages.some((m) => m.role === 'agent' && m.streaming)
+)
+
+const showPendingIndicator = computed(() =>
+  !hasStreamingMessage.value && (Boolean(chat.pipelineStage) || chat.isActiveSessionLoading())
+)
+
+const activeStage = computed(() => {
+  if (chat.pipelineStage?.name) return chat.pipelineStage.name
+  return 'generation'
+})
 
 function stageLabel(name) {
   const labels = {
@@ -273,11 +318,55 @@ function stageLabel(name) {
   return labels[name] || t('chat.stageWorking')
 }
 
-function stageElapsed(stage) {
-  if (!stage?.startedAt) return ''
-  const seconds = Math.max(0, Math.round((Date.now() - stage.startedAt) / 1000))
-  return seconds < 60 ? seconds + 's' : Math.floor(seconds / 60) + 'm ' + (seconds % 60) + 's'
+const activeStageLabel = computed(() => {
+  return stageLabel(activeStage.value)
+})
+
+const elapsedSeconds = ref(0)
+let timerInterval = null
+
+function updateTimer() {
+  const startedAt = chat.pipelineStage?.startedAt
+  if (startedAt) {
+    elapsedSeconds.value = Math.max(0, Math.round((Date.now() - startedAt) / 1000))
+  } else if (showPendingIndicator.value || hasStreamingMessage.value) {
+    elapsedSeconds.value += 1
+  } else {
+    elapsedSeconds.value = 0
+  }
 }
+
+watch(
+  () => showPendingIndicator.value || hasStreamingMessage.value,
+  (active) => {
+    if (active) {
+      if (!timerInterval) {
+        updateTimer()
+        timerInterval = setInterval(updateTimer, 1000)
+      }
+    } else {
+      if (timerInterval) {
+        clearInterval(timerInterval)
+        timerInterval = null
+      }
+      elapsedSeconds.value = 0
+    }
+  },
+  { immediate: true }
+)
+
+onUnmounted(() => {
+  if (timerInterval) {
+    clearInterval(timerInterval)
+    timerInterval = null
+  }
+})
+
+const activeStageTimer = computed(() => {
+  if (elapsedSeconds.value <= 0) return ''
+  const s = elapsedSeconds.value
+  return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`
+})
 
 function renderedMarkdown(msg) {
   const cached = markdownCache.get(msg.id)
@@ -563,31 +652,4 @@ watch([() => chat.isActiveSessionLoading(), () => chat.streamTick], () => scroll
   0%, 100% { opacity: 1; }
   50%       { opacity: 0; }
 }
-</style>
-
-<style scoped>
-.stage-indicator {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 12px 16px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--s1);
-  font-size: 13px;
-}
-.stage-icon { font-size: 18px; }
-.stage-text { color: var(--text); font-weight: 600; }
-.stage-timer { margin-left: auto; color: var(--muted); font-family: var(--mono); font-size: 11px; }
-.stage-inline {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 0;
-  font-size: 12.5px;
-  color: var(--muted2);
-}
-.stage-icon-sm { font-size: 15px; }
-.stage-text-sm { font-weight: 600; }
-.stage-timer-sm { font-family: var(--mono); font-size: 11px; color: var(--muted); }
 </style>
