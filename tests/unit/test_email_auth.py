@@ -117,6 +117,37 @@ async def test_register_rejects_duplicate_email(users) -> None:
     assert exc_info.value.status_code == 409
 
 
+class _CommitFailsTx:
+    """Transaction whose commit loses a unique-index race."""
+
+    async def __aenter__(self) -> _CommitFailsTx:
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        from sqlalchemy.exc import IntegrityError
+
+        raise IntegrityError("INSERT INTO users", {}, Exception("duplicate key"))
+
+
+class _RaceSession(UsersSession):
+    """SELECT sees no existing row; the commit raises the unique violation."""
+
+    def begin(self) -> _CommitFailsTx:
+        return _CommitFailsTx()
+
+
+async def test_register_race_on_unique_email_returns_409(
+    users, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(login_router, "async_session", lambda: _RaceSession({}))
+    with pytest.raises(HTTPException) as exc_info:
+        await login_router.register(
+            RegisterRequest(email=MEMBER_EMAIL, password="long-enough-pass", name="Bob")
+        )
+    assert exc_info.value.status_code == 409
+    assert exc_info.value.detail == "email is already registered"
+
+
 async def test_register_closed_without_allowlist_rejects(
     users, monkeypatch: pytest.MonkeyPatch
 ) -> None:

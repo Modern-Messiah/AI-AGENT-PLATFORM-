@@ -46,6 +46,7 @@ from packages.core import settings
 from packages.storage import User
 from packages.storage.db import async_session
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from apps.api.schemas import (
     EmailLoginRequest,
@@ -305,19 +306,26 @@ async def register(body: RegisterRequest) -> EmailLoginResponse:
     if not _signup_allowed(email):
         raise HTTPException(status_code=403, detail="this email is not allowed to register")
 
-    async with async_session() as s, s.begin():
-        existing = (await s.execute(select(User).where(User.email == email))).scalar_one_or_none()
-        if existing is not None:
-            raise HTTPException(status_code=409, detail="email is already registered")
-        user = User(
-            id=uuid.uuid4(),
-            tenant_id=settings.default_tenant_id,
-            name=body.name.strip() or email.split("@")[0],
-            email=email,
-            password_hash=hash_password(body.password),
-            role=_role_for(email),
-        )
-        s.add(user)
+    try:
+        async with async_session() as s, s.begin():
+            existing = (
+                (await s.execute(select(User).where(User.email == email))).scalar_one_or_none()
+            )
+            if existing is not None:
+                raise HTTPException(status_code=409, detail="email is already registered")
+            user = User(
+                id=uuid.uuid4(),
+                tenant_id=settings.default_tenant_id,
+                name=body.name.strip() or email.split("@")[0],
+                email=email,
+                password_hash=hash_password(body.password),
+                role=_role_for(email),
+            )
+            s.add(user)
+    except IntegrityError:
+        # Two registrations of the same email racing past the SELECT: the
+        # unique index uq_users_email decides — the loser gets 409, not 500.
+        raise HTTPException(status_code=409, detail="email is already registered") from None
 
     log.info("email register | tenant=%s email=%s role=%s", user.tenant_id, email, user.role)
     return _session_response(user, user.role)
