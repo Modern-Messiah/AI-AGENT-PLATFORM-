@@ -243,7 +243,7 @@ function cacheMarkdown(id, entry) {
   // Long-lived chats with streaming messages would grow the map without
   // bound; drop the oldest entries past the cap.
   if (markdownCache.size >= MARKDOWN_CACHE_MAX) {
-    const overflow = markdownCache.size - MARKDOWN_CACHE_MAX + 1
+    let overflow = markdownCache.size - MARKDOWN_CACHE_MAX + 1
     for (const key of markdownCache.keys()) {
       if (overflow <= 0) break
       markdownCache.delete(key)

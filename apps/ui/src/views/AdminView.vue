@@ -775,8 +775,6 @@ import {
   formatCost,
   formatDateTime,
   healthTone,
-  keyDisplayName,
-  keyUserLabel,
   promptActor,
   promptStatusTone,
 } from '@/utils/admin'
