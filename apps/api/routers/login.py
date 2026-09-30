@@ -311,7 +311,7 @@ def _set_session_cookie(response: Response, token: str) -> None:
 
 
 @router.post("/auth/register", response_model=EmailLoginResponse, status_code=201)
-async def register(body: RegisterRequest, response: Response = None) -> EmailLoginResponse:
+async def register(body: RegisterRequest, response: Response) -> EmailLoginResponse:
     """Create an email+password account and sign in immediately.
 
     Open by default (OPEN_REGISTRATION=true): any email may register as a
@@ -353,13 +353,13 @@ async def register(body: RegisterRequest, response: Response = None) -> EmailLog
 
     log.info("email register | tenant=%s email=%s role=%s", user.tenant_id, email, user.role)
     result = _session_response(user, user.role)
-    if response is not None and settings.auth_session_cookie_enabled:
+    if settings.auth_session_cookie_enabled:
         _set_session_cookie(response, result.token)
     return result
 
 
 @router.post("/auth/login", response_model=EmailLoginResponse)
-async def login(body: EmailLoginRequest, response: Response = None) -> EmailLoginResponse:
+async def login(body: EmailLoginRequest, response: Response) -> EmailLoginResponse:
     """Sign in with email + password; issues the same session JWT as Google."""
     if not settings.auth_jwt_secret:
         raise HTTPException(status_code=503, detail="email login is not configured")
@@ -387,21 +387,20 @@ async def login(body: EmailLoginRequest, response: Response = None) -> EmailLogi
 
     log.info("email login | tenant=%s email=%s role=%s", user.tenant_id, email, role)
     result = _session_response(user, role)
-    if response is not None and settings.auth_session_cookie_enabled:
+    if settings.auth_session_cookie_enabled:
         _set_session_cookie(response, result.token)
     return result
 
 
 @router.post("/auth/logout", status_code=204)
-async def logout(response: Response = None) -> None:
+async def logout(response: Response) -> None:
     """Clear the session cookie (no-op for the token-in-response path).
 
     State tokens are not server-side, so a client holding the raw token
     simply drops it; the endpoint exists so cookie-based clients can log
     out without waiting for the cookie to expire.
     """
-    if response is not None:
-        response.delete_cookie(SESSION_COOKIE_NAME, path="/")
+    response.delete_cookie(SESSION_COOKIE_NAME, path="/")
     return None
 
 
