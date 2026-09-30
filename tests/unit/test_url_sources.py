@@ -26,6 +26,28 @@ from apps.api.services.url_sources import (
 from packages.storage import DocumentStatus
 
 
+class _FakeStream:
+    """Async context manager mimicking httpx.AsyncClient.stream()."""
+
+    def __init__(self, client, url: str) -> None:
+        self._client = client
+        self._url = url
+
+    async def __aenter__(self) -> httpx.Response:
+        return await self._client.get(self._url)
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        return None
+
+
+class _StreamsViaGet:
+    """Mixin: build stream() on top of the fake's get(), like httpx does."""
+
+    def stream(self, method: str, url: str) -> _FakeStream:
+        assert method == "GET"
+        return _FakeStream(self, url)
+
+
 def test_url_source_routes_are_registered() -> None:
     routes = {
         (path, method.upper())
@@ -294,7 +316,7 @@ async def test_fetch_url_source_sends_project_user_agent(monkeypatch) -> None:
     async def fake_validate(url: str) -> str:
         return url
 
-    class FakeAsyncClient:
+    class FakeAsyncClient(_StreamsViaGet):
         def __init__(self, **kwargs) -> None:
             captured.update(kwargs)
 
@@ -331,7 +353,7 @@ async def test_fetch_github_blob_source_uses_raw_file_without_github_api(monkeyp
     async def fake_validate(url: str) -> str:
         return url
 
-    class FakeAsyncClient:
+    class FakeAsyncClient(_StreamsViaGet):
         def __init__(self, **kwargs) -> None:
             pass
 
@@ -371,7 +393,7 @@ async def test_fetch_github_blob_collects_markdown_image_sources(monkeypatch) ->
     async def fake_validate(url: str) -> str:
         return url
 
-    class FakeAsyncClient:
+    class FakeAsyncClient(_StreamsViaGet):
         def __init__(self, **kwargs) -> None:
             pass
 
@@ -417,7 +439,7 @@ async def test_fetch_github_blob_resolves_root_relative_html_images(monkeypatch)
     async def fake_validate(url: str) -> str:
         return url
 
-    class FakeAsyncClient:
+    class FakeAsyncClient(_StreamsViaGet):
         def __init__(self, **kwargs) -> None:
             pass
 
@@ -457,7 +479,7 @@ async def test_fetch_github_blob_ignores_unsupported_raw_svg_images(monkeypatch)
     async def fake_validate(url: str) -> str:
         return url
 
-    class FakeAsyncClient:
+    class FakeAsyncClient(_StreamsViaGet):
         def __init__(self, **kwargs) -> None:
             pass
 
@@ -516,7 +538,7 @@ async def test_fetch_github_tree_source_filters_archive_path_and_noise(monkeypat
     async def fake_validate(url: str) -> str:
         return url
 
-    class FakeAsyncClient:
+    class FakeAsyncClient(_StreamsViaGet):
         def __init__(self, **kwargs) -> None:
             pass
 
@@ -568,7 +590,7 @@ async def test_fetch_github_tree_collects_markdown_image_sources(monkeypatch) ->
     async def fake_validate(url: str) -> str:
         return url
 
-    class FakeAsyncClient:
+    class FakeAsyncClient(_StreamsViaGet):
         def __init__(self, **kwargs) -> None:
             pass
 
@@ -631,7 +653,7 @@ async def test_fetch_github_repo_indexes_architecture_diagram_sources(monkeypatc
     async def fake_validate(url: str) -> str:
         return url
 
-    class FakeAsyncClient:
+    class FakeAsyncClient(_StreamsViaGet):
         def __init__(self, **kwargs) -> None:
             pass
 
@@ -679,7 +701,7 @@ async def test_fetch_github_tree_keeps_more_architecture_images(monkeypatch) -> 
     async def fake_validate(url: str) -> str:
         return url
 
-    class FakeAsyncClient:
+    class FakeAsyncClient(_StreamsViaGet):
         def __init__(self, **kwargs) -> None:
             pass
 
@@ -729,7 +751,7 @@ async def test_fetch_github_tree_skips_paired_diagram_images_when_source_is_inde
     async def fake_validate(url: str) -> str:
         return url
 
-    class FakeAsyncClient:
+    class FakeAsyncClient(_StreamsViaGet):
         def __init__(self, **kwargs) -> None:
             pass
 
@@ -769,7 +791,7 @@ async def test_fetch_github_tree_resolves_root_relative_images_from_tree_root(mo
     async def fake_validate(url: str) -> str:
         return url
 
-    class FakeAsyncClient:
+    class FakeAsyncClient(_StreamsViaGet):
         def __init__(self, **kwargs) -> None:
             pass
 
@@ -815,7 +837,7 @@ async def test_fetch_github_repo_root_tries_main_then_master(monkeypatch) -> Non
     async def fake_validate(url: str) -> str:
         return url
 
-    class FakeAsyncClient:
+    class FakeAsyncClient(_StreamsViaGet):
         def __init__(self, **kwargs) -> None:
             pass
 
@@ -869,7 +891,7 @@ async def test_fetch_github_tree_allows_large_archive_when_filtered_text_is_smal
     async def fake_validate(url: str) -> str:
         return url
 
-    class FakeAsyncClient:
+    class FakeAsyncClient(_StreamsViaGet):
         def __init__(self, **kwargs) -> None:
             pass
 
@@ -1070,7 +1092,7 @@ async def test_fetch_reports_bot_blockade_clearly(monkeypatch) -> None:
     async def fake_validate(url: str) -> str:
         return url
 
-    class FakeAsyncClient:
+    class FakeAsyncClient(_StreamsViaGet):
         def __init__(self, **kwargs) -> None:
             pass
 

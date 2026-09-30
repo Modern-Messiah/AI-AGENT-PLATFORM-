@@ -15,7 +15,7 @@ from datetime import UTC, datetime, timedelta
 
 from packages.core import settings
 from packages.storage import ChatSession, async_session
-from sqlalchemy import delete
+from sqlalchemy import delete, text
 
 log = logging.getLogger(__name__)
 
@@ -31,8 +31,15 @@ def retention_cutoff(retention_days: int, *, now: datetime | None = None) -> dat
 
 
 async def delete_stale_sessions(cutoff: datetime) -> int:
-    """Delete sessions not updated since the cutoff. Returns deleted count."""
+    """Delete sessions not updated since the cutoff. Returns deleted count.
+
+    Runs across tenants: chat_sessions has FORCE RLS and the runtime role is
+    NOBYPASSRLS, so the app.maintenance flag (policy retention_maintenance,
+    migration 0025) must be set in the same transaction — a plain DELETE
+    would silently match 0 rows. Messages cascade with the session.
+    """
     async with async_session() as session, session.begin():
+        await session.execute(text("SELECT set_config('app.maintenance', 'on', true)"))
         result = await session.execute(delete(ChatSession).where(ChatSession.updated_at < cutoff))
     return int(getattr(result, "rowcount", 0) or 0)
 

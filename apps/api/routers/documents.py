@@ -46,25 +46,29 @@ log = logging.getLogger(__name__)
 router = APIRouter()
 
 
-def _store_url_source_objects(object_key: str, fetched: FetchedUrlSource) -> None:
-    object_store.put(object_key, fetched.data, content_type=fetched.content_type)
-    object_store.put(
+async def _store_url_source_objects(object_key: str, fetched: FetchedUrlSource) -> None:
+    # MinIO SDK is synchronous — keep blocking I/O off the event loop.
+    await asyncio.to_thread(
+        object_store.put, object_key, fetched.data, content_type=fetched.content_type
+    )
+    await asyncio.to_thread(
+        object_store.put,
         url_image_sidecar_key(object_key),
         url_image_sidecar_payload(fetched.image_sources),
         content_type="application/json",
     )
 
 
-def _object_bytes_or_none(object_key: str) -> bytes | None:
+async def _object_bytes_or_none(object_key: str) -> bytes | None:
     try:
-        return object_store.get(object_key)
+        return await asyncio.to_thread(object_store.get, object_key)
     except Exception as exc:
         log.debug("source object comparison skipped | key=%s error=%s", object_key, exc)
         return None
 
 
-def _url_source_objects_changed(object_key: str, fetched: FetchedUrlSource) -> bool:
-    return _object_bytes_or_none(object_key) != fetched.data or _object_bytes_or_none(
+async def _url_source_objects_changed(object_key: str, fetched: FetchedUrlSource) -> bool:
+    return await _object_bytes_or_none(object_key) != fetched.data or await _object_bytes_or_none(
         url_image_sidecar_key(object_key)
     ) != url_image_sidecar_payload(fetched.image_sources)
 
@@ -123,7 +127,12 @@ async def upload_document(
 
     document_id = uuid.uuid4()
     object_key = f"{tenant_id}/{document_id}/{file.filename}"
-    object_store.put(object_key, data, content_type=file.content_type or "application/octet-stream")
+    await asyncio.to_thread(
+        object_store.put,
+        object_key,
+        data,
+        content_type=file.content_type or "application/octet-stream",
+    )
 
     async with tenant_session(tenant_id) as s:
         s.add(
@@ -215,7 +224,8 @@ async def upload_documents_bulk(
     for file, data in validated:
         document_id = uuid.uuid4()
         object_key = f"{tenant_id}/{document_id}/{file.filename}"
-        object_store.put(
+        await asyncio.to_thread(
+            object_store.put,
             object_key,
             data,
             content_type=file.content_type or "application/octet-stream",
@@ -298,7 +308,7 @@ async def add_url_document(
 
     document_id = uuid.uuid4()
     object_key = f"{tenant_id}/{document_id}/{fetched.filename}"
-    _store_url_source_objects(object_key, fetched)
+    await _store_url_source_objects(object_key, fetched)
     checked_at = datetime.now(UTC)
 
     async with tenant_session(tenant_id) as s:
@@ -510,7 +520,7 @@ async def reindex_document(
             except UrlSourceError as exc:
                 raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
 
-            changed = _url_source_objects_changed(doc.object_key, fetched)
+            changed = await _url_source_objects_changed(doc.object_key, fetched)
             _apply_url_source_metadata(doc, fetched)
             if not changed and doc.status == DocumentStatus.done:
                 await s.flush()
@@ -519,7 +529,7 @@ async def reindex_document(
                     changed=False,
                     workflow_started=False,
                 )
-            _store_url_source_objects(doc.object_key, fetched)
+            await _store_url_source_objects(doc.object_key, fetched)
 
         doc.status = DocumentStatus.pending
         doc.processing_stage = "queued"
@@ -591,7 +601,7 @@ async def delete_document(
 
     for key in [object_key, url_image_sidecar_key(object_key), *preview_object_keys]:
         try:
-            object_store.delete(key)
+            await asyncio.to_thread(object_store.delete, key)
         except Exception as exc:
             log.warning(
                 "object deletion failed | tenant=%s document=%s key=%s error=%s",
