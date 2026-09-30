@@ -16,24 +16,14 @@
         :class="[`is-${scope?.type || 'global'}`, { 'is-locked': scopeLocked }]"
         type="button"
         :disabled="scopeLocked"
-        :title="scopeLocked ? t('chat.scopeLockedHint') : t('chat.scopeTooltip')"
+        :title="scopeLocked ? t('chat.scopeLockedHint') : t('chat.scopeSelectSub')"
         @click="!scopeLocked && $emit('open-scope')"
       >
         <AppIcon :name="scope?.type === 'document' ? 'docs' : (scope?.type === 'notebook' ? 'book' : 'globe')" :size="12" />
         <span class="scope-pill-text">{{ scope?.title || t('chat.scopeGlobalTitle') }}</span>
+        <span v-if="!scopeLocked" class="scope-pill-action">{{ t('chat.changeScope') }}</span>
         <AppIcon v-if="!scopeLocked" name="chevron-down" :size="10" />
         <AppIcon v-else name="lock" :size="10" class="scope-pill-lock" />
-      </button>
-
-      <button
-        v-if="!scopeLocked"
-        class="btn btn-ghost btn-xs scope-select-btn"
-        type="button"
-        :title="t('chat.scopeSelectSub')"
-        @click="$emit('open-scope')"
-      >
-        <AppIcon name="filter" :size="11" />
-        <span>{{ t('chat.changeScope') }}</span>
       </button>
 
       <RouterLink
@@ -101,23 +91,21 @@ const { t } = useI18n()
   flex-shrink: 0;
 }
 
-.scope-select-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 11px;
-  padding: 3px 8px;
-  border-radius: 6px;
+.scope-pill-action {
+  font-size: 10.5px;
+  font-weight: 500;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--accent) 14%, transparent);
   color: var(--accent);
-  border: 1px solid color-mix(in oklch, var(--accent) 30%, var(--border));
-  background: color-mix(in oklch, var(--accent) 6%, transparent);
-  cursor: pointer;
+  margin-left: 2px;
+  white-space: nowrap;
+  flex-shrink: 0;
   transition: all 0.15s ease;
 }
 
-.scope-select-btn:hover {
-  background: color-mix(in oklch, var(--accent) 14%, transparent);
-  border-color: var(--accent);
+.scope-pill-btn:hover .scope-pill-action {
+  background: color-mix(in oklch, var(--accent) 24%, transparent);
 }
 
 .scope-back-btn {
@@ -136,7 +124,7 @@ const { t } = useI18n()
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 9px;
+  padding: 4px 10px;
   border-radius: 999px;
   border: 1px solid var(--border);
   background: var(--s2);
@@ -144,7 +132,7 @@ const { t } = useI18n()
   font-size: 11.5px;
   cursor: pointer;
   transition: all 0.15s ease;
-  max-width: 220px;
+  max-width: 340px;
 }
 
 .scope-pill-btn:hover {
