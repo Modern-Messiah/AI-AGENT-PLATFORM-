@@ -24,6 +24,7 @@ from apps.api.schemas import (
 )
 from apps.api.serializers import document_response, notebook_response
 from apps.api.services.cache import invalidate_semantic_cache
+from apps.api.services.filenames import safe_upload_filename
 from apps.api.services.notebooks import (
     clean_notebook_title,
     dedupe_uuid_list,
@@ -165,7 +166,7 @@ async def upload_notebook_document(
         raise HTTPException(status_code=400, detail="empty file")
 
     document_id = uuid.uuid4()
-    filename = file.filename or "unnamed"
+    filename = safe_upload_filename(file.filename)
     object_key = f"{tenant_id}/{document_id}/{filename}"
 
     async with tenant_session(tenant_id) as s:
