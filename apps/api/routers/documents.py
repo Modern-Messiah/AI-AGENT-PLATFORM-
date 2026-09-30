@@ -524,15 +524,13 @@ async def reindex_document(
     if is_external and not source_url:
         raise HTTPException(status_code=409, detail="external document has no source URL")
 
-    if is_external:
-        await enforce_url_ingest_limit(tenant_id, "/documents/reindex")
-
     # Phase 2 — external fetch + object-store I/O with NO transaction open:
     # a slow or malicious source (10s timeout per hop) must not pin pooled
     # DB connections; a handful of concurrent reindexes used to exhaust them.
     fetched: FetchedUrlSource | None = None
     changed = False
-    if is_external:
+    if is_external and source_url:
+        await enforce_url_ingest_limit(tenant_id, "/documents/reindex")
         try:
             fetched = await fetch_url_source(source_url)
         except UrlSourceError as exc:

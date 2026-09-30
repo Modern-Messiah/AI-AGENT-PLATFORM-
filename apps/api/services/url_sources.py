@@ -10,6 +10,8 @@ import posixpath
 import re
 import socket
 import zipfile
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
 from pathlib import PurePosixPath
@@ -575,6 +577,105 @@ async def validate_fetch_url(url: str) -> str:
     return normalized
 
 
+class FetchTarget(NamedTuple):
+    """A validated fetch URL plus the resolved IP to pin the connection to.
+
+    pin_ip is None when pinning does not apply: allowlisted domains (trusted
+    by configuration) and IP-literal hosts (connecting to the validated
+    address directly). For DNS-resolved hosts in local mode the connection
+    MUST use pin_ip — see resolve_fetch_target.
+    """
+
+    url: str
+    pin_ip: str | None
+
+
+async def resolve_fetch_target(url: str) -> FetchTarget:
+    """Validate a URL and resolve the exact address the request must use.
+
+    Closes the DNS-rebinding TOCTOU: validate_fetch_url checks IPs via
+    getaddrinfo, but an unpinned httpx request resolves the host again at
+    connect time — a rebinding name passes validation with a public IP and
+    then connects to a private one. Here the pin comes from a resolution
+    that re-checks every address, and validated_stream() connects to it
+    while keeping the hostname for Host/SNI/certificate validation.
+    """
+    normalized = await validate_fetch_url(url)
+    parsed = urlparse(normalized)
+    host = parsed.hostname or ""
+
+    try:
+        ipaddress.ip_address(host)
+        return FetchTarget(url=normalized, pin_ip=None)  # IP literal: already validated
+    except ValueError:
+        pass
+
+    if settings.http_fetch_allowed_domains:
+        return FetchTarget(url=normalized, pin_ip=None)  # trusted by allowlist
+
+    loop = asyncio.get_running_loop()
+    try:
+        infos = await loop.run_in_executor(None, socket.getaddrinfo, host, None)
+    except OSError as exc:
+        raise UrlSourceError(f"DNS resolution failed: {exc}") from exc
+
+    addresses = [sockaddr[0] for (_, _, _, _, sockaddr) in infos if isinstance(sockaddr[0], str)]
+    for ip in addresses:
+        if _is_blocked_ip(ip):
+            raise UrlSourceError(
+                "requests to private or internal network addresses are not allowed"
+            )
+    if not addresses:
+        raise UrlSourceError(f"DNS resolution returned no addresses for {host}")
+
+    # Prefer IPv4 (single-family pin keeps Host/SNI handling simple); fall
+    # back to whatever the resolver offered.
+    pin = next((ip for ip in addresses if ":" not in ip), addresses[0])
+    return FetchTarget(url=normalized, pin_ip=pin)
+
+
+def _pin_url_parts(url: str, ip: str) -> tuple[str, str, str]:
+    """Rewrite the URL to connect to `ip`: (pinned_url, host_header, sni_host).
+
+    The hostname moves into the Host header and the sni_hostname extension,
+    so virtual hosting still routes and TLS validates the certificate
+    against the real name while the socket connects to the pinned address.
+    """
+    parsed = urlparse(url)
+    host = parsed.hostname
+    port = parsed.port
+    if host is None:
+        raise UrlSourceError("URL host is required")
+    bracketed = f"[{ip}]" if ":" in ip else ip
+    default_port = {"https": 443, "http": 80}.get(parsed.scheme)
+    if port is None or port == default_port:
+        return urlunparse(parsed._replace(netloc=bracketed)), host, host
+    netloc = f"{bracketed}:{port}"
+    return urlunparse(parsed._replace(netloc=netloc)), f"{host}:{port}", host
+
+
+@asynccontextmanager
+async def validated_stream(client: httpx.AsyncClient, url: str) -> AsyncIterator[httpx.Response]:
+    """Open a GET stream to a validated URL, pinning DNS-resolved hosts.
+
+    The connection uses exactly the address that passed SSRF validation —
+    the request cannot re-resolve to a different (possibly private) IP.
+    """
+    target = await resolve_fetch_target(url)
+    if target.pin_ip is None:
+        async with client.stream("GET", target.url) as response:
+            yield response
+        return
+    pinned_url, host_header, sni_host = _pin_url_parts(target.url, target.pin_ip)
+    async with client.stream(
+        "GET",
+        pinned_url,
+        headers={"Host": host_header},
+        extensions={"sni_hostname": sni_host},
+    ) as response:
+        yield response
+
+
 def _supported_content_type(content_type: str, url: str) -> str:
     normalized = _content_type_header(content_type)
     if normalized in _HTML_TYPES | _TEXT_TYPES | _PDF_TYPES:
@@ -625,11 +726,11 @@ async def _get_with_redirects(
     max_bytes: int,
     allowed_statuses: set[int] | None = None,
 ) -> _FetchedResponse:
-    current_url = await validate_fetch_url(url)
+    current_url = url  # each hop is validated inside validated_stream()
     allowed_statuses = allowed_statuses or set()
     for _ in range(_MAX_REDIRECTS + 1):
         try:
-            async with client.stream("GET", current_url) as response:
+            async with validated_stream(client, current_url) as response:
                 if 300 <= response.status_code < 400 and response.headers.get("location"):
                     redirect = urljoin(current_url, response.headers["location"])
                     current_url = await validate_fetch_url(redirect)

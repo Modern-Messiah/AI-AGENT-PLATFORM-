@@ -23,7 +23,7 @@ from apps.api.services.url_sources import (
     UrlSourceError,
     read_body_capped,
     url_image_sidecar_key,
-    validate_fetch_url,
+    validated_stream,
 )
 from apps.worker.activities.heartbeat import heartbeat_safe
 from apps.worker.activities.ingestion_types import IngestionInput, VisualPageAnalysis
@@ -160,7 +160,9 @@ async def _clear_url_image_assets(input: IngestionInput) -> None:
 
 
 async def _fetch_url_image(source: UrlImageSource) -> tuple[bytes, str, str]:
-    current_url = await validate_fetch_url(source.url)
+    # Each hop is validated (and DNS-pinned against rebinding) inside
+    # validated_stream().
+    current_url = source.url
     max_bytes = settings.url_source_image_max_bytes
 
     async with httpx.AsyncClient(
@@ -170,10 +172,11 @@ async def _fetch_url_image(source: UrlImageSource) -> tuple[bytes, str, str]:
     ) as client:
         for _ in range(_MAX_REDIRECTS + 1):
             try:
-                async with client.stream("GET", current_url) as response:
+                async with validated_stream(client, current_url) as response:
                     if 300 <= response.status_code < 400 and response.headers.get("location"):
-                        redirect = urljoin(current_url, response.headers["location"])
-                        current_url = await validate_fetch_url(redirect)
+                        current_url = urljoin(current_url, response.headers["location"])
+                        # Validation happens on the next hop inside
+                        # validated_stream().
                         continue
 
                     try:
