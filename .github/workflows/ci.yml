@@ -156,14 +156,24 @@ jobs:
           docker exec $(docker ps -qf "ancestor=pgvector/pgvector:pg16") psql -U postgres -d app -c "CREATE EXTENSION IF NOT EXISTS pg_trgm"
           uv run alembic upgrade head
 
-      - name: Seed eval corpus
-        run: PYTHONPATH=. uv run python scripts/seed_eval_corpus.py
+      - name: Seed eval corpora
+        run: |
+          PYTHONPATH=. uv run python scripts/seed_eval_corpus.py
+          PYTHONPATH=. uv run python scripts/seed_eval_corpus.py \
+            --corpus evals/datasets/hard/corpus.json
 
       - name: Run retrieval eval (recall@5 >= 90%)
         run: |
           PYTHONPATH=. uv run python -m evals.runners.retrieval_eval \
             --tenant ci-eval --k 5 \
             --dataset evals/datasets/ci_retrieval.jsonl \
+            --min-recall 0.9
+
+      - name: Run hard retrieval eval — cross-lingual/paraphrase/numeric
+        run: |
+          PYTHONPATH=. uv run python -m evals.runners.retrieval_eval \
+            --tenant rag-hard --k 5 \
+            --dataset evals/datasets/hard/queries.jsonl \
             --min-recall 0.9
 
   compose:

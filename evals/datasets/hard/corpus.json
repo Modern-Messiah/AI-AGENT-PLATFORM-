@@ -1,0 +1,45 @@
+{
+  "tenant": "rag-hard",
+  "documents": [
+    {
+      "filename": "vpn_playbook_ru.txt",
+      "chunks": [
+        "Инструкция по подключению к корпоративной VPN. Если клиент пишет «шлюз недоступен», сначала проверьте, что токен сеанса ещё не истёк: срок жизни токена — 12 часов, после чего запросите новый на портале mycorp. Точка доступа: vpn-gw.mycorp.example, порт 1194, протокол UDP.",
+        "При ошибке аутентификации VPN с кодом AUTH_MFA_FAIL_3012 повторно введите код из приложения-аутентификатора. Три неудачные попытки подряд блокируют аккаунт на 15 минут. Разблокировку выполняет дежурный администратор через команду unlock --user."
+      ]
+    },
+    {
+      "filename": "wiki_backup_policy_en.txt",
+      "chunks": [
+        "Backup policy. Nightly database dumps are written to the cold storage bucket every day at 03:15 UTC. Dumps are kept for 30 days; after that the lifecycle rule deletes them automatically.",
+        "Restore drill: to restore a dump, download it from the bucket, gunzip, and pipe into psql. A quarterly restore drill is mandatory for the on-call engineer; the result is recorded in the runbook register."
+      ]
+    },
+    {
+      "filename": "billing_plans.txt",
+      "chunks": [
+        "Тариф «Стартовый»: 10 ГБ хранилища, 100 запросов в сутки, без командных функций. Тариф «Команда»: 100 ГБ, 5000 запросов в сутки, общие проекты. Тариф «Корпоративный»: 1 ТБ, неограниченные запросы, SLA 99.9%.",
+        "Оплата тарифа «Команда» — 4900 рублей в месяц за рабочее место, при оплате за год скидка 20%. Пробный период — 14 дней без привязки карты."
+      ]
+    },
+    {
+      "filename": "incident_runbook.txt",
+      "chunks": [
+        "Runbook: если мониторинг поднял алерт ERR_CONN_REFUSED на сервисе payments, первым делом проверьте поды: kubectl get pods -n payments. Частая причина — исчерпание памяти, лимит пода 512Mi.",
+        "При коде ошибки TIMEOUT_504_GATEWAY от шлюза: увеличьте таймаут апстрима до 30 секунд и проверьте очередь в RabbitMQ; глубина очереди больше 10000 сообщений означает отставание консьюмеров."
+      ]
+    },
+    {
+      "filename": "onboarding_guide_en.txt",
+      "chunks": [
+        "Onboarding. Every new engineer gets a laptop image with the toolchain preinstalled. The default code reviewer assignment rotates weekly; the rotation list lives in the OWNERS file at the repository root."
+      ]
+    },
+    {
+      "filename": "distractor_vpn_vendor.txt",
+      "chunks": [
+        "Обзор рынка VPN-решений для дома: потребительские сервисы не подходят для корпоративного доступа. Личные VPN-провайдеры не поддерживают протокол MFA и не выдают токены сеанса; корпоративный доступ возможен только через шлюз компании."
+      ]
+    }
+  ]
+}

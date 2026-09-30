@@ -21,6 +21,7 @@ from sqlalchemy import select
 from packages.core import settings
 from packages.llm import complete_chat_json
 from packages.rag.lang import detect_language
+from packages.rag.llm_rerank import rerank_chunks_with_llm
 from packages.rag.retriever import (
     RetrievedChunk,
     merge_variant_results,
@@ -137,10 +138,16 @@ async def retrieve_chunks_with_expansion(
     Single-document scopes skip the escalation: the user explicitly chose
     the document and the distance cutoff is already disabled there.
     """
+    # Two-stage retrieval: stage 1 over-fetches a wide candidate pool
+    # (RERANK_CANDIDATE_K, e.g. 60) so the stage-2 reranker has material
+    # to choose from; the final k is applied after reranking.
+    fetch_k = k
+    if document_id is None and settings.llm_rerank_enabled:
+        fetch_k = max(k or 0, settings.rerank_candidate_k)
     primary = await retrieve_chunks(
         query,
         tenant_id,
-        k=k,
+        k=fetch_k,
         max_distance=max_distance,
         document_id=document_id,
         document_ids=document_ids,
@@ -180,5 +187,12 @@ async def retrieve_chunks_with_expansion(
         if result:
             variant_results.append(result)
 
-    merged = merge_variant_results(variant_results, limit=2 * (k or settings.retrieval_top_k))
-    return rerank_chunks(query, merged)
+    merged = merge_variant_results(variant_results, limit=2 * (fetch_k or settings.retrieval_top_k))
+    reranked = rerank_chunks(query, merged)
+    if document_id is not None or not settings.llm_rerank_enabled:
+        return reranked
+    llm_reranked = await rerank_chunks_with_llm(query, reranked)
+    if llm_reranked is None:
+        return reranked
+    final_k = k or settings.retrieval_top_k
+    return llm_reranked[:final_k]

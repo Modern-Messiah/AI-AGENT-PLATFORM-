@@ -102,6 +102,18 @@ class Settings(BaseSettings):
     # first-sentences heuristic; heuristic stays as the failure fallback.
     ai_document_insights_enabled: bool = True
 
+    # Post-answer faithfulness verification (weak model): every sentence is
+    # checked against the cited sources; the done-event carries the verdict
+    # and unsupported answers degrade to a refusal.
+    answer_verification_enabled: bool = True
+
+    # Two-stage retrieval: stage 1 fetches this many hybrid candidates for
+    # the stage-2 LLM reranker (cross-encoder view of query vs chunk).
+    rerank_candidate_k: int = 60
+    llm_rerank_enabled: bool = True
+    llm_rerank_max_chunks: int = 20
+    llm_rerank_timeout_seconds: float = 10.0
+
     # Log a WARNING when a single LLM call costs more than this amount.
     budget_alert_usd_per_call: float = 0.10
 
