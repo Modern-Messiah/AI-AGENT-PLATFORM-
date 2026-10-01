@@ -1694,8 +1694,48 @@ function docBadge(status) {
 }
 .llm-row-actions {
   white-space: nowrap;
+  text-align: right;
 }
 .llm-row-actions .btn + .btn {
   margin-left: 6px;
+}
+.th-actions {
+  text-align: right;
+}
+.table-wrap table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.table-wrap th {
+  padding: 12px 18px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+.table-wrap td {
+  padding: 14px 18px;
+  border-bottom: 1px solid color-mix(in oklch, var(--border) 60%, transparent);
+  font-size: 13px;
+  vertical-align: middle;
+  display: table-cell;
+}
+.table-wrap td.file-name {
+  display: table-cell !important;
+  vertical-align: middle;
+  font-weight: 500;
+  color: var(--text);
+}
+.table-wrap tr:last-child td {
+  border-bottom: none;
+}
+.table-wrap tr {
+  transition: background 0.12s cubic-bezier(0.25, 1, 0.5, 1);
+}
+.table-wrap tr:hover td {
+  background: color-mix(in oklch, var(--s2) 45%, transparent);
 }
 </style>
