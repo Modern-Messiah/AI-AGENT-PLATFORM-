@@ -70,6 +70,9 @@
     <path d="M5.5 6.5V4.5a2.5 2.5 0 0 1 5 0v2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
     <circle cx="8" cy="10.2" r="0.9" fill="currentColor"/>
   </svg>
+  <svg :width="size" :height="size" viewBox="0 0 16 16" fill="none" v-else-if="name === 'close' || name === 'x'">
+    <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+  </svg>
   <span v-else-if="name === 'agent'">A</span>
   <span v-else-if="name === 'user'">U</span>
 </template>

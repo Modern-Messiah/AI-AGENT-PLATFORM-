@@ -1,129 +1,151 @@
 <template>
   <div class="modal-overlay" @click.self="!validating && $emit('close')">
-    <div class="modal settings-modal">
-      <div class="modal-title">{{ t('settings.title') }}</div>
-      <div class="modal-sub">
-        {{ isAdminUser
-          ? (keyManagedByEnv ? t('settings.envDescription') : t('settings.localDescription'))
-          : t('settings.interfaceOnly') }}
-      </div>
-
-      <div v-if="isAdminUser" class="settings-section">{{ t('settings.sectionConnection') }}</div>
-
-      <div v-if="isAdminUser" class="form-group">
-        <label class="form-label">{{ t('settings.baseUrl') }}</label>
-        <input class="form-input" v-model="localBase" :placeholder="t('settings.basePlaceholder')"
-               :disabled="validating" />
-      </div>
-
-      <div v-if="isAdminUser && keyManagedByEnv" class="env-note">
-        {{ t('settings.envNote') }}
-      </div>
-
-      <div v-else-if="isAdminUser" class="form-group">
-        <label class="form-label">X-API-Key</label>
-        <input class="form-input" type="password" v-model="localKey"
-               :placeholder="t('settings.keyPlaceholder')"
-               :disabled="validating" autofocus />
-      </div>
-
-      <div v-if="isAdminUser" class="settings-section">{{ t('settings.sectionAdmin') }}</div>
-
-      <div v-if="isAdminUser" class="form-group">
-        <label class="form-label">{{ t('settings.adminSecret') }}</label>
-        <input class="form-input" type="password" v-model="localAdminSecret"
-               :placeholder="t('settings.adminSecretPlaceholder')"
-               :disabled="validating" />
-        <div class="language-hint">{{ t('settings.adminSecretHint') }}</div>
-      </div>
-
-      <div v-if="session.isAuthenticated" class="settings-section">
-        {{ t('settings.sectionSecurity') }}
-      </div>
-
-      <div v-if="session.isAuthenticated" class="form-group">
-        <label class="form-label">{{ t('settings.newPassword') }}</label>
-        <input
-          v-model="localNewPassword"
-          type="password"
-          class="form-input"
-          :placeholder="t('login.passwordPlaceholder')"
-          :disabled="passwordSaving"
-        />
-        <div class="language-hint">{{ t('settings.newPasswordHint') }}</div>
+    <div class="modal settings-modal" role="dialog" aria-modal="true" :aria-label="t('settings.title')">
+      <div class="settings-modal-header">
+        <div class="settings-modal-copy">
+          <div class="modal-title">{{ t('settings.title') }}</div>
+          <div class="modal-sub">
+            {{ isAdminUser
+              ? (keyManagedByEnv ? t('settings.envDescription') : t('settings.localDescription'))
+              : t('settings.interfaceOnly') }}
+          </div>
+        </div>
         <button
-          class="btn btn-ghost btn-sm"
-          style="margin-top: 8px"
-          :disabled="passwordSaving || localNewPassword.length < 8"
-          @click="changePassword"
+          type="button"
+          class="modal-close-btn"
+          :aria-label="t('common.close')"
+          :title="t('common.close') + ' (Esc)'"
+          :disabled="validating"
+          @click="$emit('close')"
         >
-          {{ passwordSaving ? t('settings.validating') : t('settings.changePassword') }}
+          <AppIcon name="close" :size="14" />
         </button>
-        <div v-if="passwordMessage" class="language-hint">{{ passwordMessage }}</div>
       </div>
 
-      <div class="settings-section">{{ t('settings.sectionInterface') }}</div>
+      <div class="settings-modal-body">
+        <div v-if="isAdminUser" class="settings-section">{{ t('settings.sectionConnection') }}</div>
 
-      <div class="form-group">
-        <label class="form-label">{{ t('settings.language') }}</label>
-        <div class="language-control" role="group" :aria-label="t('settings.language')">
-          <button
-            v-for="option in languageOptions"
-            :key="option.value"
-            type="button"
-            :class="['language-option', { active: settings.locale === option.value }]"
-            :aria-pressed="settings.locale === option.value"
-            @click="settings.setLocale(option.value)"
-          >
-            {{ option.label }}
-          </button>
+        <div v-if="isAdminUser" class="form-group">
+          <label class="form-label">{{ t('settings.baseUrl') }}</label>
+          <input class="form-input" v-model="localBase" :placeholder="t('settings.basePlaceholder')"
+                 :disabled="validating" />
         </div>
-        <div class="language-hint">{{ t('settings.languageHint') }}</div>
-      </div>
 
-      <div class="form-group">
-        <label class="form-label">{{ t('settings.theme') }}</label>
-        <div class="theme-grid" role="group" :aria-label="t('settings.theme')">
-          <button
-            v-for="option in themeOptions"
-            :key="option.id"
-            type="button"
-            :class="['theme-option', { active: settings.theme === option.id }]"
-            :aria-label="t(option.labelKey)"
-            :aria-pressed="settings.theme === option.id"
-            @click="settings.setTheme(option.id)"
-          >
-            <span class="theme-swatches" aria-hidden="true">
-              <span
-                v-for="swatch in option.swatches"
-                :key="swatch"
-                class="theme-swatch"
-                :style="{ background: swatch }"
-              />
-            </span>
-            <span class="theme-name">{{ t(option.labelKey) }}</span>
-          </button>
+        <div v-if="isAdminUser && keyManagedByEnv" class="env-note">
+          {{ t('settings.envNote') }}
         </div>
-        <div class="language-hint">{{ t('settings.themeHint') }}</div>
+
+        <div v-else-if="isAdminUser" class="form-group">
+          <label class="form-label">X-API-Key</label>
+          <input class="form-input" type="password" v-model="localKey"
+                 :placeholder="t('settings.keyPlaceholder')"
+                 :disabled="validating" autofocus />
+        </div>
+
+        <div v-if="isAdminUser" class="settings-section">{{ t('settings.sectionAdmin') }}</div>
+
+        <div v-if="isAdminUser" class="form-group">
+          <label class="form-label">{{ t('settings.adminSecret') }}</label>
+          <input class="form-input" type="password" v-model="localAdminSecret"
+                 :placeholder="t('settings.adminSecretPlaceholder')"
+                 :disabled="validating" />
+          <div class="language-hint">{{ t('settings.adminSecretHint') }}</div>
+        </div>
+
+        <div v-if="session.isAuthenticated" class="settings-section">
+          {{ t('settings.sectionSecurity') }}
+        </div>
+
+        <div v-if="session.isAuthenticated" class="form-group">
+          <label class="form-label">{{ t('settings.newPassword') }}</label>
+          <input
+            v-model="localNewPassword"
+            type="password"
+            class="form-input"
+            :placeholder="t('login.passwordPlaceholder')"
+            :disabled="passwordSaving"
+          />
+          <div class="language-hint">{{ t('settings.newPasswordHint') }}</div>
+          <button
+            class="btn btn-ghost btn-sm"
+            style="margin-top: 8px"
+            :disabled="passwordSaving || localNewPassword.length < 8"
+            @click="changePassword"
+          >
+            {{ passwordSaving ? t('settings.validating') : t('settings.changePassword') }}
+          </button>
+          <div v-if="passwordMessage" class="language-hint">{{ passwordMessage }}</div>
+        </div>
+
+        <div class="settings-section">{{ t('settings.sectionInterface') }}</div>
+
+        <div class="form-group">
+          <label class="form-label">{{ t('settings.language') }}</label>
+          <div class="language-control" role="group" :aria-label="t('settings.language')">
+            <button
+              v-for="option in languageOptions"
+              :key="option.value"
+              type="button"
+              :class="['language-option', { active: settings.locale === option.value }]"
+              :aria-pressed="settings.locale === option.value"
+              @click="settings.setLocale(option.value)"
+            >
+              {{ option.label }}
+            </button>
+          </div>
+          <div class="language-hint">{{ t('settings.languageHint') }}</div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">{{ t('settings.theme') }}</label>
+          <div class="theme-grid" role="group" :aria-label="t('settings.theme')">
+            <button
+              v-for="option in themeOptions"
+              :key="option.id"
+              type="button"
+              :class="['theme-option', { active: settings.theme === option.id }]"
+              :aria-label="t(option.labelKey)"
+              :aria-pressed="settings.theme === option.id"
+              @click="settings.setTheme(option.id)"
+            >
+              <span class="theme-swatches" aria-hidden="true">
+                <span
+                  v-for="swatch in option.swatches"
+                  :key="swatch"
+                  class="theme-swatch"
+                  :style="{ background: swatch }"
+                />
+              </span>
+              <span class="theme-name">{{ t(option.labelKey) }}</span>
+            </button>
+          </div>
+          <div class="language-hint">{{ t('settings.themeHint') }}</div>
+        </div>
+
+        <div v-if="error" style="margin-bottom: 14px; padding: 9px 12px; background: color-mix(in oklch, var(--red) 10%, transparent); border: 1px solid color-mix(in oklch, var(--red) 30%, transparent); border-radius: 8px; font-size: 12px; color: var(--red)">
+          {{ error }}
+        </div>
       </div>
 
-      <div v-if="error" style="margin-bottom: 14px; padding: 9px 12px; background: color-mix(in oklch, var(--red) 10%, transparent); border: 1px solid color-mix(in oklch, var(--red) 30%, transparent); border-radius: 8px; font-size: 12px; color: var(--red)">
-        {{ error }}
-      </div>
-
-      <div class="form-actions">
-        <button class="btn btn-ghost" :disabled="validating" @click="$emit('close')">{{ t('common.cancel') }}</button>
-        <button class="btn btn-primary" :disabled="validating || (isAdminUser && !keyManagedByEnv && !localKey.trim())" @click="save">
-          <div v-if="validating" class="spinner" style="width: 12px; height: 12px; border-width: 1.5px"></div>
-          {{ validating ? t('settings.validating') : t('common.save') }}
-        </button>
+      <div class="settings-modal-footer">
+        <template v-if="isAdminUser">
+          <button class="btn btn-ghost" :disabled="validating" @click="$emit('close')">{{ t('common.cancel') }}</button>
+          <button class="btn btn-primary" :disabled="validating || (!keyManagedByEnv && !localKey.trim())" @click="save">
+            <div v-if="validating" class="spinner" style="width: 12px; height: 12px; border-width: 1.5px"></div>
+            {{ validating ? t('settings.validating') : t('common.save') }}
+          </button>
+        </template>
+        <template v-else>
+          <button class="btn btn-primary" @click="$emit('close')">{{ t('common.close') }}</button>
+        </template>
       </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, onMounted, onUnmounted } from 'vue'
+import AppIcon from '@/components/AppIcon.vue'
 import { useSettingsStore } from '@/stores/settings'
 import { useSessionStore } from '@/stores/session'
 import { useI18n } from '@/composables/useI18n'
@@ -139,6 +161,20 @@ const emit = defineEmits(['close'])
 const settings = useSettingsStore()
 const session = useSessionStore()
 const { t } = useI18n()
+
+function onKeydown(e) {
+  if (e.key === 'Escape' && !validating.value) {
+    emit('close')
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('keydown', onKeydown)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', onKeydown)
+})
 const languageOptions = computed(() => [
   { value: 'ru', label: t('settings.russian') },
   { value: 'en', label: t('settings.english') },
@@ -224,8 +260,77 @@ async function save() {
 <style scoped>
 .settings-modal {
   width: 520px;
-  max-height: calc(100vh - 32px);
+  max-height: min(760px, calc(100vh - 40px));
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.settings-modal-header {
+  padding: 20px 24px 14px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid color-mix(in oklch, var(--border) 70%, transparent);
+  flex-shrink: 0;
+}
+.settings-modal-copy {
+  min-width: 0;
+}
+.settings-modal-copy .modal-title {
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.018em;
+  margin-bottom: 4px;
+}
+.settings-modal-copy .modal-sub {
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 0;
+}
+.modal-close-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--s2);
+  color: var(--muted2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s var(--ease-spring), border-color 0.15s var(--ease-spring), color 0.15s var(--ease-spring), transform 0.08s var(--ease-spring-snappy);
+}
+.modal-close-btn:hover {
+  background: var(--s3);
+  border-color: var(--border2);
+  color: var(--text);
+}
+.modal-close-btn:active {
+  transform: scale(0.92);
+}
+.modal-close-btn:focus-visible {
+  outline: 2px solid color-mix(in oklch, var(--accent) 55%, transparent);
+  outline-offset: 2px;
+}
+.settings-modal-body {
+  padding: 16px 24px;
   overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+.settings-modal-footer {
+  padding: 14px 24px;
+  border-top: 1px solid color-mix(in oklch, var(--border) 70%, transparent);
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  flex-shrink: 0;
+  background: color-mix(in oklch, var(--s1) 90%, transparent);
+  border-bottom-left-radius: 18px;
+  border-bottom-right-radius: 18px;
 }
 .settings-section {
   margin: 10px 0 14px;

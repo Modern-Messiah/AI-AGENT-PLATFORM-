@@ -8,6 +8,7 @@ import AppIcon from '../../src/components/AppIcon.vue'
 import ChatMessages from '../../src/components/chat/ChatMessages.vue'
 import ChatToolbar from '../../src/components/chat/ChatToolbar.vue'
 import ChatScopeModal from '../../src/components/chat/ChatScopeModal.vue'
+import SettingsModal from '../../src/components/SettingsModal.vue'
 import { translate } from '../../src/i18n/index.js'
 import { useChatStore } from '../../src/stores/chat.js'
 
@@ -198,4 +199,24 @@ test('ChatScopeModal renders options and emits select with global scope', async 
     globalThis.fetch = origFetch
   }
 })
+ 
+ 
+test('SettingsModal renders close button in header and emits close on click or Escape', async () => {
+  const wrapper = withSetup(SettingsModal)
+  expect(wrapper.text()).toContain('Настройки')
+
+  // Close button in header exists
+  const closeBtn = wrapper.find('button.modal-close-btn')
+  expect(closeBtn.exists()).toBe(true)
+
+  await closeBtn.trigger('click')
+  expect(wrapper.emitted('close')).toHaveLength(1)
+
+  // Pressing Escape emits close
+  window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+  expect(wrapper.emitted('close')).toHaveLength(2)
+
+  wrapper.unmount()
+})
+
 
