@@ -43,10 +43,7 @@ async def get_usage(
         effective_scope = "user" if user_id else "tenant"
 
     # Scope filter for ClickHouse queries
-    if effective_scope == "user" and user_id:
-        scope_filter = "AND user_id = {user_id:String}"
-    else:
-        scope_filter = ""
+    scope_filter = "AND user_id = {user_id:String}" if effective_scope == "user" and user_id else ""
 
     sql = f"""
         SELECT
@@ -96,7 +93,7 @@ async def get_usage(
     # When viewing tenant scope, admins also get per-user breakdown
     users_breakdown: list[dict[str, object]] = []
     if effective_scope == "tenant" and is_admin:
-        users_sql = f"""
+        users_sql = """
             SELECT
                 user_id,
                 round(sum(cost_usd), 6)  AS total_cost_usd,
@@ -104,8 +101,8 @@ async def get_usage(
                 count()                  AS call_count,
                 round(avg(latency_ms))   AS avg_latency_ms
             FROM analytics.llm_usage_events
-            WHERE tenant_id = {{tenant_id:String}}
-              AND event_time >= now() - toIntervalDay({{days:UInt32}})
+            WHERE tenant_id = {tenant_id:String}
+              AND event_time >= now() - toIntervalDay({days:UInt32})
             GROUP BY user_id
             ORDER BY total_cost_usd DESC
         """
@@ -113,8 +110,10 @@ async def get_usage(
             raw_users = await ch_client.query(users_sql, {"tenant_id": tenant_id, "days": days})
             async with admin_session() as db:
                 db_users = (
-                    await db.execute(select(User).where(User.tenant_id == tenant_id))
-                ).scalars().all()
+                    (await db.execute(select(User).where(User.tenant_id == tenant_id)))
+                    .scalars()
+                    .all()
+                )
             by_id = {str(u.id): u for u in db_users}
 
             for r in raw_users:
@@ -134,7 +133,11 @@ async def get_usage(
                 )
 
             # Ensure current admin user is present in the list even if 0 calls
-            if user_id and user_id in by_id and not any(ub.get("user_id") == user_id for ub in users_breakdown):
+            if (
+                user_id
+                and user_id in by_id
+                and not any(ub.get("user_id") == user_id for ub in users_breakdown)
+            ):
                 cur = by_id[user_id]
                 users_breakdown.append(
                     {

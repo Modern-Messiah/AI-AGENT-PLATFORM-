@@ -4,7 +4,6 @@ import asyncio
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 from packages.analytics.clickhouse import ClickHouseClient
 
 

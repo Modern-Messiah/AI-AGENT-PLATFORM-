@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-from typing import AsyncIterator
+from collections.abc import AsyncIterator
 from urllib.parse import urlparse
 
 import clickhouse_connect

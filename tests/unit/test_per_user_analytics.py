@@ -118,7 +118,7 @@ async def test_admin_can_switch_to_tenant_scope(fake_ch: FakeCH) -> None:
 
     assert result["scope"] == "tenant"
     assert result["can_switch_scope"] is True
-    sql, params = fake_ch.queries[0]
+    _sql, params = fake_ch.queries[0]
     assert "user_id" not in params
 
 
@@ -130,7 +130,7 @@ async def test_member_cannot_view_tenant_scope(fake_ch: FakeCH) -> None:
 
     assert result["scope"] == "user"
     assert result["can_switch_scope"] is False
-    sql, params = fake_ch.queries[0]
+    sql, _params = fake_ch.queries[0]
     assert "user_id = {user_id:String}" in sql
 
 
