@@ -281,8 +281,15 @@
       <!-- Add user modal -->
       <div v-if="userFormOpen" class="modal-overlay" @click.self="userFormOpen = false">
         <div class="modal key-modal">
-          <div class="modal-title">{{ t('admin.addUser') }}</div>
-          <div class="modal-sub">{{ t('admin.addUserSub') }}</div>
+          <div class="modal-header">
+            <div>
+              <div class="modal-title">{{ t('admin.addUser') }}</div>
+              <div class="modal-sub">{{ t('admin.addUserSub') }}</div>
+            </div>
+            <button type="button" class="modal-close-btn" :aria-label="t('common.cancel')" @click="userFormOpen = false">
+              <AppIcon name="close" :size="14" />
+            </button>
+          </div>
           <div class="form-group">
             <label class="form-label">{{ t('login.email') }}</label>
             <input v-model="userForm.email" type="email" class="form-input" placeholder="name@example.com" />
@@ -321,8 +328,15 @@
       <!-- Reset password modal -->
       <div v-if="resetTarget" class="modal-overlay" @click.self="resetTarget = null">
         <div class="modal key-modal">
-          <div class="modal-title">{{ t('admin.resetPassword') }}</div>
-          <div class="modal-sub">{{ t('admin.resetPasswordSub', { email: resetTarget.email }) }}</div>
+          <div class="modal-header">
+            <div>
+              <div class="modal-title">{{ t('admin.resetPassword') }}</div>
+              <div class="modal-sub">{{ t('admin.resetPasswordSub', { email: resetTarget.email }) }}</div>
+            </div>
+            <button type="button" class="modal-close-btn" :aria-label="t('common.cancel')" @click="resetTarget = null">
+              <AppIcon name="close" :size="14" />
+            </button>
+          </div>
           <div class="form-group">
             <label class="form-label">{{ t('settings.newPassword') }}</label>
             <input v-model="resetPasswordValue" type="password" class="form-input" :placeholder="t('login.passwordPlaceholder')" />
@@ -448,8 +462,15 @@
 
         <div v-if="llmFormOpen" class="modal-overlay" @click.self="llmFormOpen = false">
           <div class="modal key-modal">
-            <div class="modal-title">{{ t('admin.addLlmKey') }}</div>
-            <div class="modal-sub">{{ t('admin.addLlmKeySub') }}</div>
+            <div class="modal-header">
+              <div>
+                <div class="modal-title">{{ t('admin.addLlmKey') }}</div>
+                <div class="modal-sub">{{ t('admin.addLlmKeySub') }}</div>
+              </div>
+              <button type="button" class="modal-close-btn" :aria-label="t('common.cancel')" @click="llmFormOpen = false">
+                <AppIcon name="close" :size="14" />
+              </button>
+            </div>
             <div class="form-group">
               <label class="form-label">{{ t('admin.provider') }}</label>
               <select v-model="llmForm.provider" class="form-input">
@@ -730,7 +751,12 @@
     <!-- Prompt detail modal -->
     <div v-if="detail" class="modal-overlay" @click.self="detail = null">
       <div class="modal prompt-modal">
-        <div class="modal-title">{{ t('admin.promptDetail') }}</div>
+        <div class="modal-header">
+          <div class="modal-title">{{ t('admin.promptDetail') }}</div>
+          <button type="button" class="modal-close-btn" :aria-label="t('common.close')" @click="detail = null">
+            <AppIcon name="close" :size="14" />
+          </button>
+        </div>
         <div class="detail-grid">
           <div><span class="detail-label">{{ t('admin.tenant') }}</span><span class="td-mono">{{ detail.tenant_id }}</span></div>
           <div><span class="detail-label">{{ t('admin.user') }}</span>{{ promptActor(detail, settings.locale) }}</div>
@@ -772,7 +798,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useApi } from '@/composables/useApi'
 import { useSessionStore } from '@/stores/session'
 import { useSettingsStore } from '@/stores/settings'
@@ -799,6 +825,23 @@ const { apiAdminFetch } = useApi()
 const settings = useSettingsStore()
 const session = useSessionStore()
 const { t } = useI18n()
+
+function onAdminKeydown(e) {
+  if (e.key === 'Escape') {
+    if (detail.value) detail.value = null
+    else if (userFormOpen.value) userFormOpen.value = false
+    else if (resetTarget.value) resetTarget.value = null
+    else if (llmFormOpen.value) llmFormOpen.value = false
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('keydown', onAdminKeydown)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', onAdminKeydown)
+})
 
 const tabs = [
   { id: 'overview', labelKey: 'admin.tabOverview' },

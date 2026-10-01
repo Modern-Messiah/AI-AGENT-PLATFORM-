@@ -2,6 +2,15 @@
   <Teleport to="body">
     <div class="modal-overlay" @click.self="$emit('cancel')">
       <div class="modal confirm-modal" role="alertdialog" aria-modal="true">
+        <button
+          type="button"
+          class="modal-close-btn confirm-close-btn"
+          :aria-label="t('common.cancel')"
+          :title="t('common.cancel') + ' (Esc)'"
+          @click="$emit('cancel')"
+        >
+          <AppIcon name="close" :size="14" />
+        </button>
 
         <div class="confirm-icon-wrap">
           <div class="confirm-icon-circle">
@@ -54,3 +63,14 @@ onUnmounted(() => {
   document.removeEventListener('keydown', onKey)
 })
 </script>
+
+<style scoped>
+.confirm-modal {
+  position: relative;
+}
+.confirm-close-btn {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+}
+</style>

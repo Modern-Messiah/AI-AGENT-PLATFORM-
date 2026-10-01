@@ -280,6 +280,11 @@ html, body, #app {
   text-rendering: optimizeLegibility;
 }
 
+* {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklch, var(--border2) 75%, transparent) transparent;
+}
+
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
@@ -292,6 +297,18 @@ html, body, #app {
   background: color-mix(in oklch, var(--muted) 80%, transparent);
   border: 2px solid transparent;
   background-clip: padding-box;
+}
+
+.stat-value,
+.td-mono,
+.session-meta,
+.msg-time,
+.badge,
+.gen-timer,
+.confidence-badge,
+.source-chip-index,
+.kb-stat span {
+  font-feature-settings: "tnum" 1, "cv01" 1;
 }
 
 .layout { display: flex; height: 100vh; overflow: hidden; }
@@ -1079,8 +1096,11 @@ html, body, #app {
   border: 1px solid var(--border);
   border-radius: 16px;
   overflow: hidden;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.05);
-  transition: border-color 0.2s var(--ease-spring), box-shadow 0.2s var(--ease-spring);
+  box-shadow: 0 2px 8px var(--shadow-soft), inset 0 1px 0 color-mix(in oklch, #fff 6%, transparent);
+  transition: border-color 0.18s var(--ease-spring), box-shadow 0.18s var(--ease-spring);
+}
+.card:hover {
+  border-color: color-mix(in oklch, var(--border2) 75%, transparent);
 }
 .card-header {
   padding: 16px 22px;
@@ -1122,11 +1142,13 @@ tr:hover td { background: color-mix(in oklch, var(--s2) 50%, transparent); }
   border: 1px solid var(--border);
   border-radius: 14px;
   padding: 18px 20px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.03);
-  transition: transform 0.15s var(--ease-spring), box-shadow 0.15s var(--ease-spring);
+  box-shadow: 0 2px 8px var(--shadow-soft), inset 0 1px 0 color-mix(in oklch, #fff 6%, transparent);
+  transition: transform 0.15s var(--ease-spring), box-shadow 0.15s var(--ease-spring), border-color 0.15s var(--ease-spring);
 }
 .stat-card:hover {
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  transform: translateY(-1px);
+  border-color: color-mix(in oklch, var(--border2) 80%, transparent);
+  box-shadow: 0 6px 20px var(--shadow), inset 0 1px 0 color-mix(in oklch, #fff 8%, transparent);
 }
 .stat-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-bottom: 10px; }
 .stat-value { font-size: 26px; font-weight: 600; letter-spacing: -0.03em; font-family: var(--mono); }
@@ -1140,8 +1162,11 @@ tr:hover td { background: color-mix(in oklch, var(--s2) 50%, transparent); }
   border-radius: 14px;
   padding: 16px 20px;
   display: flex; align-items: flex-start; gap: 16px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  box-shadow: 0 2px 8px var(--shadow-soft), inset 0 1px 0 color-mix(in oklch, #fff 5%, transparent);
   transition: border-color 0.15s var(--ease-spring), box-shadow 0.15s var(--ease-spring);
+}
+.wf-card:hover {
+  border-color: color-mix(in oklch, var(--border2) 75%, transparent);
 }
 .wf-card.hitl-pending { border-color: color-mix(in oklch, var(--yellow) 35%, transparent); }
 .wf-status-col { display: flex; flex-direction: column; align-items: center; gap: 6px; padding-top: 2px; }
@@ -1210,15 +1235,11 @@ tr:hover td { background: color-mix(in oklch, var(--s2) 50%, transparent); }
 .toast.success .toast-icon { background: color-mix(in oklch, var(--green) 20%, transparent); color: var(--green); }
 .toast.error .toast-icon { background: color-mix(in oklch, var(--red) 20%, transparent); color: var(--red); }
 .toast.info .toast-icon { background: color-mix(in oklch, var(--accent) 20%, transparent); color: var(--accent); }
-@keyframes toastSlideUp {
-  from { transform: translateY(16px) scale(0.95); opacity: 0; }
-  to   { transform: translateY(0) scale(1); opacity: 1; }
-}
 .toast.success { border-left: 3px solid var(--green); }
 .toast.error { border-left: 3px solid var(--red); }
 .toast.info { border-left: 3px solid var(--accent); }
 
-/* SETTINGS MODAL */
+/* SETTINGS & APP MODALS */
 .modal-overlay {
   position: fixed; inset: 0;
   background: color-mix(in oklch, var(--overlay) 85%, transparent);
@@ -1248,20 +1269,54 @@ tr:hover td { background: color-mix(in oklch, var(--s2) 50%, transparent); }
   from { transform: scale(0.94) translateY(6px); opacity: 0; }
   to   { transform: scale(1) translateY(0); opacity: 1; }
 }
+.modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
 .modal-title { font-size: 16px; font-weight: 600; letter-spacing: -0.018em; margin-bottom: 4px; }
-.modal-sub { font-size: 12px; color: var(--muted); margin-bottom: 20px; }
+.modal-sub { font-size: 12px; color: var(--muted); margin-bottom: 0; }
+.modal-close-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--s2);
+  color: var(--muted2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s var(--ease-spring), border-color 0.15s var(--ease-spring), color 0.15s var(--ease-spring), transform 0.08s var(--ease-spring-snappy);
+}
+.modal-close-btn:hover {
+  background: var(--s3);
+  border-color: var(--border2);
+  color: var(--text);
+}
+.modal-close-btn:active {
+  transform: scale(0.92);
+}
+.modal-close-btn:focus-visible {
+  outline: 2px solid color-mix(in oklch, var(--accent) 55%, transparent);
+  outline-offset: 2px;
+}
 .form-group { margin-bottom: 16px; }
 .form-label { font-size: 12px; font-weight: 500; color: var(--muted2); margin-bottom: 6px; display: block; }
 .form-input {
   width: 100%;
   background: var(--s2); border: 1px solid var(--border);
-  color: var(--text); font-family: var(--mono); font-size: 12px;
-  padding: 9px 12px; border-radius: 8px; outline: none;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  color: var(--text); font-family: var(--font); font-size: 12.5px;
+  padding: 9px 12px; border-radius: 9px; outline: none;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.03);
+  transition: border-color 0.15s var(--ease-spring), box-shadow 0.15s var(--ease-spring);
 }
 .form-input:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 25%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 25%, transparent), inset 0 1px 2px rgba(0, 0, 0, 0.03);
 }
 .form-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px; }
 

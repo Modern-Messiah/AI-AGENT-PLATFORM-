@@ -6,10 +6,19 @@
           <div class="scope-modal-icon">
             <AppIcon name="filter" :size="20" />
           </div>
-          <div>
+          <div class="scope-modal-title-copy">
             <h2 class="scope-modal-title">{{ t('chat.scopeSelectTitle') }}</h2>
             <p class="scope-modal-sub">{{ t('chat.scopeSelectSub') }}</p>
           </div>
+          <button
+            type="button"
+            class="modal-close-btn"
+            :aria-label="t('common.cancel')"
+            :title="t('common.cancel') + ' (Esc)'"
+            @click="$emit('cancel')"
+          >
+            <AppIcon name="close" :size="14" />
+          </button>
         </div>
 
         <div class="scope-tabs">
@@ -276,6 +285,11 @@ onUnmounted(() => {
   align-items: center;
   gap: 14px;
   margin-bottom: 18px;
+}
+
+.scope-modal-title-copy {
+  flex: 1;
+  min-width: 0;
 }
 
 .scope-modal-icon {

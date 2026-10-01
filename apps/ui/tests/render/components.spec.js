@@ -32,6 +32,9 @@ test('ConfirmModal renders and emits confirm on button click', async () => {
   expect(wrapper.text()).toContain('report.pdf')
   await wrapper.find('button.btn-danger').trigger('click')
   expect(wrapper.emitted('confirm')).toHaveLength(1)
+
+  await wrapper.find('button.confirm-close-btn').trigger('click')
+  expect(wrapper.emitted('cancel')).toHaveLength(1)
 })
 
 
@@ -195,6 +198,11 @@ test('ChatScopeModal renders options and emits select with global scope', async 
       notebookId: null,
       title: '',
     })
+
+    const closeBtn = wrapper.find('button.modal-close-btn')
+    expect(closeBtn.exists()).toBe(true)
+    await closeBtn.trigger('click')
+    expect(wrapper.emitted('cancel')).toHaveLength(1)
   } finally {
     globalThis.fetch = origFetch
   }
