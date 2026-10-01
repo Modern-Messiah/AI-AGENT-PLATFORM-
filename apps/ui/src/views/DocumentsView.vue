@@ -890,9 +890,9 @@ function handleFileInput(e) {
     display: flex;
     justify-content: space-between;
     gap: 24px;
-    padding: 18px;
+    padding: 20px 22px;
     border: 1px solid var(--border);
-    border-radius: 14px;
+    border-radius: 16px;
     background:
         radial-gradient(
             circle at 10% 0%,
@@ -900,19 +900,22 @@ function handleFileInput(e) {
             transparent 28%
         ),
         var(--s1);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 .kb-eyebrow {
     margin-bottom: 6px;
     color: var(--accent);
     font-family: var(--mono);
-    font-size: 10px;
-    letter-spacing: 0.08em;
+    font-size: 10.5px;
+    letter-spacing: 0.06em;
+    font-weight: 600;
     text-transform: uppercase;
 }
 .kb-hero h1 {
     margin: 0 0 8px;
     font-size: 24px;
-    letter-spacing: -0.04em;
+    font-weight: 700;
+    letter-spacing: -0.025em;
 }
 .kb-hero p {
     max-width: 620px;
@@ -927,10 +930,11 @@ function handleFileInput(e) {
     min-width: 280px;
 }
 .kb-stat {
-    padding: 12px;
+    padding: 12px 14px;
     border: 1px solid var(--border);
-    border-radius: 10px;
+    border-radius: 12px;
     background: color-mix(in oklch, var(--s2) 86%, transparent);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 .kb-stat span {
     display: block;
@@ -1149,12 +1153,17 @@ function handleFileInput(e) {
     cursor: pointer;
     font-family: var(--font);
     font-size: 13px;
+    font-weight: 500;
     text-overflow: ellipsis;
     text-align: left;
     white-space: nowrap;
+    transition: color 0.15s, opacity 0.12s;
 }
 .file-title-button:hover {
     color: var(--accent);
+}
+.file-title-button:active:not(:disabled) {
+    opacity: 0.7;
 }
 .file-title-button:disabled {
     color: var(--muted2);
@@ -1242,6 +1251,10 @@ function handleFileInput(e) {
     flex: 0 0 36px;
     justify-content: center;
     padding: 0;
+    border-radius: 8px;
+}
+.document-row-actions .btn-sm:active:not(:disabled) {
+    transform: scale(0.93);
 }
 
 @media (max-width: 900px) {

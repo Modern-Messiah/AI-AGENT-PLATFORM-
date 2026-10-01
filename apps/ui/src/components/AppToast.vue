@@ -1,7 +1,7 @@
 <template>
   <div :class="['toast', type]">
-    <span>{{ icon }}</span>
-    <span>{{ msg }}</span>
+    <span class="toast-icon">{{ icon }}</span>
+    <span class="toast-msg">{{ msg }}</span>
   </div>
 </template>
 

@@ -1267,7 +1267,8 @@ function docBadge(status) {
 .query-bar {
   width: 100%;
   max-width: 34px;
-  border-radius: 4px 4px 0 0;
+  border-radius: 6px 6px 0 0;
+  transition: opacity 0.15s;
 }
 .query-bar.queries { background: linear-gradient(180deg, var(--accent), color-mix(in oklch, var(--accent) 55%, transparent)); }
 .query-bar.errors { background: var(--red); opacity: 0.85; }
@@ -1348,10 +1349,16 @@ function docBadge(status) {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 14px;
+  padding: 14px 16px;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 12px;
   background: color-mix(in oklch, var(--s2) 60%, transparent);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.health-check:hover {
+  background: color-mix(in oklch, var(--s2) 80%, transparent);
+  border-color: color-mix(in oklch, var(--accent) 30%, var(--border));
 }
 .health-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
 .health-check.good .health-dot { background: var(--green); }

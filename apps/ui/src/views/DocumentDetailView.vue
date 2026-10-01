@@ -363,38 +363,53 @@ function openDocumentChat() {
   display: flex;
   justify-content: space-between;
   gap: 24px;
-  padding: 18px;
+  padding: 20px 22px;
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: 16px;
   background:
     radial-gradient(circle at 0% 0%, color-mix(in oklch, var(--accent) 18%, transparent), transparent 30%),
     var(--s1);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 .back-link {
-  margin: 0 0 12px;
-  padding: 0;
-  border: 0;
-  background: transparent;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 14px;
+  padding: 5px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in oklch, var(--s2) 80%, transparent);
   color: var(--muted2);
   cursor: pointer;
   font-family: var(--font);
   font-size: 12px;
+  font-weight: 500;
+  transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+  user-select: none;
 }
 .back-link:hover {
+  background: color-mix(in oklch, var(--s2) 50%, var(--s3));
+  border-color: color-mix(in oklch, var(--accent) 30%, var(--border));
   color: var(--text);
+}
+.back-link:active {
+  transform: scale(0.96);
 }
 .detail-eyebrow {
   margin-bottom: 6px;
   color: var(--accent);
   font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.08em;
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  font-weight: 600;
   text-transform: uppercase;
 }
 .detail-hero h1 {
   margin: 0 0 8px;
   font-size: 24px;
-  letter-spacing: -0.04em;
+  font-weight: 700;
+  letter-spacing: -0.025em;
   overflow-wrap: anywhere;
 }
 .detail-hero p {
@@ -462,19 +477,25 @@ function openDocumentChat() {
   margin-bottom: 14px;
 }
 .question-chip {
-  padding: 7px 10px;
+  padding: 6px 12px;
   border: 1px solid var(--border);
   border-radius: 999px;
-  background: var(--s1);
+  background: color-mix(in oklch, var(--s2) 80%, transparent);
   color: var(--muted2);
   cursor: pointer;
   font-family: var(--font);
   font-size: 12px;
   text-align: left;
+  transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+  user-select: none;
 }
 .question-chip:hover {
-  border-color: var(--accent);
+  border-color: color-mix(in oklch, var(--accent) 50%, var(--border));
+  background: color-mix(in oklch, var(--accent) 8%, var(--s2));
   color: var(--text);
+}
+.question-chip:active {
+  transform: scale(0.96);
 }
 .ask-main {
   width: 100%;
@@ -531,16 +552,22 @@ function openDocumentChat() {
   padding: 14px;
 }
 .chunk-card {
-  padding: 13px;
+  padding: 14px 16px;
   border: 1px solid var(--border);
   border-radius: 12px;
   background: color-mix(in oklch, var(--s2) 74%, transparent);
   scroll-margin: 100px;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+.chunk-card:hover {
+  border-color: color-mix(in oklch, var(--accent) 30%, var(--border));
+  background: color-mix(in oklch, var(--s2) 90%, transparent);
 }
 .chunk-card-target {
   border-color: var(--accent);
-  box-shadow: 0 0 0 1px color-mix(in oklch, var(--accent) 40%, transparent);
+  background: color-mix(in oklch, var(--accent) 6%, var(--s2));
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--accent) 40%, transparent), 0 4px 16px rgba(0, 0, 0, 0.08);
 }
 .chunk-meta {
   display: flex;

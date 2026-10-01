@@ -2,14 +2,17 @@
   <div class="screen-body analytics-screen">
     <div class="analytics-toolbar">
       <span class="toolbar-label">{{ t('analytics.period') }}</span>
-      <button
-        v-for="d in [7, 14, 30]"
-        :key="d"
-        :class="['btn btn-ghost btn-sm', { 'btn-primary': days === d }]"
-        @click="days = d"
-      >
-        {{ t('analytics.daysShort', { days: d }) }}
-      </button>
+      <div class="period-control" role="group">
+        <button
+          v-for="d in [7, 14, 30]"
+          :key="d"
+          :class="['period-btn', { active: days === d }]"
+          type="button"
+          @click="days = d"
+        >
+          {{ t('analytics.daysShort', { days: d }) }}
+        </button>
+      </div>
       <button class="btn btn-ghost btn-sm" :disabled="loading" @click="load">
         <div v-if="loading" class="spinner"></div>
         <AppIcon v-else name="refresh" :size="13" />
@@ -252,6 +255,39 @@ const stats = computed(() => {
 .toolbar-label {
   color: var(--muted);
   font-size: 13px;
+}
+.period-control {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid color-mix(in oklch, var(--border) 80%, transparent);
+  border-radius: 8px;
+  background: color-mix(in oklch, var(--s2) 65%, var(--s1));
+}
+.period-btn {
+  padding: 4px 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted2);
+  font-family: var(--font);
+  font-size: 11.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+  user-select: none;
+}
+.period-btn:hover {
+  color: var(--text);
+}
+.period-btn.active {
+  background: var(--s1);
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+.period-btn:active {
+  transform: scale(0.96);
 }
 .tenant-label {
   margin-left: auto;

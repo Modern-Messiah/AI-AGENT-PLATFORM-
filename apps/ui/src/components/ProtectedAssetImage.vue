@@ -135,10 +135,19 @@ onBeforeUnmount(() => {
   width: 100%;
   padding: 0;
   overflow: hidden;
-  border: 1px solid var(--border2);
-  border-radius: 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
   background: var(--s1);
   cursor: zoom-in;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+.asset-preview-button:hover {
+  border-color: color-mix(in oklch, var(--accent) 40%, var(--border));
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+}
+.asset-preview-button:active {
+  transform: scale(0.97);
 }
 .asset-preview-button img {
   display: block;
@@ -187,33 +196,59 @@ onBeforeUnmount(() => {
   display: grid;
   place-items: center;
   padding: 24px;
-  background: color-mix(in oklch, black 82%, transparent);
+  background: color-mix(in oklch, black 70%, transparent);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  animation: lightboxFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes lightboxFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 .asset-lightbox-content {
   position: relative;
   max-width: min(1100px, 96vw);
   max-height: 92vh;
+  animation: lightboxScaleUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes lightboxScaleUp {
+  from { transform: scale(0.94); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
 }
 .asset-lightbox-content img {
   display: block;
   max-width: 100%;
   max-height: 92vh;
-  border-radius: 8px;
+  border-radius: 14px;
   object-fit: contain;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.1);
 }
 .asset-close {
   position: absolute;
   z-index: 1;
   top: 10px;
   right: 10px;
-  width: 34px;
-  height: 34px;
-  border: 1px solid color-mix(in oklch, white 30%, transparent);
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid color-mix(in oklch, white 24%, transparent);
   border-radius: 50%;
-  background: color-mix(in oklch, black 72%, transparent);
+  background: color-mix(in oklch, black 60%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   color: white;
   cursor: pointer;
-  font-size: 22px;
+  font-size: 18px;
   line-height: 1;
+  transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.asset-close:hover {
+  background: color-mix(in oklch, black 80%, transparent);
+  transform: scale(1.05);
+}
+.asset-close:active {
+  transform: scale(0.92);
 }
 </style>

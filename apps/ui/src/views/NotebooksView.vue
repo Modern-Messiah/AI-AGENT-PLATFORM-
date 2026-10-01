@@ -297,25 +297,28 @@ function openNotebook(id) {
   display: flex;
   justify-content: space-between;
   gap: 24px;
-  padding: 18px;
+  padding: 20px 22px;
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: 16px;
   background:
     radial-gradient(circle at 10% 0%, color-mix(in oklch, var(--purple) 18%, transparent), transparent 28%),
     var(--s1);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 .notebook-eyebrow {
   margin-bottom: 6px;
   color: var(--accent);
   font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.08em;
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  font-weight: 600;
   text-transform: uppercase;
 }
 .notebook-hero h1 {
   margin: 0 0 8px;
   font-size: 24px;
-  letter-spacing: -0.04em;
+  font-weight: 700;
+  letter-spacing: -0.025em;
 }
 .notebook-hero p {
   max-width: 620px;
@@ -325,10 +328,11 @@ function openNotebook(id) {
 }
 .notebook-stat {
   min-width: 120px;
-  padding: 12px;
+  padding: 12px 14px;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 12px;
   background: color-mix(in oklch, var(--s2) 86%, transparent);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 .notebook-stat span {
   display: block;
@@ -381,11 +385,20 @@ function openNotebook(id) {
   display: flex;
   gap: 10px;
   align-items: flex-start;
-  padding: 10px;
+  padding: 10px 12px;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 12px;
   background: var(--s2);
   cursor: pointer;
+  transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+  user-select: none;
+}
+.doc-option:hover {
+  background: color-mix(in oklch, var(--s2) 70%, var(--s3));
+  border-color: color-mix(in oklch, var(--accent) 30%, var(--border));
+}
+.doc-option:active {
+  transform: scale(0.98);
 }
 .doc-option strong {
   display: block;
@@ -445,10 +458,20 @@ function openNotebook(id) {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 12px;
+  padding: 14px 16px;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 14px;
   background: color-mix(in oklch, var(--s2) 74%, transparent);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.notebook-card:hover {
+  border-color: color-mix(in oklch, var(--accent) 32%, var(--border));
+  background: color-mix(in oklch, var(--s2) 90%, transparent);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
+}
+.notebook-card .btn-ghost.btn-sm:active {
+  transform: scale(0.93);
 }
 .notebook-open {
   flex: 1;

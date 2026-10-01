@@ -145,9 +145,13 @@ function isNavActive(path) {
   color: var(--muted);
   cursor: pointer;
   line-height: 0;
+  transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .logout-btn:hover {
   background: var(--s3);
   color: var(--red);
+}
+.logout-btn:active {
+  transform: scale(0.92);
 }
 </style>
