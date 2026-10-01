@@ -16,7 +16,7 @@ vectors silently degrades retrieval for both.
 
 No schema change; just clear the stale vectors and reindex.
 
-1. Back up PostgreSQL app data: `make backup`.
+1. Back up PostgreSQL app data: `just backup`.
 
 2. Set the env in `.env` (both `api` and `worker` see these via compose):
 

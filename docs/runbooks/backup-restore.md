@@ -19,7 +19,7 @@ The minimum recoverable system needs:
 | ClickHouse | Optional but useful | Usage analytics and Langfuse event data |
 | Redis | Optional | Semantic cache and transient local state; can usually be rebuilt |
 
-The existing `make backup` target runs `scripts/backup.py`. That script only dumps the
+The existing `just backup` recipe runs `scripts/backup.py`. That script only dumps the
 application Postgres database to MinIO. It does not back up MinIO itself, `.env`,
 Temporal databases, Langfuse database, ClickHouse, or Redis. Use the full procedure
 below for real disaster recovery.
