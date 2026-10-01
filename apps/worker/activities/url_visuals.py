@@ -21,8 +21,9 @@ from apps.api.services.url_sources import (
     URL_SOURCE_HEADERS,
     UrlImageSource,
     UrlSourceError,
+    read_body_capped,
     url_image_sidecar_key,
-    validate_fetch_url,
+    validated_stream,
 )
 from apps.worker.activities.heartbeat import heartbeat_safe
 from apps.worker.activities.ingestion_types import IngestionInput, VisualPageAnalysis
@@ -159,7 +160,9 @@ async def _clear_url_image_assets(input: IngestionInput) -> None:
 
 
 async def _fetch_url_image(source: UrlImageSource) -> tuple[bytes, str, str]:
-    current_url = await validate_fetch_url(source.url)
+    # Each hop is validated (and DNS-pinned against rebinding) inside
+    # validated_stream().
+    current_url = source.url
     max_bytes = settings.url_source_image_max_bytes
 
     async with httpx.AsyncClient(
@@ -169,39 +172,37 @@ async def _fetch_url_image(source: UrlImageSource) -> tuple[bytes, str, str]:
     ) as client:
         for _ in range(_MAX_REDIRECTS + 1):
             try:
-                response = await client.get(current_url)
+                async with validated_stream(client, current_url) as response:
+                    if 300 <= response.status_code < 400 and response.headers.get("location"):
+                        current_url = urljoin(current_url, response.headers["location"])
+                        # Validation happens on the next hop inside
+                        # validated_stream().
+                        continue
+
+                    try:
+                        response.raise_for_status()
+                    except httpx.HTTPStatusError as exc:
+                        raise UrlSourceError(
+                            f"URL image returned HTTP {exc.response.status_code}"
+                        ) from exc
+
+                    content_type = _content_type_header(response.headers.get("content-type"))
+                    if content_type not in _IMAGE_TYPES:
+                        raise UrlSourceError("URL image content type is not supported")
+
+                    length = response.headers.get("content-length")
+                    if length and length.isdigit() and int(length) > max_bytes:
+                        raise UrlSourceError(
+                            f"URL image exceeds {max_bytes // (1024 * 1024)} MB limit",
+                            status_code=413,
+                        )
+
+                    # Stream with an incremental cap: a lying Content-Length or
+                    # chunked encoding must not buffer an unbounded body.
+                    data = await read_body_capped(response, max_bytes)
+                    return data, content_type, _safe_image_filename(current_url, content_type)
             except httpx.RequestError as exc:
                 raise UrlSourceError(f"URL image request failed: {exc}") from exc
-
-            if 300 <= response.status_code < 400 and response.headers.get("location"):
-                current_url = await validate_fetch_url(
-                    urljoin(current_url, response.headers["location"])
-                )
-                continue
-
-            try:
-                response.raise_for_status()
-            except httpx.HTTPStatusError as exc:
-                raise UrlSourceError(f"URL image returned HTTP {exc.response.status_code}") from exc
-
-            content_type = _content_type_header(response.headers.get("content-type"))
-            if content_type not in _IMAGE_TYPES:
-                raise UrlSourceError("URL image content type is not supported")
-
-            length = response.headers.get("content-length")
-            if length and length.isdigit() and int(length) > max_bytes:
-                raise UrlSourceError(
-                    f"URL image exceeds {max_bytes // (1024 * 1024)} MB limit",
-                    status_code=413,
-                )
-
-            data = response.content
-            if len(data) > max_bytes:
-                raise UrlSourceError(
-                    f"URL image exceeds {max_bytes // (1024 * 1024)} MB limit",
-                    status_code=413,
-                )
-            return data, content_type, _safe_image_filename(current_url, content_type)
 
     raise UrlSourceError("URL image redirected too many times")
 

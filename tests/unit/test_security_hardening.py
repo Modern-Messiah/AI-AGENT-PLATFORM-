@@ -149,6 +149,13 @@ class FakeRedis:
     async def zrem(self, key: str, member: str) -> int:
         return (self.zsets.get(key, {}).pop(member, None) is not None and 1) or 0
 
+    async def zrange(
+        self, key: str, start: int, end: int, *, withscores: bool
+    ) -> list[tuple[str, float]]:
+        assert start == 0 and end == 0 and withscores is True
+        ordered = sorted(self.zsets.get(key, {}).items(), key=lambda item: item[1])
+        return ordered[:1]
+
 
 class FakePipeline:
     def __init__(self, redis: FakeRedis) -> None:
@@ -539,8 +546,10 @@ async def test_fresh_login_lifts_session_denial(monkeypatch) -> None:
     await deny_user_sessions(user.id)
     assert await is_user_denied(user.id) is True
 
+    from fastapi import Response
+
     response = await login_router.login(
-        EmailLoginRequest(email=user.email, password="long-enough-pass")
+        EmailLoginRequest(email=user.email, password="long-enough-pass"), Response()
     )
     assert len(response.token) > 50  # логин прошёл — блокировка снята
     assert await is_user_denied(user.id) is False

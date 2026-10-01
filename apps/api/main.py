@@ -47,7 +47,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -57,6 +57,7 @@ from packages.core import settings
 from packages.llm.keyring import keyring_refresh_loop, refresh_from_db
 from packages.observability import instrument_fastapi_app, setup_logfire
 from packages.rag.embedder import embed_texts
+from packages.storage.db import engine
 from temporalio.client import Client
 
 from apps.api.routers import (
@@ -158,13 +159,21 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await ensure_usage_schema()
     await refresh_from_db()
     setup_logfire("aap-api")
-    revocation_task = asyncio.create_task(revocation_listener())
-    retention_task = asyncio.create_task(retention_loop())
-    keyring_task = asyncio.create_task(keyring_refresh_loop())
+    background_tasks = (
+        asyncio.create_task(revocation_listener()),
+        asyncio.create_task(retention_loop()),
+        asyncio.create_task(keyring_refresh_loop()),
+    )
     yield
-    revocation_task.cancel()
-    retention_task.cancel()
-    keyring_task.cancel()
+    # Shutdown: cancel the loops and AWAIT them so their cleanup completes,
+    # then return pooled DB connections. The Temporal client itself has no
+    # close(): temporalio's Core runtime owns the connections for the
+    # process lifetime (no public shutdown API as of temporalio 1.32).
+    for task in background_tasks:
+        task.cancel()
+    await asyncio.gather(*background_tasks, return_exceptions=True)
+    with suppress(Exception):
+        await engine.dispose()
 
 
 app = FastAPI(title="AI Agent Platform", lifespan=lifespan)

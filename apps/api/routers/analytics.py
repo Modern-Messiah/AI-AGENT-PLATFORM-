@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import cast
 
 from fastapi import APIRouter, HTTPException, Query
@@ -7,6 +8,7 @@ from packages.analytics.clickhouse import ch_client
 
 from apps.api.deps import ActorDep
 
+log = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -57,7 +59,10 @@ async def get_usage(
         rows = await ch_client.query(sql, params)
         daily_rows = await ch_client.query(daily_sql, params)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"ClickHouse error: {e}") from e
+        # Client errors embed the ClickHouse endpoint (credentials included in
+        # its URL) — log the details, return a generic message.
+        log.exception("analytics usage query failed | tenant=%s", tenant_id)
+        raise HTTPException(status_code=500, detail="ClickHouse error") from e
 
     total_cost = sum(cast(float, r.get("total_cost_usd") or 0) for r in rows)
     return {

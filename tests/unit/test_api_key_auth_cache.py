@@ -63,6 +63,7 @@ class FakeSessionFactory:
 async def test_require_tenant_collapses_concurrent_same_key_lookups(monkeypatch) -> None:
     api_keys._AUTH_CACHE.clear()
     api_keys._AUTH_LOCKS.clear()
+    api_keys._AUTH_NEGATIVE_CACHE.clear()
     factory = FakeSessionFactory()
     monkeypatch.setattr(api_keys, "async_session", factory)
 
@@ -76,6 +77,7 @@ async def test_require_tenant_collapses_concurrent_same_key_lookups(monkeypatch)
 async def test_require_tenant_returns_401_for_missing_api_key(monkeypatch) -> None:
     api_keys._AUTH_CACHE.clear()
     api_keys._AUTH_LOCKS.clear()
+    api_keys._AUTH_NEGATIVE_CACHE.clear()
     factory = FakeSessionFactory()
     monkeypatch.setattr(api_keys, "async_session", factory)
 
@@ -90,6 +92,7 @@ async def test_require_tenant_returns_401_for_missing_api_key(monkeypatch) -> No
 async def test_require_actor_resolves_key_owner_identity(monkeypatch) -> None:
     api_keys._AUTH_CACHE.clear()
     api_keys._AUTH_LOCKS.clear()
+    api_keys._AUTH_NEGATIVE_CACHE.clear()
     user_id = uuid.uuid4()
     factory = FakeSessionFactory()
     factory.select_row = (
@@ -111,6 +114,7 @@ async def test_require_actor_resolves_key_owner_identity(monkeypatch) -> None:
 async def test_require_actor_caches_identity_with_the_tenant(monkeypatch) -> None:
     api_keys._AUTH_CACHE.clear()
     api_keys._AUTH_LOCKS.clear()
+    api_keys._AUTH_NEGATIVE_CACHE.clear()
     user_id = uuid.uuid4()
     factory = FakeSessionFactory()
     factory.select_row = (
@@ -127,3 +131,66 @@ async def test_require_actor_caches_identity_with_the_tenant(monkeypatch) -> Non
     assert actor.user_id == user_id
     assert actor.user_name == "bob"
     assert factory.select_count == 1
+
+
+async def test_invalid_key_is_negatively_cached_without_db_hits(monkeypatch) -> None:
+    api_keys._AUTH_CACHE.clear()
+    api_keys._AUTH_LOCKS.clear()
+    api_keys._AUTH_NEGATIVE_CACHE.clear()
+    factory = FakeSessionFactory()
+    factory.select_row = None  # None is replaced by the default row in __init__
+    monkeypatch.setattr(api_keys, "async_session", factory)
+
+    with pytest.raises(HTTPException) as first:
+        await api_keys.require_actor("definitely-not-a-key")
+    with pytest.raises(HTTPException) as second:
+        await api_keys.require_actor("definitely-not-a-key")
+
+    assert first.value.status_code == 401
+    assert second.value.detail == first.value.detail
+    # Only the first request reaches the DB; the replay is served from the
+    # negative cache — key spraying must be nearly free to reject.
+    assert factory.select_count == 1
+
+
+async def test_invalid_keys_do_not_grow_the_lock_dict(monkeypatch) -> None:
+    api_keys._AUTH_CACHE.clear()
+    api_keys._AUTH_LOCKS.clear()
+    api_keys._AUTH_NEGATIVE_CACHE.clear()
+    factory = FakeSessionFactory()
+    factory.select_row = None  # None is replaced by the default row in __init__
+    monkeypatch.setattr(api_keys, "async_session", factory)
+
+    for i in range(50):
+        with pytest.raises(HTTPException):
+            await api_keys.require_actor(f"spray-{i}")
+
+    # One lock per key sprayed used to accumulate forever; now locks are
+    # dropped as soon as nobody waits on them.
+    assert len(api_keys._AUTH_LOCKS) == 0
+
+
+async def test_negative_cache_expires_and_rechecks_the_db(monkeypatch) -> None:
+    api_keys._AUTH_CACHE.clear()
+    api_keys._AUTH_LOCKS.clear()
+    api_keys._AUTH_NEGATIVE_CACHE.clear()
+    factory = FakeSessionFactory()
+    factory.select_row = None  # None is replaced by the default row in __init__
+    monkeypatch.setattr(api_keys, "async_session", factory)
+
+    with pytest.raises(HTTPException):
+        await api_keys.require_actor("maybe-created-later")
+    # Expire the negative entry: the key may have just been created.
+    key_hash = api_keys._hash("maybe-created-later")
+    api_keys._AUTH_NEGATIVE_CACHE[key_hash] = 0.0
+    factory.select_row = (
+        SimpleNamespace(id=uuid.uuid4(), tenant_id="tenant-a", name="newly-created"),
+        None,
+        None,
+        None,
+    )
+
+    actor = await api_keys.require_actor("maybe-created-later")
+
+    assert actor.tenant_id == "tenant-a"
+    assert factory.select_count == 2

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 from datetime import UTC, datetime
@@ -14,7 +15,7 @@ from packages.storage.db import tenant_session
 from sqlalchemy import delete, select, update
 from temporalio.client import Client
 
-from apps.api.deps import TenantID, read_with_limit
+from apps.api.deps import TenantID, content_length_exceeds, read_with_limit
 from apps.api.schemas import (
     CreateNotebookRequest,
     DocumentResponse,
@@ -23,6 +24,7 @@ from apps.api.schemas import (
 )
 from apps.api.serializers import document_response, notebook_response
 from apps.api.services.cache import invalidate_semantic_cache
+from apps.api.services.filenames import safe_upload_filename
 from apps.api.services.notebooks import (
     clean_notebook_title,
     dedupe_uuid_list,
@@ -152,8 +154,7 @@ async def upload_notebook_document(
     tenant_id: TenantID,
     file: UploadFile = File(...),
 ) -> DocumentResponse:
-    cl = request.headers.get("content-length")
-    if cl and int(cl) > settings.max_upload_bytes * 2:
+    if content_length_exceeds(request, settings.max_upload_bytes * 2):
         raise HTTPException(
             status_code=413,
             detail=f"file exceeds {settings.max_upload_bytes // (1024 * 1024)} MB limit",
@@ -164,7 +165,7 @@ async def upload_notebook_document(
         raise HTTPException(status_code=400, detail="empty file")
 
     document_id = uuid.uuid4()
-    filename = file.filename or "unnamed"
+    filename = safe_upload_filename(file.filename)
     object_key = f"{tenant_id}/{document_id}/{filename}"
 
     async with tenant_session(tenant_id) as s:
@@ -176,8 +177,11 @@ async def upload_notebook_document(
         if notebook is None:
             raise HTTPException(status_code=404, detail="notebook not found")
 
-        object_store.put(
-            object_key, data, content_type=file.content_type or "application/octet-stream"
+        await asyncio.to_thread(
+            object_store.put,
+            object_key,
+            data,
+            content_type=file.content_type or "application/octet-stream",
         )
         doc = Document(
             id=document_id,
@@ -269,7 +273,7 @@ async def rebuild_notebook_insights(
         )
         raise HTTPException(
             status_code=502,
-            detail=f"DeepSeek overview generation failed: {exc}",
+            detail="DeepSeek overview generation failed",
         ) from exc
 
     if not insights.summary:

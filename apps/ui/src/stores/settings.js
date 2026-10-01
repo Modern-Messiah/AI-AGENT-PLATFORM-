@@ -5,6 +5,15 @@ import { normalizeLocale, translate } from '@/i18n'
 import { applyTheme, AUTO_THEME, DEFAULT_THEME, normalizeTheme, persistTheme } from '@/utils/theme'
 import { useSessionStore } from '@/stores/session'
 
+// Runtime config injected by the UI container at start (runtime-config.js);
+// absent in plain `vite dev` runs, which is fine — it just resolves to {}.
+const runtimeConfig = () => (typeof globalThis !== 'undefined' && globalThis.__AAP_CONFIG__) || {}
+
+// The admin secret is per-tab (sessionStorage): it unlocks the admin
+// cabinet, so it must not sit on disk next to the (non-secret) API key
+// config after the tab closes.
+const ADMIN_STORAGE_KEY = 'aap_admin_secret'
+
 export const useSettingsStore = defineStore('settings', () => {
   const apiKey = ref('')
   const adminSecret = ref('')
@@ -18,9 +27,9 @@ export const useSettingsStore = defineStore('settings', () => {
   function _load() {
     try {
       const cfg = JSON.parse(localStorage.getItem('aap_config') || '{}')
-      const resolved = resolveApiConfig({ stored: cfg, env: import.meta.env })
+      const resolved = resolveApiConfig({ stored: cfg, env: import.meta.env, runtime: runtimeConfig() })
       apiKey.value = resolved.apiKey
-      adminSecret.value = typeof cfg.adminSecret === 'string' ? cfg.adminSecret : ''
+      adminSecret.value = sessionStorage.getItem(ADMIN_STORAGE_KEY) || ''
       baseUrl.value = resolved.baseUrl
       locale.value = normalizeLocale(cfg.locale)
       theme.value = normalizeTheme(cfg.theme)
@@ -29,14 +38,13 @@ export const useSettingsStore = defineStore('settings', () => {
   }
 
   function save(key, url) {
-    const resolved = resolveApiConfig({ env: import.meta.env })
+    const resolved = resolveApiConfig({ env: import.meta.env, runtime: runtimeConfig() })
     baseUrl.value = (url || resolved.baseUrl || '/api').trim()
     if (resolved.isKeyManagedByEnv) {
       apiKey.value = resolved.apiKey
       keySource.value = 'env'
       localStorage.setItem('aap_config', JSON.stringify({
         base: baseUrl.value,
-        adminSecret: adminSecret.value,
         locale: locale.value,
         theme: theme.value,
       }))
@@ -47,7 +55,6 @@ export const useSettingsStore = defineStore('settings', () => {
     keySource.value = apiKey.value ? 'localStorage' : 'missing'
     localStorage.setItem('aap_config', JSON.stringify({
       apiKey: apiKey.value,
-      adminSecret: adminSecret.value,
       base: baseUrl.value,
       locale: locale.value,
       theme: theme.value,
@@ -58,8 +65,7 @@ export const useSettingsStore = defineStore('settings', () => {
     adminSecret.value = String(value || '').trim()
     adminStatus.value = 'unknown'
     try {
-      const cfg = JSON.parse(localStorage.getItem('aap_config') || '{}')
-      localStorage.setItem('aap_config', JSON.stringify({ ...cfg, adminSecret: adminSecret.value }))
+      sessionStorage.setItem(ADMIN_STORAGE_KEY, adminSecret.value)
     } catch {}
   }
 
@@ -112,6 +118,7 @@ export const useSettingsStore = defineStore('settings', () => {
   // cabinet gates on this flag, not just the legacy API-key path.
   const _session = useSessionStore()
   const isConnected  = computed(() => !!apiKey.value || _session.isAuthenticated)
+  const credentialKey = computed(() => _session.token || apiKey.value || '')
   const hasAdminSecret = computed(() => !!adminSecret.value)
   const isAdminInvalid = computed(() => adminStatus.value === 'invalid')
   const isKeyInvalid = computed(() => keyStatus.value === 'invalid')
@@ -139,6 +146,7 @@ export const useSettingsStore = defineStore('settings', () => {
     keyMasked,
     adminMasked,
     isConnected,
+    credentialKey,
     hasAdminSecret,
     isAdminInvalid,
     isKeyInvalid,

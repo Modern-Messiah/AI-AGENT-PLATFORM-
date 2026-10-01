@@ -34,25 +34,21 @@
         v-model:model="model"
         v-model:requireApproval="requireApproval"
         :show-history-toggle="isMobile"
+        :scope="displayScope"
+        :scope-locked="isScopeLocked"
         @toggle-history="mobileHistoryOpen = !mobileHistoryOpen"
+        @open-scope="!isScopeLocked && (isScopeModalOpen = true)"
       />
-      <div v-if="displayScope.type !== 'global'" class="scope-banner">
-        <div>
-          <strong>{{ displayScope.title }}</strong>
-          <span>{{ displayScope.description }}</span>
-        </div>
-        <div class="scope-actions">
-          <RouterLink class="btn btn-ghost btn-sm" :to="displayScope.backPath">
-            {{ displayScope.backLabel }}
-          </RouterLink>
-          <button class="btn btn-ghost btn-sm" type="button" @click="clearScope">
-            {{ t('chat.regularChat') }}
-          </button>
-        </div>
-      </div>
       <ChatMessages @approve="approveHitl" @reject="rejectHitl" @regenerate="handleRegenerate" />
       <ChatInput :model="model" :require-approval="requireApproval" @send="handleSend" />
     </div>
+
+    <ChatScopeModal
+      v-if="isScopeModalOpen"
+      :current-scope="displayScope"
+      @select="handleScopeSelect"
+      @cancel="isScopeModalOpen = false"
+    />
 
     <AppToast v-if="toast" v-bind="toast" @done="toast = null" />
   </div>
@@ -72,6 +68,7 @@ import {
   scopeSessionTitle,
   scopeSendOptions,
   scopeWelcomeMessage,
+  isChatScopeLocked,
 } from '@/utils/chatScope'
 import {
   CHAT_HISTORY_DEFAULT_WIDTH,
@@ -87,12 +84,18 @@ import ChatToolbar from '@/components/chat/ChatToolbar.vue'
 import ChatMessages from '@/components/chat/ChatMessages.vue'
 import ChatInput from '@/components/chat/ChatInput.vue'
 import AppToast from '@/components/AppToast.vue'
+import AppIcon from '@/components/AppIcon.vue'
+import ChatScopeModal from '@/components/chat/ChatScopeModal.vue'
+import { buildDocumentChatRoute } from '@/utils/documents'
+import { buildNotebookChatRoute } from '@/utils/notebooks'
 
 const chat = useChatStore()
 const settings = useSettingsStore()
 const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
+
+const isScopeModalOpen = ref(false)
 
 const model = ref('moonshot/kimi-k2.6')
 const requireApproval = ref(false)
@@ -121,6 +124,45 @@ const displayScope = computed(() => {
   }
   return scope
 })
+
+const isScopeLocked = computed(() => {
+  return isChatScopeLocked({
+    session: activeSession.value,
+    messages: chat.messages,
+    isDraft: activeSession.value?.id ? chat.freshDraftIds.has(activeSession.value.id) : true,
+  })
+})
+
+async function handleScopeSelect(selected) {
+  isScopeModalOpen.value = false
+  if (isScopeLocked.value) return
+
+  const prevSessionId = activeSession.value?.id
+  const prevIsEmpty = prevSessionId && chat.messages.every(m => m.role !== 'user')
+
+  if (selected.type === 'global') {
+    if (prevSessionId) {
+      chat.lockSessionScope(prevSessionId)
+    }
+    await clearScope()
+    return
+  }
+  if (selected.type === 'document') {
+    if (prevIsEmpty && prevSessionId) {
+      try { await chat.deleteSession(prevSessionId) } catch {}
+    }
+    const r = buildDocumentChatRoute(selected.documentId, selected.title, settings.locale)
+    await router.replace(r)
+    return
+  }
+  if (selected.type === 'notebook') {
+    if (prevIsEmpty && prevSessionId) {
+      try { await chat.deleteSession(prevSessionId) } catch {}
+    }
+    const r = buildNotebookChatRoute(selected.notebookId, selected.title, settings.locale)
+    await router.replace(r)
+  }
+}
 
 function setToast(t) { toast.value = t }
 
@@ -271,7 +313,7 @@ onBeforeUnmount(() => {
   }
 })
 
-watch(() => settings.apiKey, async (key) => {
+watch(() => settings.credentialKey, async (key) => {
   if (!key) { chat.reset(); return }
   if (chat.loadedKey === key && (chat.sessions.length || chat.activeId)) return
   try { await chat.loadSessions(key) } catch {}
@@ -372,36 +414,6 @@ async function rejectHitl(workflowId) {
 </script>
 
 <style scoped>
-.scope-banner {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  margin: 12px 16px 0;
-  padding: 12px 14px;
-  border: 1px solid color-mix(in oklch, var(--purple) 42%, var(--border));
-  border-radius: 14px;
-  background: color-mix(in oklch, var(--purple) 9%, var(--s1));
-}
-.scope-banner strong,
-.scope-banner span {
-  display: block;
-}
-.scope-banner strong {
-  color: var(--text);
-  font-size: 13px;
-}
-.scope-banner span {
-  margin-top: 3px;
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.4;
-}
-.scope-actions {
-  display: flex;
-  flex-shrink: 0;
-  gap: 8px;
-}
 .chat-history-resizer {
   position: relative;
   z-index: 3;
@@ -434,14 +446,5 @@ async function rejectHitl(workflowId) {
 }
 .chat-layout.is-resizing-history {
   user-select: none;
-}
-@media (max-width: 760px) {
-  .scope-banner {
-    align-items: stretch;
-    flex-direction: column;
-  }
-  .scope-actions {
-    flex-wrap: wrap;
-  }
 }
 </style>

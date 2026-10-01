@@ -36,7 +36,7 @@
             <span :class="['session-scope-badge', `is-${sessionMeta(s).type}`]">
               {{ sessionMeta(s).badge }}
             </span>
-            <span class="session-scope-copy">{{ sessionMeta(s).subtitle }}</span>
+            <span v-if="sessionMeta(s).type !== 'global' && sessionMeta(s).subtitle" class="session-scope-copy">{{ sessionMeta(s).subtitle }}</span>
           </div>
           <div class="session-meta">{{ s.updated_at ? formatLocaleDate(s.updated_at, locale) : '' }}</div>
         </div>
@@ -68,6 +68,7 @@
 <script setup>
 import { ref } from 'vue'
 import { useChatStore } from '@/stores/chat'
+import { useApi } from '@/composables/useApi'
 import { useSettingsStore } from '@/stores/settings'
 import { useI18n } from '@/composables/useI18n'
 import AppIcon from '@/components/AppIcon.vue'
@@ -117,7 +118,7 @@ const confirmId    = ref(null)
 const confirmTitle = ref('')
 
 function sessionMeta(sess) {
-  return sessionScopeMetaFromSession(sess, locale.value)
+  return sessionScopeMetaFromSession(sess, locale.value, { includeGlobal: true })
 }
 
 function sessionTitle(sess) {
@@ -172,9 +173,17 @@ async function handleNew() {
   font-size: 9px;
   line-height: 1.2;
 }
+.session-scope-badge.is-global {
+  border-color: color-mix(in oklch, var(--teal, var(--accent)) 38%, transparent);
+  color: var(--teal, var(--accent));
+}
 .session-scope-badge.is-document {
   border-color: color-mix(in oklch, var(--purple) 38%, transparent);
   color: var(--purple);
+}
+.session-scope-badge.is-notebook {
+  border-color: color-mix(in oklch, var(--accent) 38%, transparent);
+  color: var(--accent);
 }
 .session-scope-copy {
   min-width: 0;

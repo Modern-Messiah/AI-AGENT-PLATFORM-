@@ -1,10 +1,25 @@
 import { defineStore } from 'pinia'
-import { computed, ref } from 'vue'
+import { computed, ref, shallowRef } from 'vue'
 import { useApi } from '@/composables/useApi'
 import { useSettingsStore } from '@/stores/settings'
 import { formatLocaleTime, translate } from '@/i18n'
 
 const LS_HITL_KEY = 'chatPendingHitl'
+const ACTIVE_SESSION_STORAGE_KEY = 'aap_active_session_id'
+
+function _chatStorage() {
+  try {
+    if (typeof sessionStorage !== 'undefined' && sessionStorage?.getItem) {
+      return sessionStorage
+    }
+  } catch {}
+  try {
+    if (typeof localStorage !== 'undefined' && localStorage?.getItem) {
+      return localStorage
+    }
+  } catch {}
+  return null
+}
 
 export const useChatStore = defineStore('chat', () => {
   const settings = useSettingsStore()
@@ -20,9 +35,20 @@ export const useChatStore = defineStore('chat', () => {
   const sessLoading = ref(false)
   const loadedKey = ref(null)
   const streamTick = ref(0)  // incremented on each streaming token to trigger scroll
-  const activeStreamController = ref(null)
+  // shallowRef: deep reactivity would proxy the controller and break the
+  // identity checks that guard cleanup (abort/done must match THIS stream).
+  const activeStreamController = shallowRef(null)
   const pipelineStage = ref(null)
   const isStreaming = computed(() => activeStreamController.value !== null)
+  const freshDraftIds = ref(new Set())
+
+  function lockSessionScope(sessId) {
+    if (sessId && freshDraftIds.value.has(sessId)) {
+      const next = new Set(freshDraftIds.value)
+      next.delete(sessId)
+      freshDraftIds.value = next
+    }
+  }
 
   // sessId → [{ workflowId, time }, ...]  (array to support multiple pending workflows per session)
   // Persisted to localStorage so pending HITL cards survive page refresh.
@@ -66,6 +92,8 @@ export const useChatStore = defineStore('chat', () => {
     loadingSessionId.value = null
     sessLoading.value = false
     loadedKey.value = null
+    freshDraftIds.value = new Set()
+    _chatStorage()?.removeItem(ACTIVE_SESSION_STORAGE_KEY)
   }
 
   function _startLoading(sessId) {
@@ -105,8 +133,20 @@ export const useChatStore = defineStore('chat', () => {
     sessLoading.value = true
     try {
       const data = await apiFetch('/sessions')
-      sessions.value = data
-      if (data.length > 0) await selectSession(data[0].id)
+      sessions.value = data || []
+      if (sessions.value.length > 0) {
+        const storedId = _chatStorage()?.getItem(ACTIVE_SESSION_STORAGE_KEY)
+        const target = (storedId && sessions.value.find(s => s.id === storedId)) || sessions.value[0]
+        await selectSession(target.id)
+      } else {
+        activeId.value = null
+        messages.value = [{ id: 'w', role: 'agent', text: welcome(), time: '—', sources: [] }]
+      }
+    } catch (e) {
+      sessions.value = []
+      activeId.value = null
+      messages.value = [{ id: 'w', role: 'agent', text: welcome(), time: '—', sources: [] }]
+      throw e
     } finally {
       sessLoading.value = false
       loadedKey.value = apiKey
@@ -116,10 +156,14 @@ export const useChatStore = defineStore('chat', () => {
   async function selectSession(id) {
     const { apiFetch } = useApi()
     activeId.value = id
+    _chatStorage()?.setItem(ACTIVE_SESSION_STORAGE_KEY, id)
     messages.value = []
     sessLoading.value = true
     try {
       const msgs = await apiFetch(`/sessions/${id}/messages`)
+      // A newer selectSession may have started while this response was in
+      // flight — a late response must not overwrite the newer session's view.
+      if (activeId.value !== id) return
       if (msgs.length > 0) {
         messages.value = msgs.map(m => ({
           id: m.id, role: m.role, text: m.content,
@@ -129,6 +173,7 @@ export const useChatStore = defineStore('chat', () => {
         messages.value = [{ id: 'w', role: 'agent', text: welcome(), time: '—', sources: [] }]
       }
     } catch {
+      if (activeId.value !== id) return
       messages.value = [{ id: 'w', role: 'agent', text: welcome(), time: '—', sources: [] }]
     } finally {
       // Re-inject a pending HITL card if one exists for this session and the session is
@@ -139,8 +184,8 @@ export const useChatStore = defineStore('chat', () => {
             messages.value.push({ id: 'h' + Date.now(), role: 'hitl', time: hitl.time, workflowId: hitl.workflowId, sessId: id })
           }
         }
+        sessLoading.value = false
       }
-      sessLoading.value = false
     }
   }
 
@@ -155,7 +200,13 @@ export const useChatStore = defineStore('chat', () => {
     })
     sessions.value = [sess, ...sessions.value]
     activeId.value = sess.id
+    _chatStorage()?.setItem(ACTIVE_SESSION_STORAGE_KEY, sess.id)
     messages.value = [{ id: 'w', role: 'agent', text: welcomeText, time: nowTime(), sources: [] }]
+    if (!options.documentId && !options.notebookId) {
+      freshDraftIds.value = new Set([...freshDraftIds.value, sess.id])
+    } else {
+      lockSessionScope(sess.id)
+    }
     return sess
   }
 
@@ -164,19 +215,32 @@ export const useChatStore = defineStore('chat', () => {
     await apiFetch(`/sessions/${id}`, { method: 'DELETE' })
     const remaining = sessions.value.filter(s => s.id !== id)
     sessions.value = remaining
+    if (freshDraftIds.value.has(id)) {
+      const nextDrafts = new Set(freshDraftIds.value)
+      nextDrafts.delete(id)
+      freshDraftIds.value = nextDrafts
+    }
     if (pendingHitl.value.has(id)) {
       pendingHitl.value.delete(id)
       _savePendingHitl()
     }
     if (activeId.value === id) {
-      if (remaining.length > 0) await selectSession(remaining[0].id)
-      else { activeId.value = null; messages.value = [] }
+      if (remaining.length > 0) {
+        await selectSession(remaining[0].id)
+      } else {
+        activeId.value = null
+        messages.value = [{ id: 'w', role: 'agent', text: welcome(), time: '—', sources: [] }]
+        _chatStorage()?.removeItem(ACTIVE_SESSION_STORAGE_KEY)
+      }
     }
   }
 
   async function sendMessage(query, model, requireApproval = false, options = {}) {
     const { apiFetch, apiStreamFetch } = useApi()
-    if (!query.trim() || loading.value) return null
+    // loading clears on the first streamed token, long before the stream
+    // ends — guard on the stream controller too, or Enter mid-answer starts
+    // a second concurrent stream that interleaves with the first.
+    if (!query.trim() || loading.value || activeStreamController.value) return null
     const activeSession = sessions.value.find(s => s.id === activeId.value)
     const sessionScope = _sessionScopeOptions(activeSession)
     const documentId = options.documentId || sessionScope.documentId || null
@@ -196,7 +260,10 @@ export const useChatStore = defineStore('chat', () => {
       sessId = sess.id
       sessions.value = [sess, ...sessions.value]
       activeId.value = sessId
+      _chatStorage()?.setItem(ACTIVE_SESSION_STORAGE_KEY, sessId)
     }
+
+    lockSessionScope(sessId)
 
     const userMsg = { id: 'u' + Date.now(), role: 'user', text: query, time: nowTime(), sources: [] }
     messages.value = messages.value.filter(x => x.id !== 'w').concat(userMsg)
@@ -463,6 +530,7 @@ export const useChatStore = defineStore('chat', () => {
     sessions, activeId, messages, loading, loadingSessionId, sessLoading, loadedKey, streamTick,
     isStreaming,
     pipelineStage,
+    freshDraftIds, lockSessionScope,
     reset, loadSessions, selectSession, newChat, deleteSession,
     sendMessage, cancelStreaming, dropLastAgentMessage, isActiveSessionLoading, approveHitl, rejectHitl
   }

@@ -1,3 +1,5 @@
+import { translate } from '../i18n/index.js'
+
 function cleanId(value) {
   return typeof value === 'string' && value.trim() ? value.trim() : null
 }
@@ -34,8 +36,8 @@ export function normalizeChatScope(query = {}, locale = 'ru') {
     type: 'global',
     documentId: null,
     notebookId: null,
-    title: '',
-    description: '',
+    title: translate(locale, 'chat.scopeGlobalTitle'),
+    description: translate(locale, 'chat.scopeGlobalDescription'),
     backLabel: '',
     backPath: '',
   }
@@ -90,12 +92,22 @@ export function sessionScopeMeta(title = '', locale = 'ru') {
   }
 }
 
-export function sessionScopeMetaFromSession(session = {}, locale = 'ru') {
+export function sessionScopeMetaFromSession(session = {}, locale = 'ru', options = {}) {
   const meta = sessionScopeMeta(session?.title, locale)
   if (meta) return meta
 
   const scope = normalizeStoredChatScope(session, locale)
-  if (scope.type === 'global') return null
+  if (scope.type === 'global') {
+    if (options.includeGlobal) {
+      return {
+        type: 'global',
+        badge: translate(locale, 'chat.scopeGlobalBadge'),
+        title: String(session?.title || '').trim() || scope.title,
+        subtitle: scope.title,
+      }
+    }
+    return null
+  }
 
   const badge = translate(locale, scope.type === 'notebook' ? 'chat.notebookBadge' : 'chat.documentBadge')
   const title = String(session?.title || '').trim() || scope.title
@@ -114,6 +126,13 @@ export function scopeWelcomeMessage(scope, locale = 'ru') {
   if (scope?.type === 'document') {
     return translate(locale, 'chat.documentWelcome')
   }
-  return ''
+  return translate(locale, 'chat.scopeGlobalWelcome')
 }
-import { translate } from '../i18n/index.js'
+
+export function isChatScopeLocked({ session = null, messages = [], isDraft = false } = {}) {
+  if (session?.scope_type === 'document' || session?.scope_type === 'notebook') return true
+  if (session?.document_id || session?.notebook_id) return true
+  if (Array.isArray(messages) && messages.some(m => m.role === 'user')) return true
+  if (session && !isDraft) return true
+  return false
+}

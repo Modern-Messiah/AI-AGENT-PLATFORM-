@@ -22,6 +22,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from typing import Any
+
 from packages.core import settings
 from packages.rag import detect_language, embed_texts
 from packages.storage import Chunk, Document, DocumentStatus
@@ -29,7 +31,7 @@ from packages.storage.db import tenant_session
 from sqlalchemy import delete
 
 
-async def seed(corpus: dict) -> int:
+async def seed(corpus: dict[str, Any]) -> int:
     tenant_id = corpus["tenant"]
     documents = corpus["documents"]
 

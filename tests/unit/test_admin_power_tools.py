@@ -96,6 +96,7 @@ async def test_blocked_login_rejected(monkeypatch) -> None:
     """The login guard fires for explicitly blocked accounts only."""
     from apps.api.routers import login as login_module
     from apps.api.schemas import EmailLoginRequest
+    from fastapi import Response
     from packages.auth.passwords import hash_password
 
     user = _user()
@@ -116,14 +117,18 @@ async def test_blocked_login_rejected(monkeypatch) -> None:
 
     # активен — вход проходит
     response = await login_module.login(
-        EmailLoginRequest(email=user.email, password="long-enough-pass")
+        EmailLoginRequest(email=user.email, password="long-enough-pass"),
+        Response(),
     )
     assert len(response.token) > 50
 
     # заблокирован — 403
     user.is_active = False
     with pytest.raises(HTTPException) as exc_info:
-        await login_module.login(EmailLoginRequest(email=user.email, password="long-enough-pass"))
+        await login_module.login(
+            EmailLoginRequest(email=user.email, password="long-enough-pass"),
+            Response(),
+        )
     assert exc_info.value.status_code == 403
     assert "blocked" in str(exc_info.value.detail)
 

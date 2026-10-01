@@ -3,6 +3,14 @@ import { ref, computed, watch } from 'vue'
 
 const STORAGE_KEY = 'aap_session'
 
+// The session JWT lives in sessionStorage, not localStorage: it survives
+// reloads but dies with the tab, so nothing harvestable persists on disk
+// after the browser closes. localStorage entries from older builds are
+// migrated once and removed.
+function _storage() {
+  return sessionStorage
+}
+
 // Pure helpers (unit-tested) — the store wires them to localStorage.
 export function parseSessionHash(hash) {
   const raw = String(hash || '')
@@ -38,23 +46,29 @@ export const useSessionStore = defineStore('session', () => {
   function _persist() {
     try {
       if (token.value) {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify({ token: token.value, user: user.value }))
+        _storage().setItem(STORAGE_KEY, JSON.stringify({ token: token.value, user: user.value }))
       } else {
-        localStorage.removeItem(STORAGE_KEY)
+        _storage().removeItem(STORAGE_KEY)
       }
     } catch {}
   }
 
   function _load() {
     try {
-      const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null')
+      let raw = _storage().getItem(STORAGE_KEY)
+      if (!raw) {
+        // One-time migration from the old localStorage location.
+        raw = localStorage.getItem(STORAGE_KEY)
+        if (raw) localStorage.removeItem(STORAGE_KEY)
+      }
+      const saved = JSON.parse(raw || 'null')
       if (saved?.token) {
         const claims = decodeJwtPayload(saved.token)
         if (sessionClaimsValid(claims)) {
           token.value = saved.token
           user.value = saved.user || claimsToUser(claims)
         } else {
-          localStorage.removeItem(STORAGE_KEY)
+          _storage().removeItem(STORAGE_KEY)
         }
       }
     } catch {}

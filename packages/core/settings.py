@@ -70,6 +70,9 @@ class Settings(BaseSettings):
     # Interactive agent guardrails.
     agent_query_max_chars: int = 12_000
     agent_rate_limit_per_minute: int = 20
+    # URL-source ingestion (external fetches) per hour per tenant; each
+    # /documents/url* call drives full outbound HTTP fetches. 0 disables.
+    url_ingest_rate_per_hour: int = 20
     # Fail-open preserves chat availability when Redis is down (default).
     # Set true to reject agent requests instead (503) when the limiter
     # cannot be consulted.
@@ -135,6 +138,10 @@ class Settings(BaseSettings):
     oauth_api_base_url: str = ""
     # Hours before a session token expires; users re-login afterwards.
     auth_session_ttl_hours: int = 12
+    # Also issue the session JWT as an httpOnly SameSite=Strict cookie on
+    # login (and accept it as a credential). For same-origin UI deployments;
+    # the token-in-response path stays available either way.
+    auth_session_cookie_enabled: bool = False
     # Comma-separated Google emails that get the admin cabinet on login.
     admin_emails: Annotated[list[str], NoDecode] = []
     # Who may sign in at all — consulted only when open_registration is false.
@@ -164,7 +171,9 @@ class Settings(BaseSettings):
     # Accepts JSON array  (HTTP_FETCH_ALLOWED_DOMAINS='["docs.python.org"]')
     # or comma-separated  (HTTP_FETCH_ALLOWED_DOMAINS=docs.python.org,api.github.com).
     # When non-empty ONLY these domains are reachable — fully prevents SSRF including DNS rebinding.
-    # When empty the tool falls back to an IP-based blocklist (still vulnerable to DNS rebinding).
+    # When empty the URL-source fetcher falls back to an IP-based blocklist and pins the
+    # connection to the validated address (resolve_fetch_target), so rebinding names
+    # cannot reconnect to a private IP after passing validation.
     http_fetch_allowed_domains: Annotated[list[str], NoDecode] = []
 
     # CORS allowed origins for the API.

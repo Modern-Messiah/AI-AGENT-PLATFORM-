@@ -202,11 +202,18 @@ test('knowledge base document list can load additional pages', () => {
 test('document status polling refreshes immediately and clears pending final states', () => {
   assert.match(
     documentsViewSource,
-    /for\s*\(let i = 0; i < 120; i\+\+\)\s*\{\s*if\s*\(i > 0\)\s*await new Promise\(\(?r\)?\s*=> setTimeout\(r,\s*5000\)\)/s,
+    /for\s*\(let i = 0; i < 120; i\+\+\)\s*\{\s*if\s*\(statusPollsCancelled\)\s*return;\s*if\s*\(i > 0\)\s*await new Promise\(\(?r\)?\s*=> setTimeout\(r,\s*5000\)\)/s,
   )
   assert.doesNotMatch(
     documentsViewSource,
     /for\s*\(let i = 0; i < 120; i\+\+\)\s*\{\s*await new Promise\(\(?r\)?\s*=> setTimeout\(r,\s*5000\)\)/s,
+  )
+  // Polling must die with the component: the cancel flag is set on unmount
+  // and checked again after every sleep.
+  assert.match(documentsViewSource, /onBeforeUnmount\(\(\) => \{\s*statusPollsCancelled = true;\s*\}\)/s)
+  assert.match(
+    documentsViewSource,
+    /await new Promise\(\(?r\)?\s*=> setTimeout\(r,\s*5000\)\);\s*if\s*\(statusPollsCancelled\)\s*return;/s,
   )
 
   const doneIndex = documentsViewSource.search(/if\s*\(\s*data\.status\s*===\s*['"]done['"]\s*\)/)

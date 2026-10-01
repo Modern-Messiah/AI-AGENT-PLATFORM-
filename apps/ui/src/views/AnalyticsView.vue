@@ -141,28 +141,30 @@
           <div class="empty-title">{{ t('analytics.noBreakdown') }}</div>
           <div class="empty-sub">{{ t('analytics.noBreakdownSub') }}</div>
         </div>
-        <table v-else>
-          <thead>
-            <tr>
-              <th>{{ t('analytics.model') }}</th>
-              <th>{{ t('analytics.provider') }}</th>
-              <th>{{ t('analytics.callCount') }}</th>
-              <th>{{ t('analytics.tokens') }}</th>
-              <th>{{ t('analytics.costColumn') }}</th>
-              <th>{{ t('analytics.averageLatency') }}</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="(row, i) in data.breakdown" :key="i">
-              <td><span class="tag">{{ row.model }}</span></td>
-              <td class="td-mono">{{ row.provider }}</td>
-              <td class="td-mono">{{ row.call_count }}</td>
-              <td class="td-mono">{{ fmtTokens(row.total_tokens) }}</td>
-              <td><span style="font-family: var(--mono); font-weight: 600">{{ fmtCost(row.total_cost_usd) }}</span></td>
-              <td class="td-mono">{{ fmtMs(row.avg_latency_ms) }}</td>
-            </tr>
-          </tbody>
-        </table>
+        <div v-else class="table-wrap">
+          <table class="breakdown-table">
+            <thead>
+              <tr>
+                <th>{{ t('analytics.model') }}</th>
+                <th>{{ t('analytics.provider') }}</th>
+                <th>{{ t('analytics.callCount') }}</th>
+                <th>{{ t('analytics.tokens') }}</th>
+                <th>{{ t('analytics.costColumn') }}</th>
+                <th>{{ t('analytics.averageLatency') }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="(row, i) in data.breakdown" :key="i">
+                <td><span class="tag">{{ row.model }}</span></td>
+                <td class="td-mono">{{ row.provider }}</td>
+                <td class="td-mono">{{ row.call_count }}</td>
+                <td class="td-mono">{{ fmtTokens(row.total_tokens) }}</td>
+                <td><span style="font-family: var(--mono); font-weight: 600">{{ fmtCost(row.total_cost_usd) }}</span></td>
+                <td class="td-mono">{{ fmtMs(row.avg_latency_ms) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </template>
 
@@ -207,7 +209,7 @@ async function load() {
   }
 }
 
-watch([days, () => settings.apiKey], load, { immediate: true })
+watch([days, () => settings.credentialKey], load, { immediate: true })
 
 const fmtTokens = formatTokens
 const fmtCost = formatCost
@@ -392,5 +394,8 @@ const stats = computed(() => {
   .efficiency-grid {
     grid-template-columns: 1fr;
   }
+}
+.breakdown-table {
+  min-width: 600px;
 }
 </style>

@@ -17,7 +17,7 @@
       </div>
 
       <div v-if="isAdminUser && keyManagedByEnv" class="env-note">
-        {{ t('settings.envNote').split('VITE_API_KEY')[0] }}<span>VITE_API_KEY</span>{{ t('settings.envNote').split('VITE_API_KEY')[1] }}
+        {{ t('settings.envNote') }}
       </div>
 
       <div v-else-if="isAdminUser" class="form-group">

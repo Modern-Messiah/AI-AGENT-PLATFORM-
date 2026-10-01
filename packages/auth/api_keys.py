@@ -28,21 +28,27 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import Header, HTTPException
+from fastapi import Cookie, Header, HTTPException
 from sqlalchemy import select, update
 
-from packages.auth.jwt_sessions import verify_session_token
+from packages.auth.jwt_sessions import SESSION_COOKIE_NAME, verify_session_token
 from packages.auth.session_revocation import is_user_denied
 from packages.core import settings
 from packages.storage.db import async_session
 from packages.storage.models import ApiKey, User
 
 _AUTH_CACHE_TTL_SECONDS = 30.0
+# Short negative TTL: invalid keys are cheap to re-check, and a key that
+# was invalid a second ago may have just been created.
+_AUTH_NEGATIVE_TTL_SECONDS = 10.0
+_AUTH_NEGATIVE_MAX_ENTRIES = 10_000
 # key_hash -> (tenant_id, role, user_id, user_name, key_id, key_name, expires_at)
 _AUTH_CACHE: dict[
     str,
     tuple[str, str | None, uuid.UUID | None, str | None, uuid.UUID | None, str | None, float],
 ] = {}
+# key_hash -> monotonic expiry of the last "key not found" answer.
+_AUTH_NEGATIVE_CACHE: dict[str, float] = {}
 _AUTH_LOCKS: dict[str, asyncio.Lock] = {}
 
 
@@ -107,18 +113,44 @@ def revoke_cached(key_hash: str) -> None:
     _AUTH_LOCKS.pop(key_hash, None)
 
 
+def _remember_negative(key_hash: str, now: float) -> None:
+    """Cache an invalid-key answer, sweeping expired entries when the
+    negative map grows past its bound (key spraying must not grow it
+    without limit, even with expired entries)."""
+    if len(_AUTH_NEGATIVE_CACHE) > _AUTH_NEGATIVE_MAX_ENTRIES:
+        expired = [k for k, exp in _AUTH_NEGATIVE_CACHE.items() if exp <= now]
+        for k in expired:
+            del _AUTH_NEGATIVE_CACHE[k]
+    _AUTH_NEGATIVE_CACHE[key_hash] = now + _AUTH_NEGATIVE_TTL_SECONDS
+
+
+def _negative_cached(key_hash: str, now: float) -> bool:
+    expiry = _AUTH_NEGATIVE_CACHE.get(key_hash)
+    if expiry is None:
+        return False
+    if expiry <= now:
+        _AUTH_NEGATIVE_CACHE.pop(key_hash, None)
+        return False
+    return True
+
+
 async def require_actor(
     x_api_key: str | None = Header(None, alias="X-API-Key"),
     authorization: str | None = Header(None, alias="Authorization"),
+    session_cookie: str | None = Cookie(None, alias=SESSION_COOKIE_NAME),
 ) -> Actor:
     """FastAPI dependency — resolves the acting principal.
 
-    Authorization: Bearer takes precedence (Google-login session); otherwise
+    Authorization: Bearer takes precedence (Google-login session), then the
+    optional httpOnly session cookie (AUTH_SESSION_COOKIE_ENABLED); otherwise
     the X-API-Key path runs.
     """
     bearer = _bearer_token(authorization)
-    if bearer is not None:
-        actor = actor_from_claims(verify_session_token(bearer))
+    # Direct (non-FastAPI) calls pass the raw Cookie default, not a string.
+    cookie = session_cookie if isinstance(session_cookie, str) and session_cookie else None
+    token = bearer or cookie
+    if token is not None:
+        actor = actor_from_claims(verify_session_token(token))
         if await is_user_denied(actor.user_id):
             raise HTTPException(status_code=401, detail="session revoked")
         return actor
@@ -145,65 +177,80 @@ async def require_actor(
             )
         _AUTH_CACHE.pop(key_hash, None)
 
+    # Invalid keys are answered from the negative cache without a DB hit
+    # or a per-key lock — spraying random keys must be nearly free to reject.
+    if _negative_cached(key_hash, now):
+        raise HTTPException(status_code=401, detail="invalid or inactive API key")
+
     lock = _AUTH_LOCKS.setdefault(key_hash, asyncio.Lock())
-    async with lock:
-        now = time.monotonic()
-        cached = _AUTH_CACHE.get(key_hash)
-        if cached is not None:
-            tenant_id, role, user_id, user_name, key_id, key_name, expires_at = cached
-            if expires_at > now:
-                return Actor(
-                    tenant_id=tenant_id,
-                    role=role,
-                    user_id=user_id,
-                    user_name=user_name,
-                    api_key_id=key_id,
-                    api_key_name=key_name,
-                )
-            _AUTH_CACHE.pop(key_hash, None)
-
-        async with async_session() as s:
-            row = (
-                await s.execute(
-                    select(ApiKey, User.id, User.role, User.name)
-                    .outerjoin(User, ApiKey.user_id == User.id)
-                    .where(
-                        ApiKey.key_hash == key_hash,
-                        ApiKey.is_active.is_(True),
+    try:
+        async with lock:
+            now = time.monotonic()
+            cached = _AUTH_CACHE.get(key_hash)
+            if cached is not None:
+                tenant_id, role, user_id, user_name, key_id, key_name, expires_at = cached
+                if expires_at > now:
+                    return Actor(
+                        tenant_id=tenant_id,
+                        role=role,
+                        user_id=user_id,
+                        user_name=user_name,
+                        api_key_id=key_id,
+                        api_key_name=key_name,
                     )
-                )
-            ).first()
+                _AUTH_CACHE.pop(key_hash, None)
+            if _negative_cached(key_hash, now):
+                raise HTTPException(status_code=401, detail="invalid or inactive API key")
 
-        if row is None:
-            raise HTTPException(status_code=401, detail="invalid or inactive API key")
+            async with async_session() as s:
+                row = (
+                    await s.execute(
+                        select(ApiKey, User.id, User.role, User.name)
+                        .outerjoin(User, ApiKey.user_id == User.id)
+                        .where(
+                            ApiKey.key_hash == key_hash,
+                            ApiKey.is_active.is_(True),
+                        )
+                    )
+                ).first()
 
-        api_key_row, user_id, role, user_name = row
-        tenant_id = api_key_row.tenant_id
-        _AUTH_CACHE[key_hash] = (
-            tenant_id,
-            role,
-            user_id,
-            user_name,
-            api_key_row.id,
-            api_key_row.name,
-            now + _AUTH_CACHE_TTL_SECONDS,
-        )
+            if row is None:
+                _remember_negative(key_hash, now)
+                raise HTTPException(status_code=401, detail="invalid or inactive API key")
 
-        async with async_session() as s, s.begin():
-            await s.execute(
-                update(ApiKey)
-                .where(ApiKey.key_hash == key_hash)
-                .values(last_used_at=datetime.now(UTC))
+            api_key_row, user_id, role, user_name = row
+            tenant_id = api_key_row.tenant_id
+            _AUTH_CACHE[key_hash] = (
+                tenant_id,
+                role,
+                user_id,
+                user_name,
+                api_key_row.id,
+                api_key_row.name,
+                now + _AUTH_CACHE_TTL_SECONDS,
             )
 
-        return Actor(
-            tenant_id=tenant_id,
-            role=role,
-            user_id=user_id,
-            user_name=user_name,
-            api_key_id=api_key_row.id,
-            api_key_name=api_key_row.name,
-        )
+            async with async_session() as s, s.begin():
+                await s.execute(
+                    update(ApiKey)
+                    .where(ApiKey.key_hash == key_hash)
+                    .values(last_used_at=datetime.now(UTC))
+                )
+
+            return Actor(
+                tenant_id=tenant_id,
+                role=role,
+                user_id=user_id,
+                user_name=user_name,
+                api_key_id=api_key_row.id,
+                api_key_name=api_key_row.name,
+            )
+    finally:
+        # Key spraying must not grow the lock dict forever: drop the lock
+        # when nobody else is waiting on it. A waiter re-checks both caches
+        # under the lock, so correctness never depends on the lock surviving.
+        if not lock.locked():
+            _AUTH_LOCKS.pop(key_hash, None)
 
 
 async def require_tenant(

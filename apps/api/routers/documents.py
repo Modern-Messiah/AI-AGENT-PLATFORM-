@@ -15,7 +15,7 @@ from sqlalchemy import select, update
 from starlette.responses import Response
 from temporalio.client import Client
 
-from apps.api.deps import TenantID, read_with_limit
+from apps.api.deps import TenantID, content_length_exceeds, read_with_limit
 from apps.api.schemas import (
     AddUrlDocumentRequest,
     DocumentAssetResponse,
@@ -32,6 +32,8 @@ from apps.api.serializers import (
     metadata_page,
 )
 from apps.api.services.cache import invalidate_semantic_cache
+from apps.api.services.filenames import safe_upload_filename
+from apps.api.services.url_source_limits import enforce_url_ingest_limit
 from apps.api.services.url_sources import (
     FetchedUrlSource,
     UrlSourceError,
@@ -46,25 +48,29 @@ log = logging.getLogger(__name__)
 router = APIRouter()
 
 
-def _store_url_source_objects(object_key: str, fetched: FetchedUrlSource) -> None:
-    object_store.put(object_key, fetched.data, content_type=fetched.content_type)
-    object_store.put(
+async def _store_url_source_objects(object_key: str, fetched: FetchedUrlSource) -> None:
+    # MinIO SDK is synchronous — keep blocking I/O off the event loop.
+    await asyncio.to_thread(
+        object_store.put, object_key, fetched.data, content_type=fetched.content_type
+    )
+    await asyncio.to_thread(
+        object_store.put,
         url_image_sidecar_key(object_key),
         url_image_sidecar_payload(fetched.image_sources),
         content_type="application/json",
     )
 
 
-def _object_bytes_or_none(object_key: str) -> bytes | None:
+async def _object_bytes_or_none(object_key: str) -> bytes | None:
     try:
-        return object_store.get(object_key)
+        return await asyncio.to_thread(object_store.get, object_key)
     except Exception as exc:
         log.debug("source object comparison skipped | key=%s error=%s", object_key, exc)
         return None
 
 
-def _url_source_objects_changed(object_key: str, fetched: FetchedUrlSource) -> bool:
-    return _object_bytes_or_none(object_key) != fetched.data or _object_bytes_or_none(
+async def _url_source_objects_changed(object_key: str, fetched: FetchedUrlSource) -> bool:
+    return await _object_bytes_or_none(object_key) != fetched.data or await _object_bytes_or_none(
         url_image_sidecar_key(object_key)
     ) != url_image_sidecar_payload(fetched.image_sources)
 
@@ -110,8 +116,7 @@ async def upload_document(
 ) -> DocumentResponse:
     # Early rejection before reading body (Content-Length may include multipart overhead,
     # so use a 2x guard here; exact byte-level check happens inside read_with_limit).
-    cl = request.headers.get("content-length")
-    if cl and int(cl) > settings.max_upload_bytes * 2:
+    if content_length_exceeds(request, settings.max_upload_bytes * 2):
         raise HTTPException(
             status_code=413,
             detail=f"file exceeds {settings.max_upload_bytes // (1024 * 1024)} MB limit",
@@ -122,15 +127,21 @@ async def upload_document(
         raise HTTPException(status_code=400, detail="empty file")
 
     document_id = uuid.uuid4()
-    object_key = f"{tenant_id}/{document_id}/{file.filename}"
-    object_store.put(object_key, data, content_type=file.content_type or "application/octet-stream")
+    filename = safe_upload_filename(file.filename)
+    object_key = f"{tenant_id}/{document_id}/{filename}"
+    await asyncio.to_thread(
+        object_store.put,
+        object_key,
+        data,
+        content_type=file.content_type or "application/octet-stream",
+    )
 
     async with tenant_session(tenant_id) as s:
         s.add(
             Document(
                 id=document_id,
                 tenant_id=tenant_id,
-                filename=file.filename or "unnamed",
+                filename=filename,
                 mime_type=file.content_type or "application/octet-stream",
                 object_key=object_key,
                 size_bytes=len(data),
@@ -148,7 +159,7 @@ async def upload_document(
                 document_id=str(document_id),
                 tenant_id=tenant_id,
                 object_key=object_key,
-                filename=file.filename or "unnamed",
+                filename=filename,
             ),
             id=f"ingest-{tenant_id}-{document_id}",
             task_queue=settings.temporal_task_queue,
@@ -181,8 +192,7 @@ async def upload_documents_bulk(
 
     # Phase 1: read and validate ALL files before starting any workflow.
     # This prevents partial state where some workflows fire but a later file fails validation.
-    cl = request.headers.get("content-length")
-    if cl and int(cl) > settings.max_upload_bytes * len(files) * 2:
+    if content_length_exceeds(request, settings.max_upload_bytes * len(files) * 2):
         raise HTTPException(status_code=413, detail="request body too large")
 
     validated: list[tuple[UploadFile, bytes]] = []
@@ -211,11 +221,14 @@ async def upload_documents_bulk(
     # Phase 2: store objects + DB rows + start workflows only after full validation.
     client: Client = request.app.state.temporal
     responses: list[DocumentResponse] = []
+    workflow_start_failures = 0
 
     for file, data in validated:
         document_id = uuid.uuid4()
-        object_key = f"{tenant_id}/{document_id}/{file.filename}"
-        object_store.put(
+        filename = safe_upload_filename(file.filename)
+        object_key = f"{tenant_id}/{document_id}/{filename}"
+        await asyncio.to_thread(
+            object_store.put,
             object_key,
             data,
             content_type=file.content_type or "application/octet-stream",
@@ -225,7 +238,7 @@ async def upload_documents_bulk(
                 Document(
                     id=document_id,
                     tenant_id=tenant_id,
-                    filename=file.filename or "unnamed",
+                    filename=filename,
                     mime_type=file.content_type or "application/octet-stream",
                     object_key=object_key,
                     size_bytes=len(data),
@@ -240,12 +253,19 @@ async def upload_documents_bulk(
                     document_id=str(document_id),
                     tenant_id=tenant_id,
                     object_key=object_key,
-                    filename=file.filename or "unnamed",
+                    filename=filename,
                 ),
                 id=f"ingest-{tenant_id}-{document_id}",
                 task_queue=settings.temporal_task_queue,
             )
-        except Exception:
+        except Exception as exc:
+            workflow_start_failures += 1
+            log.warning(
+                "bulk upload: ingestion workflow failed to start | tenant=%s document=%s error=%s",
+                tenant_id,
+                document_id,
+                exc,
+            )
             async with tenant_session(tenant_id) as s:
                 await s.execute(
                     update(Document)
@@ -258,11 +278,17 @@ async def upload_documents_bulk(
             doc = (await s.execute(select(Document).where(Document.id == document_id))).scalar_one()
         responses.append(document_response(doc))
 
+    if workflow_start_failures == len(validated):
+        # Total outage: same contract as the single-upload path — the client
+        # must learn the batch never reached ingestion, not dig per-file
+        # statuses out of a 202 body.
+        raise HTTPException(status_code=503, detail="ingestion service unavailable")
     return responses
 
 
 @router.post("/documents/url/check", response_model=UrlCheckResponse)
 async def check_url_document(body: UrlCheckRequest, tenant_id: TenantID) -> UrlCheckResponse:
+    await enforce_url_ingest_limit(tenant_id, "/documents/url/check")
     try:
         fetched = await fetch_url_source(body.url)
     except UrlSourceError as exc:
@@ -291,6 +317,7 @@ async def add_url_document(
     request: Request,
     tenant_id: TenantID,
 ) -> DocumentResponse:
+    await enforce_url_ingest_limit(tenant_id, "/documents/url")
     try:
         fetched = await fetch_url_source(body.url)
     except UrlSourceError as exc:
@@ -298,7 +325,7 @@ async def add_url_document(
 
     document_id = uuid.uuid4()
     object_key = f"{tenant_id}/{document_id}/{fetched.filename}"
-    _store_url_source_objects(object_key, fetched)
+    await _store_url_source_objects(object_key, fetched)
     checked_at = datetime.now(UTC)
 
     async with tenant_session(tenant_id) as s:
@@ -491,6 +518,7 @@ async def reindex_document(
     tenant_id: TenantID,
     request: Request,
 ) -> DocumentReindexResponse:
+    # Phase 1 — short read transaction: is the document reindexable right now?
     async with tenant_session(tenant_id) as s:
         doc = (
             await s.execute(
@@ -502,15 +530,44 @@ async def reindex_document(
         if doc.status in {DocumentStatus.pending, DocumentStatus.processing}:
             raise HTTPException(status_code=409, detail="document is already being indexed")
 
-        if getattr(doc, "source_type", "file") in {"url", "github"}:
-            if not doc.source_url:
-                raise HTTPException(status_code=409, detail="external document has no source URL")
-            try:
-                fetched = await fetch_url_source(doc.source_url)
-            except UrlSourceError as exc:
-                raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+        is_external = getattr(doc, "source_type", "file") in {"url", "github"}
+        source_url = getattr(doc, "source_url", None)
+        object_key = doc.object_key
+        status_before = doc.status
 
-            changed = _url_source_objects_changed(doc.object_key, fetched)
+    if is_external and not source_url:
+        raise HTTPException(status_code=409, detail="external document has no source URL")
+
+    # Phase 2 — external fetch + object-store I/O with NO transaction open:
+    # a slow or malicious source (10s timeout per hop) must not pin pooled
+    # DB connections; a handful of concurrent reindexes used to exhaust them.
+    fetched: FetchedUrlSource | None = None
+    changed = False
+    if is_external and source_url:
+        await enforce_url_ingest_limit(tenant_id, "/documents/reindex")
+        try:
+            fetched = await fetch_url_source(source_url)
+        except UrlSourceError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+        changed = await _url_source_objects_changed(object_key, fetched)
+        if changed or status_before != DocumentStatus.done:
+            await _store_url_source_objects(object_key, fetched)
+
+    # Phase 3 — short write transaction: re-check (the document may have been
+    # deleted or picked up by another reindex while we were fetching), apply,
+    # queue.
+    async with tenant_session(tenant_id) as s:
+        doc = (
+            await s.execute(
+                select(Document).where(Document.id == document_id, Document.tenant_id == tenant_id)
+            )
+        ).scalar_one_or_none()
+        if doc is None:
+            raise HTTPException(status_code=404, detail="document not found")
+        if doc.status in {DocumentStatus.pending, DocumentStatus.processing}:
+            raise HTTPException(status_code=409, detail="document is already being indexed")
+
+        if fetched is not None:
             _apply_url_source_metadata(doc, fetched)
             if not changed and doc.status == DocumentStatus.done:
                 await s.flush()
@@ -519,7 +576,6 @@ async def reindex_document(
                     changed=False,
                     workflow_started=False,
                 )
-            _store_url_source_objects(doc.object_key, fetched)
 
         doc.status = DocumentStatus.pending
         doc.processing_stage = "queued"
@@ -591,7 +647,7 @@ async def delete_document(
 
     for key in [object_key, url_image_sidecar_key(object_key), *preview_object_keys]:
         try:
-            object_store.delete(key)
+            await asyncio.to_thread(object_store.delete, key)
         except Exception as exc:
             log.warning(
                 "object deletion failed | tenant=%s document=%s key=%s error=%s",

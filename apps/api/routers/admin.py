@@ -38,6 +38,7 @@ from packages.storage.db import admin_session
 from sqlalchemy import TextClause, func, or_, select, text
 from sqlalchemy import delete as sa_delete
 from sqlalchemy import update as sa_update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.deps import AdminDep
@@ -334,19 +335,25 @@ async def admin_create_user(body: CreateAdminUserRequest, _principal: AdminDep) 
     the only surface for that.
     """
     email = body.email.lower().strip()
-    async with admin_session() as db:
-        existing = (await db.execute(select(User).where(User.email == email))).scalar_one_or_none()
-        if existing is not None:
-            raise HTTPException(status_code=409, detail="email is already registered")
-        user = User(
-            id=uuid.uuid4(),
-            tenant_id=settings.default_tenant_id,
-            name=body.name.strip() or email.split("@")[0],
-            email=email,
-            password_hash=hash_password(body.password),
-            role=body.role,
-        )
-        db.add(user)
+    try:
+        async with admin_session() as db:
+            existing = (
+                await db.execute(select(User).where(User.email == email))
+            ).scalar_one_or_none()
+            if existing is not None:
+                raise HTTPException(status_code=409, detail="email is already registered")
+            user = User(
+                id=uuid.uuid4(),
+                tenant_id=settings.default_tenant_id,
+                name=body.name.strip() or email.split("@")[0],
+                email=email,
+                password_hash=hash_password(body.password),
+                role=body.role,
+            )
+            db.add(user)
+    except IntegrityError:
+        # Race past the SELECT on uq_users_email — 409, not 500.
+        raise HTTPException(status_code=409, detail="email is already registered") from None
     log.info("admin created user | email=%s role=%s", email, body.role)
     return AdminUserInfo(
         id=str(user.id),
@@ -719,7 +726,8 @@ async def admin_usage(
         model_rows = await ch_client.query(by_model_sql, {"days": days})
         daily_rows = await ch_client.query(daily_sql, {"days": days})
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"ClickHouse error: {e}") from e
+        log.exception("admin usage query failed")
+        raise HTTPException(status_code=500, detail="ClickHouse error") from e
 
     by_tenant = [
         AdminUsageByTenant(

@@ -39,7 +39,7 @@ import { useSettingsStore } from '@/stores/settings'
 import { useI18n } from '@/composables/useI18n'
 import AppIcon from '@/components/AppIcon.vue'
 
-const props = defineProps({
+defineProps({
   model: String,
   requireApproval: Boolean
 })
@@ -62,7 +62,9 @@ function resize() {
 
 function send() {
   const q = input.value.trim()
-  if (!q || tooLong.value || chat.loading || !settings.isConnected) return
+  // chat.loading clears on the first streamed token; check isStreaming too —
+  // otherwise Enter mid-answer clears the input and loses the typed text.
+  if (!q || tooLong.value || chat.loading || chat.isStreaming || !settings.isConnected) return
   input.value = ''
   if (textareaRef.value) textareaRef.value.style.height = 'auto'
   emit('send', q)

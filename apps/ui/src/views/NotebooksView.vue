@@ -159,7 +159,7 @@ const notebooksLoadingMore = ref(false)
 
 const readyDocs = computed(() => docs.value.filter(doc => doc.status === 'done'))
 
-watch([() => settings.apiKey, () => settings.locale], loadData, { immediate: true })
+watch([() => settings.credentialKey, () => settings.locale], loadData, { immediate: true })
 
 function documentListPath(offset) {
   return `/documents?limit=${DOCUMENT_PICKER_PAGE_SIZE + 1}&offset=${offset}`

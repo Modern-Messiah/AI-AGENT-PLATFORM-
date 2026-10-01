@@ -10,6 +10,30 @@
     >
       <AppIcon name="docs" :size="14" />
     </button>
+    <div class="scope-group">
+      <button
+        class="scope-pill-btn"
+        :class="[`is-${scope?.type || 'global'}`, { 'is-locked': scopeLocked }]"
+        type="button"
+        :disabled="scopeLocked"
+        :title="scopeLocked ? t('chat.scopeLockedHint') : t('chat.scopeSelectSub')"
+        @click="!scopeLocked && $emit('open-scope')"
+      >
+        <AppIcon :name="scope?.type === 'document' ? 'docs' : (scope?.type === 'notebook' ? 'book' : 'globe')" :size="12" />
+        <span class="scope-pill-text">{{ scope?.title || t('chat.scopeGlobalTitle') }}</span>
+        <span v-if="!scopeLocked" class="scope-pill-action">{{ t('chat.changeScope') }}</span>
+        <AppIcon v-if="!scopeLocked" name="chevron-down" :size="10" />
+        <AppIcon v-else name="lock" :size="10" class="scope-pill-lock" />
+      </button>
+
+      <RouterLink
+        v-if="scope?.backPath"
+        class="btn btn-ghost btn-xs scope-back-btn"
+        :to="scope.backPath"
+      >
+        {{ scope.backLabel }}
+      </RouterLink>
+    </div>
     <select
       v-if="session.isAdmin"
       class="model-select"
@@ -31,6 +55,7 @@
 </template>
 
 <script setup>
+import { RouterLink } from 'vue-router'
 import { useSettingsStore } from '@/stores/settings'
 import { useSessionStore } from '@/stores/session'
 import { useI18n } from '@/composables/useI18n'
@@ -42,10 +67,111 @@ defineProps({
   model: String,
   requireApproval: Boolean,
   showHistoryToggle: Boolean,
+  scope: {
+    type: Object,
+    default: () => ({ type: 'global', title: '' }),
+  },
+  scopeLocked: {
+    type: Boolean,
+    default: false,
+  },
 })
-defineEmits(['update:model', 'update:requireApproval'])
+defineEmits(['update:model', 'update:requireApproval', 'toggle-history', 'open-scope'])
 
 const settings = useSettingsStore()
 const session = useSessionStore()
 const { t } = useI18n()
 </script>
+
+<style scoped>
+.scope-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.scope-pill-action {
+  font-size: 10.5px;
+  font-weight: 500;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--accent) 14%, transparent);
+  color: var(--accent);
+  margin-left: 2px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+}
+
+.scope-pill-btn:hover .scope-pill-action {
+  background: color-mix(in oklch, var(--accent) 24%, transparent);
+}
+
+.scope-back-btn {
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.scope-back-btn:hover {
+  color: var(--text);
+}
+
+.scope-pill-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--s2);
+  color: var(--text);
+  font-size: 11.5px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  max-width: 340px;
+}
+
+.scope-pill-btn:hover {
+  background: var(--s3);
+  border-color: color-mix(in oklch, var(--accent) 50%, var(--border));
+}
+
+.scope-pill-btn.is-locked {
+  cursor: default;
+}
+
+.scope-pill-btn.is-locked:hover {
+  background: var(--s2);
+  border-color: var(--border);
+}
+
+.scope-pill-lock {
+  opacity: 0.65;
+  flex-shrink: 0;
+}
+
+.scope-pill-btn.is-global {
+  border-color: color-mix(in oklch, var(--teal, var(--accent)) 30%, var(--border));
+  color: var(--text);
+}
+
+.scope-pill-btn.is-document {
+  border-color: color-mix(in oklch, var(--purple) 35%, var(--border));
+  color: var(--purple);
+}
+
+.scope-pill-btn.is-notebook {
+  border-color: color-mix(in oklch, var(--accent) 35%, var(--border));
+  color: var(--accent);
+}
+
+.scope-pill-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+</style>

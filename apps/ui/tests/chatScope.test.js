@@ -10,6 +10,7 @@ import {
   scopeSessionTitle,
   scopeSendOptions,
   scopeWelcomeMessage,
+  isChatScopeLocked,
 } from '../src/utils/chatScope.js'
 
 
@@ -50,8 +51,21 @@ test('normalizes global chat when route has no scope', () => {
   const scope = normalizeChatScope({})
 
   assert.equal(scope.type, 'global')
+  assert.equal(scope.title, 'По всей базе знаний')
+  assert.match(scope.description, /по всем документам/)
+  assert.match(scopeWelcomeMessage(scope), /по всей базе знаний/)
   assert.deepEqual(buildChatScopeQuery(scope), {})
   assert.deepEqual(scopeSendOptions(scope), {})
+})
+
+
+test('builds global scope metadata when includeGlobal option is set', () => {
+  assert.deepEqual(sessionScopeMetaFromSession({ title: 'New Chat' }, 'ru', { includeGlobal: true }), {
+    type: 'global',
+    badge: 'Вся база',
+    title: 'New Chat',
+    subtitle: 'По всей базе знаний',
+  })
 })
 
 
@@ -125,3 +139,42 @@ test('localizes scoped chat metadata while accepting English session titles', ()
     subtitle: 'Chat with document “manual.pdf”',
   })
 })
+
+
+test('evaluates whether chat search scope is locked', () => {
+  // Fresh draft session without user messages is unlocked
+  assert.equal(isChatScopeLocked({
+    session: { id: 's-draft', title: 'New Chat' },
+    messages: [{ id: 'w', role: 'agent' }],
+    isDraft: true,
+  }), false)
+
+  // Once user sends a message, scope locks
+  assert.equal(isChatScopeLocked({
+    session: { id: 's-draft', title: 'New Chat' },
+    messages: [{ id: 'w', role: 'agent' }, { id: 'u1', role: 'user', text: 'Hello' }],
+    isDraft: true,
+  }), true)
+
+  // Document-scoped session is always locked
+  assert.equal(isChatScopeLocked({
+    session: { id: 's-doc', scope_type: 'document', document_id: 'doc-1' },
+    messages: [{ id: 'w', role: 'agent' }],
+    isDraft: true,
+  }), true)
+
+  // Notebook-scoped session is always locked
+  assert.equal(isChatScopeLocked({
+    session: { id: 's-nb', scope_type: 'notebook', notebook_id: 'nb-1' },
+    messages: [],
+    isDraft: true,
+  }), true)
+
+  // Persisted session from history that is not a fresh draft is locked
+  assert.equal(isChatScopeLocked({
+    session: { id: 's-old', title: 'Old chat' },
+    messages: [],
+    isDraft: false,
+  }), true)
+})
+
