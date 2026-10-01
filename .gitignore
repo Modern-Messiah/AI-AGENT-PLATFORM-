@@ -28,3 +28,6 @@ ai-agent-platform.md
 
 # Playwright run artifacts
 apps/ui/e2e/.artifacts/
+
+# ZCode agent workspace
+.zcode/

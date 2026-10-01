@@ -390,12 +390,18 @@ async def admin_reset_user_password(
 async def admin_change_user_role(
     user_id: uuid.UUID, body: AdminRoleChangeRequest, _principal: AdminDep
 ) -> AdminUserInfo:
-    """Grant or revoke the admin role (panel is the only surface for this)."""
+    """Grant or revoke the admin role (panel is the only surface for this).
+
+    Live sessions are revoked so the role baked into existing JWT claims
+    (up to AUTH_SESSION_TTL_HOURS old) stops working immediately; the next
+    login issues a token with the new role.
+    """
     async with admin_session() as db:
         user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
         if user is None:
             raise HTTPException(status_code=404, detail="user not found")
         user.role = body.role
+    await deny_user_sessions(user_id)
     log.info("admin changed role | user_id=%s role=%s", user_id, body.role)
     return AdminUserInfo(
         id=str(user.id),

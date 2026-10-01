@@ -263,13 +263,35 @@
                   <td class="td-mono">{{ user.queries_7d }}</td>
                   <td class="td-mono">{{ fmtDateTime(user.last_query_at) }}</td>
                   <td>
-                    <button
-                      v-if="user.email"
-                      class="btn btn-ghost btn-sm"
-                      @click="resetTarget = user"
-                    >
-                      {{ t('admin.resetPassword') }}
-                    </button>
+                    <div style="display: flex; gap: 6px; flex-wrap: wrap">
+                      <button
+                        v-if="user.email"
+                        class="btn btn-ghost btn-sm"
+                        @click="resetTarget = user"
+                      >
+                        {{ t('admin.resetPassword') }}
+                      </button>
+                      <button
+                        class="btn btn-ghost btn-sm"
+                        :title="t('admin.roleRevokesSessions')"
+                        @click="toggleUserRole(user)"
+                      >
+                        {{ t('admin.toggleRole') }}
+                      </button>
+                      <button class="btn btn-ghost btn-sm" @click="toggleUserBlock(user)">
+                        {{ user.is_active ? t('admin.blockUser') : t('admin.unblockUser') }}
+                      </button>
+                      <button
+                        :class="['btn', 'btn-sm', userDeleteTarget?.id === user.id ? 'btn-danger' : 'btn-ghost']"
+                        @click="deleteUserRow(user)"
+                      >
+                        {{
+                          userDeleteTarget?.id === user.id
+                            ? t('admin.deleteUserConfirm')
+                            : t('admin.deleteUser')
+                        }}
+                      </button>
+                    </div>
                   </td>
                 </tr>
               </tbody>
