@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import uuid
+import zipfile
+from collections.abc import AsyncIterator
 from datetime import UTC, datetime
+from tempfile import SpooledTemporaryFile
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
@@ -20,7 +24,7 @@ from packages.storage import (
 )
 from packages.storage.db import tenant_session
 from sqlalchemy import select, update
-from starlette.responses import Response
+from starlette.responses import Response, StreamingResponse
 from temporalio.client import Client
 
 from apps.api.deps import ActorDep, TenantID, content_length_exceeds, read_with_limit
@@ -40,7 +44,7 @@ from apps.api.serializers import (
     document_response,
     metadata_page,
 )
-from apps.api.services.access import can_access, can_manage, scope_condition
+from apps.api.services.access import accessible_condition, can_access, can_manage, scope_condition
 from apps.api.services.cache import invalidate_semantic_cache
 from apps.api.services.filenames import safe_upload_filename
 from apps.api.services.url_source_limits import enforce_url_ingest_limit
@@ -115,6 +119,126 @@ async def list_documents(
             stmt = stmt.where(condition)
         rows = (await s.execute(stmt)).scalars().all()
     return [document_response(doc) for doc in rows]
+
+
+@router.get("/documents/export")
+async def export_documents(actor: ActorDep) -> Response:
+    """Download the acting user's knowledge base as a single ZIP.
+
+    Exports every document the actor may access (own + shared — the same
+    corpus the agent searches; the whole tenant for unbound keys): original
+    object bytes plus a manifest.json with metadata and ownership. Must be
+    declared before /documents/{document_id} or "export" would match the
+    path parameter.
+    """
+    tenant_id = actor.tenant_id
+    async with tenant_session(tenant_id) as s:
+        stmt = (
+            select(Document)
+            .where(Document.tenant_id == tenant_id)
+            .order_by(Document.created_at.desc())
+        )
+        if (condition := accessible_condition(Document, actor)) is not None:
+            stmt = stmt.where(condition)
+        rows = (await s.execute(stmt)).scalars().all()
+    if not rows:
+        raise HTTPException(status_code=404, detail="no documents to export")
+
+    def build_archive(buffer: SpooledTemporaryFile[bytes]) -> int:
+        def unique_name(name: str, used: set[str]) -> str:
+            if name not in used:
+                used.add(name)
+                return name
+            stem, dot, ext = name.rpartition(".")
+            base = stem if dot else name
+            ext_part = f".{ext}" if dot else ""
+            index = 1
+            while (candidate := f"{base} ({index}){ext_part}") in used:
+                index += 1
+            used.add(candidate)
+            return candidate
+
+        manifest: list[dict[str, object]] = []
+        used_names: set[str] = set()
+        with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+            for doc in rows:
+                try:
+                    data = object_store.get(doc.object_key)
+                except Exception as exc:
+                    log.warning(
+                        "export: object missing | tenant=%s document=%s error=%s",
+                        tenant_id,
+                        doc.id,
+                        exc,
+                    )
+                    manifest.append(
+                        {
+                            "id": str(doc.id),
+                            "filename": doc.filename,
+                            "exported": False,
+                            "error": "object not found in storage",
+                        }
+                    )
+                    continue
+                archive_name = unique_name(doc.filename or f"{doc.id}.bin", used_names)
+                archive.writestr(archive_name, data)
+                manifest.append(
+                    {
+                        "id": str(doc.id),
+                        "filename": doc.filename,
+                        "archive_name": archive_name,
+                        "exported": True,
+                        "status": str(getattr(doc.status, "value", doc.status)),
+                        "size_bytes": doc.size_bytes,
+                        "source_type": getattr(doc, "source_type", "file") or "file",
+                        "source_url": getattr(doc, "source_url", None),
+                        "is_mine": bool(actor.user_id and doc.owner_user_id == actor.user_id),
+                        "is_shared": bool(doc.is_shared),
+                        "created_at": doc.created_at.isoformat() if doc.created_at else None,
+                    }
+                )
+            archive.writestr(
+                "manifest.json",
+                json.dumps(
+                    {
+                        "tenant_id": tenant_id,
+                        "exported_at": datetime.now(UTC).isoformat(),
+                        "document_count": len(manifest),
+                        "documents": manifest,
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                ),
+            )
+        return len(manifest)
+
+    # MinIO SDK and zipfile are synchronous — keep both off the event loop.
+    # SpooledTemporaryFile rolls to disk past 64 MB, so huge bases do not
+    # sit in RAM. Starlette does not own the handle: the streaming
+    # generator below closes it in finally.
+    buffer: SpooledTemporaryFile[bytes] = SpooledTemporaryFile(max_size=64 * 1024 * 1024)  # noqa: SIM115
+    count = await asyncio.to_thread(build_archive, buffer)
+    if count == 0:
+        buffer.close()
+        raise HTTPException(status_code=404, detail="no documents to export")
+    buffer.seek(0)
+
+    stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M")
+
+    async def _stream() -> AsyncIterator[bytes]:
+        try:
+            while chunk := await asyncio.to_thread(buffer.read, 1024 * 1024):
+                yield chunk
+        finally:
+            buffer.close()
+
+    return StreamingResponse(
+        _stream(),
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="knowledge-base-{tenant_id}-{stamp}.zip"',
+        },
+    )
 
 
 @router.post("/documents", response_model=DocumentResponse, status_code=202)

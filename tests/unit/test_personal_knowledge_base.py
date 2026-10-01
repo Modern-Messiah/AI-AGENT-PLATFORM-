@@ -496,3 +496,71 @@ async def test_unshare_blocked_while_in_shared_notebook(monkeypatch) -> None:
 
     assert exc.value.status_code == 409
     assert "Общий сборник" in exc.value.detail
+
+
+# ── knowledge base export (GET /documents/export) ────────────────────────────
+
+
+class _ExportDoc:
+    """Minimal document row for the export path."""
+
+    def __init__(self, name: str, owner, shared: bool = False, key: str | None = None) -> None:
+        self.id = uuid.uuid4()
+        self.tenant_id = "tenant-a"
+        self.owner_user_id = owner
+        self.is_shared = shared
+        self.filename = name
+        self.object_key = key or f"tenant-a/{name}"
+        self.size_bytes = 16
+        self.status = DocumentStatus.done
+        self.source_type = "file"
+        self.source_url = None
+        self.created_at = None
+
+
+async def test_export_contains_only_accessible_documents(monkeypatch) -> None:
+    import io
+    import zipfile as zf
+
+    user = _user()
+    # The fake session returns rows verbatim (it cannot run SQL), so the
+    # fixture contains only what the accessible-condition would select;
+    # the statement itself is asserted below to carry the owner filter.
+    mine = _ExportDoc("mine.txt", user.user_id)
+    shared = _ExportDoc("shared.txt", _other_user().user_id, shared=True)
+    session = _FakeSession([_Result([mine, shared])])
+    _patch_tenant_session(monkeypatch, documents_router, session)
+    monkeypatch.setattr(
+        documents_router.object_store,
+        "get",
+        lambda key: f"bytes-of-{key}".encode(),
+    )
+
+    response = await documents_router.export_documents(user)
+
+    body = b"".join([chunk async for chunk in response.body_iterator])
+    archive = zf.ZipFile(io.BytesIO(body))
+    # Ownership filter must be part of the select (foreign private rows
+    # are excluded server-side by accessible_condition).
+    assert "owner_user_id" in str(session.statements[0])
+    assert "is_shared" in str(session.statements[0])
+    names = archive.namelist()
+    assert "mine.txt" in names
+    assert "shared.txt" in names
+    assert "manifest.json" in names
+    manifest = json.loads(archive.read("manifest.json"))
+    assert manifest["document_count"] == 2
+    by_name = {d["filename"]: d for d in manifest["documents"]}
+    assert by_name["mine.txt"]["is_mine"] is True
+    assert by_name["shared.txt"]["is_shared"] is True
+    assert archive.read("mine.txt") == b"bytes-of-tenant-a/mine.txt"
+
+
+async def test_export_without_documents_returns_404(monkeypatch) -> None:
+    session = _FakeSession([_Result([])])
+    _patch_tenant_session(monkeypatch, documents_router, session)
+
+    with pytest.raises(Exception) as exc:
+        await documents_router.export_documents(_user())
+
+    assert exc.value.status_code == 404
