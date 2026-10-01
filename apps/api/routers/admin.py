@@ -1022,4 +1022,20 @@ async def admin_user_analytics(
                 avg_latency_ms=int(raw_latency or 0),
             )
         )
+
+    if _principal.actor and _principal.actor.user_id:
+        cur_uid = str(_principal.actor.user_id)
+        if cur_uid in by_id and not any(it.user_id == cur_uid for it in items):
+            cur_user = by_id[cur_uid]
+            items.append(
+                AdminUserUsage(
+                    user_id=cur_uid,
+                    user_name=cur_user.name,
+                    email=cur_user.email,
+                    cost_usd=0.0,
+                    total_tokens=0,
+                    calls=0,
+                    avg_latency_ms=0,
+                )
+            )
     return items

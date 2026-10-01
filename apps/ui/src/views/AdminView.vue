@@ -657,8 +657,11 @@
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="row in userUsage" :key="row.user_id || 'unbound'">
-                  <td class="file-name">{{ row.user_name || t('admin.unboundKey') }}</td>
+                <tr v-for="row in userUsage" :key="row.user_id || 'unbound'" :class="{ 'current-user-row': isCurrentUser(row) }">
+                  <td class="file-name">
+                    {{ row.user_name || t('admin.unboundKey') }}
+                    <span v-if="isCurrentUser(row)" class="badge badge-primary you-badge">{{ t('analytics.you') }}</span>
+                  </td>
                   <td class="td-mono">{{ row.email || '—' }}</td>
                   <td class="td-mono">{{ row.calls }}</td>
                   <td class="td-mono">{{ fmtTokens(row.total_tokens) }}</td>
@@ -1158,6 +1161,10 @@ const usageTrend = computed(() => (
   usage.value ? buildUsageTrend(usage.value.daily, settings.locale) : []
 ))
 
+function isCurrentUser(row) {
+  return Boolean(session.user?.user_id && row?.user_id === session.user.user_id)
+}
+
 const overviewCards = computed(() => {
   if (!overview.value) return []
   const data = overview.value
@@ -1497,6 +1504,16 @@ function docBadge(status) {
 .llm-keys-table { min-width: 860px; }
 .documents-table { min-width: 780px; }
 .user-usage-table { min-width: 640px; }
+.current-user-row {
+  background: color-mix(in oklch, var(--primary) 7%, transparent);
+}
+.you-badge {
+  font-size: 10px;
+  padding: 1px 6px;
+  margin-left: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
 .by-tenant-table { min-width: 400px; }
 .by-model-table { min-width: 400px; }
 
