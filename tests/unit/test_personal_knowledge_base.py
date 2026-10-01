@@ -75,9 +75,18 @@ def test_shared_document_is_visible_to_everyone_in_tenant() -> None:
     assert can_access(_other_user(), doc) is True
 
 
-def test_legacy_document_without_owner_stays_shared() -> None:
-    doc = _doc(None)
+def test_legacy_document_backfilled_shared_stays_shared() -> None:
+    # Migration 0029 backfills owner-NULL rows to is_shared=true; the flag
+    # alone decides sharing from now on.
+    doc = _doc(None, shared=True)
     assert can_access(_other_user(), doc) is True
+
+
+def test_orphaned_private_document_is_invisible() -> None:
+    # owner FK nulled by user deletion must NOT publish the document.
+    doc = _doc(None, shared=False)
+    assert can_access(_other_user(), doc) is False
+    assert can_access(_unbound_key(), doc) is True
 
 
 def test_can_manage_owner_admin_and_unbound_but_not_others() -> None:
@@ -99,7 +108,7 @@ def test_scope_condition_all_adds_owner_or_clause_for_user() -> None:
     condition = scope_condition(Document, _user(), "all")
     assert condition is not None
     sql = str(condition)
-    assert "owner_user_id IS NULL" in sql
+    assert "owner_user_id" in sql
     assert "is_shared" in sql
 
 
@@ -209,9 +218,9 @@ async def test_delete_document_foreign_private_hidden(monkeypatch) -> None:
 
 
 async def test_delete_document_shared_denied_for_member(monkeypatch) -> None:
-    # Legacy tenant-shared documents stay admin/unbound-only to destroy,
-    # same contract as require_destroy_permission before personal bases.
-    doc = _doc(None)
+    # Tenant-shared documents stay admin/unbound-only to destroy, same
+    # contract as require_destroy_permission before personal bases.
+    doc = _doc(None, shared=True)
     session = _FakeSession([_Result([doc])])
     _patch_tenant_session(monkeypatch, documents_router, session)
 
@@ -232,6 +241,29 @@ def test_notebook_access_follows_same_rules() -> None:
     assert can_access(owner, notebook) is True
     assert can_access(_other_user(), notebook) is False
     assert can_manage(_other_user(), notebook) is False
+
+
+async def test_shared_notebook_rejects_private_documents(monkeypatch) -> None:
+    """Stored notebook insights are visible to everyone who can open the
+    notebook — deriving them from a private document would leak content."""
+    from apps.api.routers import notebooks as notebooks_router
+    from apps.api.schemas import CreateNotebookRequest
+
+    owner = _user()
+    private_doc = _doc(owner.user_id)  # is_shared=False
+    session = _FakeSession([_Result([private_doc])])
+    monkeypatch.setattr(notebooks_router, "tenant_session", lambda tid: _FakeTenantSession(session))
+
+    with pytest.raises(Exception) as exc:
+        await notebooks_router.create_notebook(
+            CreateNotebookRequest(
+                title="Общий ноутбук", document_ids=[private_doc.id], shared=True
+            ),
+            owner,
+        )
+
+    assert exc.value.status_code == 400
+    assert "private" in exc.value.detail
 
 
 # ── agent chat scoping ───────────────────────────────────────────────────────
@@ -280,6 +312,48 @@ async def test_agent_stream_without_accessible_documents_answers_without_retriev
     # The refusal is answered immediately: no retrieval stage, one log entry.
     assert '"stage": "retrieval"' not in body
     assert '"type": "done"' in body
+    assert len(logged) == 1
+
+
+async def test_agent_research_without_accessible_documents_short_circuits(
+    monkeypatch,
+) -> None:
+    """Regression: research used to fall through to an unscoped tenant
+    search when the user had zero accessible documents (empty
+    document_ids means "no filter" in the retriever)."""
+    from packages.agents.schemas import MultiStepResearchInput
+
+    async def fake_limits(tenant_id: str, query: str, endpoint: str) -> str:
+        return query
+
+    async def fake_validate(query: str) -> str:
+        return query
+
+    logged: list[object] = []
+
+    async def fake_log(entry) -> None:
+        logged.append(entry)
+
+    def fail_workflow(*args, **kwargs):
+        raise AssertionError("research must not start workflows over an empty corpus")
+
+    monkeypatch.setattr(agent_router, "enforce_agent_limits", fake_limits)
+    monkeypatch.setattr(agent_router, "validate_agent_query", fake_validate)
+    monkeypatch.setattr(agent_router, "log_agent_query", fake_log)
+    monkeypatch.setattr(agent_router, "tenant_session", lambda tid: _ScalarsSession([]))
+    request = SimpleNamespace(
+        app=SimpleNamespace(
+            state=SimpleNamespace(temporal=SimpleNamespace(execute_workflow=fail_workflow))
+        )
+    )
+
+    response = await agent_router.run_research(
+        MultiStepResearchInput(main_query="вопрос", sub_queries=["подвопрос"]),
+        _user(),
+        request,
+    )
+
+    assert "нет доступных проиндексированных документов" in response.answer
     assert len(logged) == 1
 
 

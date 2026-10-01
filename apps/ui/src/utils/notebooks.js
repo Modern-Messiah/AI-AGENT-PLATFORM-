@@ -7,7 +7,7 @@ export function normalizeNotebook(notebook, locale = 'ru', currentUserId = null)
     title: notebook.title || translate(locale, 'notebooks.untitled'),
     description: notebook.description || '',
     ownerUserId,
-    isShared: Boolean(notebook.is_shared ?? notebook.isShared ?? (ownerUserId === null)),
+    isShared: Boolean(notebook.is_shared ?? notebook.isShared ?? false),
     isMine: Boolean(ownerUserId && currentUserId && ownerUserId === String(currentUserId)),
     documentCount: notebook.document_count ?? notebook.documentCount ?? 0,
     documentIds: Array.isArray(notebook.document_ids)

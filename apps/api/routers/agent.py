@@ -573,6 +573,30 @@ async def run_research(
     sub_queries = [validate_agent_query(q) for q in payload.sub_queries]
     async with tenant_session(tenant_id) as db:
         research_accessible_ids = await accessible_document_ids(db, tenant_id, actor)
+    if research_accessible_ids is not None and not research_accessible_ids:
+        # Same guard as /agent/run: an empty accessible corpus must answer
+        # with guidance, never fall through to an unscoped tenant search
+        # (empty document_ids means "no filter" in the retriever).
+        answer = (
+            "У вас ещё нет доступных проиндексированных документов. "
+            "Перейдите в раздел «Документы», загрузите файлы — "
+            "после индексации я смогу отвечать на вопросы по ним."
+        )
+        await log_agent_query(
+            QueryLogEntry(
+                tenant_id=tenant_id,
+                user_id=actor.user_id,
+                user_name=actor.user_name,
+                api_key_id=actor.api_key_id,
+                api_key_name=actor.api_key_name,
+                mode="research",
+                model=resolve_chat_model(actor, payload.model),
+                query=main_query,
+                answer=answer,
+                confidence=1.0,
+            )
+        )
+        return AgentRunApiResponse(answer=answer, confidence=1.0)
     payload = payload.model_copy(
         update={
             "tenant_id": tenant_id,

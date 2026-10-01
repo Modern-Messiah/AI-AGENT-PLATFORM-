@@ -1,9 +1,11 @@
 """Per-user knowledge-base access rules.
 
-Documents and notebooks are tenant-scoped by RLS; on top of that, rows with
-an owner are private unless explicitly shared. Unbound tenant API keys
-(user_id is None — operational scripts, reindex, evals) keep full tenant
-access, matching the Actor.can_destroy convention.
+Documents and notebooks are tenant-scoped by RLS; on top of that, sharing
+is decided by is_shared alone (migration 0029 backfilled legacy owner-NULL
+rows to is_shared=true, so an owner FK nulled by user deletion yields an
+invisible orphan instead of a tenant-shared document). Unbound tenant API
+keys (user_id is None — operational scripts, reindex, evals) keep full
+tenant access, matching the Actor.can_destroy convention.
 """
 
 from __future__ import annotations
@@ -20,7 +22,6 @@ def _owner_condition(
     model: type[Document] | type[Notebook], user_id: uuid.UUID
 ) -> ColumnElement[bool]:
     return or_(
-        model.owner_user_id.is_(None),
         model.owner_user_id == user_id,
         model.is_shared.is_(True),
     )
@@ -47,7 +48,7 @@ def scope_condition(
             return false()
         return model.owner_user_id == actor.user_id
     if scope == "shared":
-        return or_(model.owner_user_id.is_(None), model.is_shared.is_(True))
+        return model.is_shared.is_(True)
     return accessible_condition(model, actor)
 
 
@@ -55,7 +56,7 @@ def can_access(actor: Actor, resource: Document | Notebook) -> bool:
     if actor.user_id is None:
         return True
     owner_id = getattr(resource, "owner_user_id", None)
-    return owner_id is None or owner_id == actor.user_id or bool(resource.is_shared)
+    return owner_id == actor.user_id or bool(resource.is_shared)
 
 
 def can_manage(actor: Actor, resource: Document | Notebook) -> bool:

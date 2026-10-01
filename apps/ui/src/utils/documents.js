@@ -19,7 +19,7 @@ export function normalizeDocument(doc, locale = 'ru', currentUserId = null) {
     error: doc.error || null,
     size: formatFileSize(doc.size_bytes || doc.sizeBytes || 0),
     ownerUserId,
-    isShared: Boolean(doc.is_shared ?? doc.isShared ?? (ownerUserId === null)),
+    isShared: Boolean(doc.is_shared ?? doc.isShared ?? false),
     isMine: Boolean(ownerUserId && currentUserId && ownerUserId === String(currentUserId)),
     sourceType: doc.source_type || doc.sourceType || 'file',
     sourceUrl: doc.source_url || doc.sourceUrl || '',
