@@ -14,6 +14,12 @@ export const THEMES = [
     swatches: ['#0c0e12', '#18a9c9', '#7d7aec'],
   },
   {
+    id: 'midnight',
+    labelKey: 'settings.themeMidnight',
+    mode: 'dark',
+    swatches: ['#000000', '#0a84ff', '#5e5ce6'],
+  },
+  {
     id: 'pine',
     labelKey: 'settings.themePine',
     mode: 'dark',
@@ -26,6 +32,24 @@ export const THEMES = [
     swatches: ['#120d16', '#df6fa6', '#51c5d7'],
   },
   {
+    id: 'amber',
+    labelKey: 'settings.themeAmber',
+    mode: 'dark',
+    swatches: ['#0f0c08', '#f59e0b', '#d97706'],
+  },
+  {
+    id: 'nord',
+    labelKey: 'settings.themeNord',
+    mode: 'dark',
+    swatches: ['#1a1e24', '#88c0d0', '#81a1c1'],
+  },
+  {
+    id: 'tokyo',
+    labelKey: 'settings.themeTokyo',
+    mode: 'dark',
+    swatches: ['#13141f', '#7aa2f7', '#bb9af7'],
+  },
+  {
     id: 'porcelain',
     labelKey: 'settings.themePorcelain',
     mode: 'light',
@@ -35,7 +59,25 @@ export const THEMES = [
     id: 'daylight',
     labelKey: 'settings.themeDaylight',
     mode: 'light',
-    swatches: ['#f7f9ff', '#5067d9', '#e66f61'],
+    swatches: ['#edf2fb', '#5067d9', '#e66f61'],
+  },
+  {
+    id: 'sand',
+    labelKey: 'settings.themeSand',
+    mode: 'light',
+    swatches: ['#f5efe6', '#b45309', '#d97706'],
+  },
+  {
+    id: 'sakura',
+    labelKey: 'settings.themeSakura',
+    mode: 'light',
+    swatches: ['#faedf1', '#e11d48', '#fb7185'],
+  },
+  {
+    id: 'sage',
+    labelKey: 'settings.themeSage',
+    mode: 'light',
+    swatches: ['#edf3ee', '#059669', '#10b981'],
   },
 ]
 

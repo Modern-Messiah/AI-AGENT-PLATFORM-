@@ -12,13 +12,28 @@ import {
 } from '../src/utils/theme.js'
 
 
-test('supports five themes and uses graphite by default', () => {
+test('supports twelve themes and uses graphite by default', () => {
   assert.equal(DEFAULT_THEME, 'graphite')
   assert.deepEqual(
     THEMES.map(theme => theme.id),
-    ['graphite', 'pine', 'plum', 'porcelain', 'daylight'],
+    [
+      'graphite',
+      'midnight',
+      'pine',
+      'plum',
+      'amber',
+      'nord',
+      'tokyo',
+      'porcelain',
+      'daylight',
+      'sand',
+      'sakura',
+      'sage',
+    ],
   )
   assert.equal(normalizeTheme('pine'), 'pine')
+  assert.equal(normalizeTheme('midnight'), 'midnight')
+  assert.equal(normalizeTheme('sand'), 'sand')
   assert.equal(normalizeTheme('unknown'), 'graphite')
   assert.equal(normalizeTheme(), 'graphite')
 })
