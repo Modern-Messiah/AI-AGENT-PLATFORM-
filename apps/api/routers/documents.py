@@ -9,7 +9,15 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from packages.auth import Actor, require_actor
 from packages.core import settings
-from packages.storage import Chunk, Document, DocumentAsset, DocumentStatus, object_store
+from packages.storage import (
+    Chunk,
+    Document,
+    DocumentAsset,
+    DocumentStatus,
+    Notebook,
+    NotebookDocument,
+    object_store,
+)
 from packages.storage.db import tenant_session
 from sqlalchemy import select, update
 from starlette.responses import Response
@@ -22,6 +30,7 @@ from apps.api.schemas import (
     DocumentChunkPreview,
     DocumentReindexResponse,
     DocumentResponse,
+    DocumentShareRequest,
     UrlCheckRequest,
     UrlCheckResponse,
 )
@@ -639,6 +648,67 @@ async def reindex_document(
         raise HTTPException(status_code=503, detail="ingestion service unavailable") from e
 
     return DocumentReindexResponse(document=response, changed=True, workflow_started=True)
+
+
+@router.patch("/documents/{document_id}/share", response_model=DocumentResponse)
+async def set_document_shared(
+    document_id: uuid.UUID,
+    body: DocumentShareRequest,
+    actor: ActorDep,
+) -> DocumentResponse:
+    """Flip a document between private and tenant-shared after upload.
+
+    Owner, admin or unbound-key only. Un-sharing is refused while the
+    document belongs to a shared notebook: stored notebook insights are
+    visible to everyone who can open it, so the shared-notebook invariant
+    (shared notebooks contain only shared documents) must hold.
+    """
+    tenant_id = actor.tenant_id
+    async with tenant_session(tenant_id) as s:
+        doc = (
+            await s.execute(
+                select(Document).where(Document.id == document_id, Document.tenant_id == tenant_id)
+            )
+        ).scalar_one_or_none()
+        if doc is None or not can_access(actor, doc):
+            raise HTTPException(status_code=404, detail="document not found")
+        if not can_manage(actor, doc):
+            raise HTTPException(
+                status_code=403,
+                detail="member keys cannot change sharing of documents they do not own",
+            )
+        if not body.shared:
+            shared_titles = list(
+                (
+                    await s.execute(
+                        select(Notebook.title)
+                        .join(NotebookDocument, NotebookDocument.notebook_id == Notebook.id)
+                        .where(
+                            NotebookDocument.document_id == document_id,
+                            NotebookDocument.tenant_id == tenant_id,
+                            Notebook.is_shared.is_(True),
+                        )
+                        .limit(3)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            if shared_titles:
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        "document is part of shared notebook(s) — remove it there first: "
+                        + ", ".join(shared_titles)
+                    ),
+                )
+        doc.is_shared = body.shared
+        await s.flush()
+        response = document_response(doc)
+    # Sharing changes who may retrieve the document — cached answers
+    # ("not found" refusals included) must not outlive the flip.
+    await invalidate_semantic_cache(tenant_id, f"document-share:{document_id}")
+    return response
 
 
 @router.delete("/documents/{document_id}", status_code=204)

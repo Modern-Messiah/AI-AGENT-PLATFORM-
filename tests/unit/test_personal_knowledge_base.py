@@ -144,6 +144,9 @@ class _FakeSession:
         self.statements.append(statement)
         return self.results.pop(0)
 
+    async def flush(self) -> None:
+        return None
+
     async def delete(self, row) -> None:
         self.deleted.append(row)
 
@@ -435,3 +438,61 @@ async def test_session_of_another_user_is_invisible(monkeypatch) -> None:
         await sessions_router.get_messages(sess.id, _other_user())
 
     assert exc.value.status_code == 404
+
+
+# ── share toggle (PATCH /documents/{id}/share) ───────────────────────────────
+
+
+async def test_owner_can_share_and_unshare_document(monkeypatch) -> None:
+    owner = _user()
+    doc = _doc(owner.user_id)
+    invalidated: list[str] = []
+
+    def fake_invalidate(tenant_id: str, reason: str):
+        invalidated.append(reason)
+
+        async def _noop_coro() -> None:
+            return None
+
+        return _noop_coro()
+
+    session = _FakeSession([_Result([doc])])
+    _patch_tenant_session(monkeypatch, documents_router, session)
+    monkeypatch.setattr(documents_router, "invalidate_semantic_cache", fake_invalidate)
+
+    response = await documents_router.set_document_shared(
+        doc.id, documents_router.DocumentShareRequest(shared=True), owner
+    )
+
+    assert response.is_shared is True
+    assert doc.is_shared is True
+    assert invalidated == [f"document-share:{doc.id}"]
+
+
+async def test_member_cannot_share_foreign_document(monkeypatch) -> None:
+    doc = _doc(_other_user().user_id, shared=True)  # visible, not manageable
+    session = _FakeSession([_Result([doc])])
+    _patch_tenant_session(monkeypatch, documents_router, session)
+
+    with pytest.raises(Exception) as exc:
+        await documents_router.set_document_shared(
+            doc.id, documents_router.DocumentShareRequest(shared=False), _user()
+        )
+
+    assert exc.value.status_code == 403
+
+
+async def test_unshare_blocked_while_in_shared_notebook(monkeypatch) -> None:
+    owner = _user()
+    doc = _doc(owner.user_id, shared=True)
+    # First execute resolves the document, second — shared notebook titles.
+    session = _FakeSession([_Result([doc]), _Result(["Общий сборник"])])
+    _patch_tenant_session(monkeypatch, documents_router, session)
+
+    with pytest.raises(Exception) as exc:
+        await documents_router.set_document_shared(
+            doc.id, documents_router.DocumentShareRequest(shared=False), owner
+        )
+
+    assert exc.value.status_code == 409
+    assert "Общий сборник" in exc.value.detail
