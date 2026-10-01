@@ -358,7 +358,7 @@
 
       <!-- ── Config ──────────────────────────────────────────────── -->
       <template v-if="activeTab === 'config'">
-        <div v-if="configData" class="card">
+        <div v-if="configData" class="card config-card">
           <div class="card-header">
             <div>
               <div class="card-title">{{ t('admin.configTitle') }}</div>
@@ -379,14 +379,37 @@
               </div>
             </div>
           </div>
-          <div class="config-models">
-            <div v-for="(value, key) in configData.models" :key="key" class="mini-metric" style="margin: 6px">
-              <span>{{ key }}</span>
-              <strong class="td-mono">{{ value }}</strong>
+
+          <div class="config-section-header">
+            <div class="card-title">{{ t('admin.configModelsTitle') }}</div>
+            <div class="card-sub">{{ t('admin.configModelsSub') }}</div>
+          </div>
+
+          <div class="config-models-grid">
+            <div v-for="(value, key) in configData.models" :key="key" class="config-model-card">
+              <div class="config-model-top">
+                <div>
+                  <div class="config-model-title">{{ modelMeta(key).title }}</div>
+                  <div class="config-model-sub">{{ modelMeta(key).sub }}</div>
+                </div>
+                <span class="badge badge-primary">{{ modelMeta(key).badge }}</span>
+              </div>
+              <div class="config-model-value-box">
+                <span class="config-model-key">{{ key }}</span>
+                <code class="config-model-value">{{ value }}</code>
+              </div>
             </div>
           </div>
-          <div class="language-hint" style="padding: 0 18px 16px">
-            {{ t('admin.configHint', { tenant: configData.default_tenant_id, emails: configData.admin_emails.join(', ') || '—' }) }}
+
+          <div class="config-env-strip">
+            <div class="config-env-item">
+              <span class="config-env-label">{{ t('admin.defaultTenant') }}:</span>
+              <span class="config-env-val">{{ configData.default_tenant_id }}</span>
+            </div>
+            <div class="config-env-item">
+              <span class="config-env-label">{{ t('admin.adminEmails') }}:</span>
+              <span class="config-env-val">{{ configData.admin_emails.join(', ') || '—' }}</span>
+            </div>
           </div>
         </div>
       </template>
@@ -1200,6 +1223,32 @@ const configFlags = computed(() => {
   ]
 })
 
+function modelMeta(key) {
+  const map = {
+    strong: {
+      title: t('admin.modelStrong'),
+      sub: t('admin.modelStrongSub'),
+      badge: 'Strong',
+    },
+    weak: {
+      title: t('admin.modelWeak'),
+      sub: t('admin.modelWeakSub'),
+      badge: 'Fast',
+    },
+    vision: {
+      title: t('admin.modelVision'),
+      sub: t('admin.modelVisionSub'),
+      badge: 'Vision',
+    },
+    embedding: {
+      title: t('admin.modelEmbedding'),
+      sub: t('admin.modelEmbeddingSub'),
+      badge: 'Embedding',
+    },
+  }
+  return map[key] || { title: key, sub: '', badge: key }
+}
+
 const fmtTokens = formatTokens
 const fmtMs = formatMs
 const fmtCost = formatCost
@@ -1531,11 +1580,106 @@ function docBadge(status) {
   gap: 12px;
   padding: 18px;
 }
-.config-models {
+.config-section-header {
+  padding: 18px 18px 8px;
+  border-top: 1px solid var(--apple-separator);
+}
+.config-models-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+  padding: 8px 18px 18px;
+}
+.config-model-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 16px;
+  border-radius: var(--apple-radius-card);
+  border: 1px solid var(--apple-separator);
+  background: var(--apple-fill-quaternary);
+  backdrop-filter: blur(var(--apple-blur-subtle));
+  -webkit-backdrop-filter: blur(var(--apple-blur-subtle));
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  transition: all 0.2s cubic-bezier(0.25, 1, 0.5, 1);
+}
+.config-model-card:hover {
+  background: var(--apple-fill-tertiary);
+  border-color: var(--apple-primary-muted);
+  transform: translateY(-1px);
+}
+.config-model-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+.config-model-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--apple-text-primary);
+  line-height: 1.3;
+}
+.config-model-sub {
+  font-size: 11.5px;
+  color: var(--apple-text-tertiary);
+  margin-top: 2px;
+  line-height: 1.35;
+}
+.config-model-value-box {
+  display: flex;
+  align-items: center;
   gap: 8px;
-  padding: 0 18px 8px;
+  padding: 8px 10px;
+  border-radius: var(--apple-radius-interactive);
+  background: color-mix(in oklch, var(--apple-card-bg) 85%, transparent);
+  border: 1px solid var(--apple-separator);
+  overflow: hidden;
+}
+.config-model-key {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--apple-text-tertiary);
+  padding-right: 8px;
+  border-right: 1px solid var(--apple-separator);
+  flex-shrink: 0;
+}
+.config-model-value {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--apple-primary);
+  word-break: break-all;
+  font-weight: 500;
+}
+.config-env-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 18px;
+  border-top: 1px solid var(--apple-separator);
+  background: color-mix(in oklch, var(--apple-card-bg) 50%, transparent);
+  border-bottom-left-radius: inherit;
+  border-bottom-right-radius: inherit;
+}
+.config-env-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.config-env-label {
+  color: var(--apple-text-tertiary);
+  font-weight: 500;
+}
+.config-env-val {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--apple-text-primary);
 }
 .llm-row-actions {
   white-space: nowrap;
