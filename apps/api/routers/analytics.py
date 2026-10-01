@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import cast
+from typing import Any, cast
 
 from fastapi import APIRouter, HTTPException, Query
 from packages.analytics.clickhouse import ch_client
@@ -124,10 +124,10 @@ async def get_usage(
                         "user_id": uid or None,
                         "user_name": u_obj.name if u_obj else None,
                         "email": u_obj.email if u_obj else None,
-                        "total_cost_usd": float(r.get("total_cost_usd") or 0),
-                        "total_tokens": int(r.get("total_tokens") or 0),
-                        "call_count": int(r.get("call_count") or 0),
-                        "avg_latency_ms": int(r.get("avg_latency_ms") or 0),
+                        "total_cost_usd": float(cast(Any, r.get("total_cost_usd") or 0)),
+                        "total_tokens": int(cast(Any, r.get("total_tokens") or 0)),
+                        "call_count": int(cast(Any, r.get("call_count") or 0)),
+                        "avg_latency_ms": int(cast(Any, r.get("avg_latency_ms") or 0)),
                         "is_current": bool(user_id and uid == user_id),
                     }
                 )
