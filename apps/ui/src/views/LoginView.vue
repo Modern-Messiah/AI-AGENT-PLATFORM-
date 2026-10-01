@@ -243,10 +243,13 @@ async function submit() {
 .login-card {
   width: 390px;
   max-width: 100%;
-  padding: 32px 32px 24px;
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  background: var(--s1);
+  padding: 36px 32px 28px;
+  border: 1px solid color-mix(in oklch, var(--border2) 65%, rgba(255, 255, 255, 0.12));
+  border-radius: 20px;
+  background: color-mix(in oklch, var(--s1) 90%, transparent);
+  backdrop-filter: blur(28px) saturate(180%);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  box-shadow: 0 28px 72px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.08);
   text-align: center;
 }
 .login-logo {
@@ -265,10 +268,12 @@ async function submit() {
   justify-content: center;
   font-weight: 700;
   font-size: 20px;
+  box-shadow: 0 4px 16px color-mix(in oklch, var(--accent) 30%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.3);
 }
 .login-title {
-  font-size: 17px;
+  font-size: 18px;
   font-weight: 700;
+  letter-spacing: -0.02em;
   color: var(--text);
 }
 .login-sub {
@@ -280,28 +285,38 @@ async function submit() {
 .login-mode {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 4px;
-  padding: 4px;
+  gap: 3px;
+  padding: 3px;
   margin-bottom: 16px;
-  border: 1px solid var(--border);
-  border-radius: 9px;
-  background: var(--s2);
+  border: 1px solid color-mix(in oklch, var(--border) 80%, transparent);
+  border-radius: 10px;
+  background: color-mix(in oklch, var(--s2) 65%, var(--s1));
 }
 .login-mode-btn {
   min-height: 34px;
   border: 0;
-  border-radius: 6px;
+  border-radius: 7px;
   background: transparent;
   color: var(--muted2);
   cursor: pointer;
   font-family: var(--font);
   font-size: 12.5px;
-  font-weight: 600;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+  user-select: none;
+}
+.login-mode-btn:hover {
+  color: var(--text);
 }
 .login-mode-btn.active {
-  background: var(--s3);
+  background: var(--s1);
   color: var(--text);
-  box-shadow: inset 0 0 0 1px var(--border2);
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+.login-mode-btn:active {
+  transform: scale(0.97);
 }
 .form-group { text-align: left; margin-bottom: 13px; }
 .login-main-btn,

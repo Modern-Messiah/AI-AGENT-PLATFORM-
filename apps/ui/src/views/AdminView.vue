@@ -1174,29 +1174,39 @@ function docBadge(status) {
 .admin-toolbar.sub { margin-bottom: -4px; }
 .admin-tabs {
   display: flex;
-  gap: 4px;
-  padding: 4px;
-  border: 1px solid var(--border);
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid color-mix(in oklch, var(--border) 80%, transparent);
   border-radius: 10px;
-  background: var(--s1);
+  background: color-mix(in oklch, var(--s2) 65%, var(--s1));
   overflow-x: auto;
 }
 .admin-tab {
   border: 0;
   border-radius: 7px;
-  padding: 7px 14px;
+  padding: 6px 14px;
   background: transparent;
   color: var(--muted2);
   cursor: pointer;
   font-family: var(--font);
   font-size: 12.5px;
-  font-weight: 600;
+  font-weight: 500;
+  letter-spacing: -0.01em;
   white-space: nowrap;
+  transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+  user-select: none;
+}
+.admin-tab:hover {
+  color: var(--text);
 }
 .admin-tab.active {
-  background: var(--s3);
+  background: var(--s1);
   color: var(--text);
-  box-shadow: inset 0 0 0 1px var(--border2);
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+.admin-tab:active {
+  transform: scale(0.97);
 }
 .secret-pill {
   margin-left: auto;

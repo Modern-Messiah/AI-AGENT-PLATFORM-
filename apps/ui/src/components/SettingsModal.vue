@@ -255,27 +255,34 @@ async function save() {
 .language-control {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 4px;
-  padding: 4px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--s1);
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid color-mix(in oklch, var(--border) 80%, transparent);
+  border-radius: 10px;
+  background: color-mix(in oklch, var(--s2) 65%, var(--s1));
 }
 .language-option {
   min-height: 34px;
   border: 0;
-  border-radius: 6px;
+  border-radius: 7px;
   background: transparent;
   color: var(--muted2);
   cursor: pointer;
   font-family: var(--font);
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+  user-select: none;
 }
 .language-option.active {
-  background: var(--s3);
+  background: var(--s1);
   color: var(--text);
-  box-shadow: inset 0 0 0 1px var(--border2);
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+.language-option:active {
+  transform: scale(0.97);
 }
 .language-hint {
   margin-top: 6px;
@@ -292,19 +299,22 @@ async function save() {
   min-height: 64px;
   padding: 9px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 10px;
   background: var(--s2);
   color: var(--muted2);
   cursor: pointer;
   font-family: var(--font);
   text-align: left;
-  transition: border-color 0.12s, background 0.12s, color 0.12s, transform 0.12s;
+  transition: border-color 0.15s var(--ease-spring), background 0.15s var(--ease-spring), color 0.15s var(--ease-spring), transform 0.08s var(--ease-spring-snappy);
+  user-select: none;
 }
 .theme-option:hover {
   border-color: var(--border2);
   background: var(--s3);
   color: var(--text);
-  transform: translateY(-1px);
+}
+.theme-option:active {
+  transform: scale(0.97);
 }
 .theme-option:focus-visible {
   outline: 2px solid color-mix(in oklch, var(--accent) 55%, transparent);
@@ -313,7 +323,7 @@ async function save() {
 .theme-option.active {
   border-color: var(--accent);
   color: var(--text);
-  box-shadow: inset 0 0 0 1px var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
 }
 .theme-swatches {
   display: flex;

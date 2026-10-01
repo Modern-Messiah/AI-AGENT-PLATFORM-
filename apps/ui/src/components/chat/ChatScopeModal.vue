@@ -260,12 +260,15 @@ onUnmounted(() => {
   max-height: 85vh;
   display: flex;
   flex-direction: column;
-  padding: 22px;
-  background: var(--s1);
-  border: 1px solid var(--border2);
+  padding: 24px;
+  background: color-mix(in oklch, var(--s1) 92%, transparent);
+  backdrop-filter: blur(32px) saturate(190%);
+  -webkit-backdrop-filter: blur(32px) saturate(190%);
+  border: 1px solid color-mix(in oklch, var(--border2) 65%, rgba(255, 255, 255, 0.12));
   border-radius: 18px;
-  box-shadow: 0 24px 80px var(--shadow-strong);
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.45), 0 4px 16px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.08);
   color: var(--text);
+  animation: modalScaleSpring 0.24s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .scope-modal-header {
@@ -285,12 +288,14 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  box-shadow: 0 2px 8px color-mix(in oklch, var(--accent) 20%, transparent);
 }
 
 .scope-modal-title {
   margin: 0;
   font-size: 16px;
   font-weight: 600;
+  letter-spacing: -0.018em;
   color: var(--text);
 }
 
@@ -318,7 +323,11 @@ onUnmounted(() => {
   color: var(--text);
   cursor: pointer;
   text-align: left;
-  transition: all 0.15s ease;
+  transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+  user-select: none;
+}
+.scope-tab:active {
+  transform: scale(0.98);
 }
 
 .scope-tab:hover {
