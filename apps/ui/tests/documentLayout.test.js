@@ -299,3 +299,13 @@ test('knowledge base rows expose a share toggle for manageable documents', () =>
   assert.match(i18nSource, /теперь общая для команды/)
   assert.match(i18nSource, /is private again/)
 })
+
+test('knowledge base toolbar offers a full-base ZIP export', () => {
+  assert.match(documentsViewSource, /async function exportBase\(\)/)
+  assert.match(documentsViewSource, /\/documents\/export/)
+  assert.match(documentsViewSource, /URL\.createObjectURL/)
+  assert.match(documentsViewSource, /link\.download/)
+  assert.match(documentsViewSource, /documents\.exportTitle/)
+  assert.match(i18nSource, /Скачать всё/)
+  assert.match(i18nSource, /Download all/)
+})

@@ -45,6 +45,16 @@
                 <input v-model="shareUploads" type="checkbox" />
                 <span>{{ t("documents.shareUploads") }}</span>
             </label>
+            <button
+                class="btn btn-ghost btn-sm"
+                type="button"
+                :title="t('documents.exportTitle')"
+                :disabled="exporting || !docs.length"
+                @click="exportBase"
+            >
+                <AppIcon v-if="!exporting" name="download" :size="13" />
+                <span>{{ exporting ? t("documents.exporting") : t("documents.export") }}</span>
+            </button>
         </div>
 
         <div
@@ -475,7 +485,7 @@ import {
     normalizeDocument,
 } from "@/utils/documents";
 
-const { apiFetch, apiUpload } = useApi();
+const { apiFetch, apiUpload, apiRawFetch } = useApi();
 const settings = useSettingsStore();
 const session = useSessionStore();
 const { t } = useI18n();
@@ -500,6 +510,7 @@ const scope = ref(
         || (session.isAuthenticated ? "mine" : "shared"),
 );
 const shareUploads = ref(false);
+const exporting = ref(false);
 const currentUserId = computed(() => session.user?.user_id || null);
 watch(scope, (value) => localStorage.setItem("aap_documents_scope", value));
 const DOCUMENT_PAGE_SIZE = 100;
@@ -873,6 +884,35 @@ async function toggleDocumentShare(doc) {
             msg: t("common.error", { message: e.message }),
             type: "error",
         };
+    }
+}
+
+async function exportBase() {
+    if (exporting.value) return;
+    exporting.value = true;
+    try {
+        const res = await apiRawFetch("/documents/export");
+        if (!res.ok) {
+            const detail = await res.json().catch(() => null);
+            throw new Error(detail?.detail || `export failed (${res.status})`);
+        }
+        const disposition = res.headers.get("Content-Disposition") || "";
+        const match = disposition.match(/filename="?([^";]+)"?/);
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = match?.[1] || "knowledge-base.zip";
+        link.click();
+        URL.revokeObjectURL(url);
+        toast.value = { msg: t("documents.exportDone"), type: "success" };
+    } catch (e) {
+        toast.value = {
+            msg: t("common.error", { message: e.message }),
+            type: "error",
+        };
+    } finally {
+        exporting.value = false;
     }
 }
 
