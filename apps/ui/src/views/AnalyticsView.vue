@@ -22,20 +22,20 @@
       <!-- Scope switcher: shown for admins -->
       <div v-if="canSwitchScope" class="scope-control" role="group" :aria-label="t('analytics.scopeSelector')">
         <button
-          :class="['scope-btn', { active: activeScope === 'tenant' }]"
-          type="button"
-          @click="setScope('tenant')"
-        >
-          <AppIcon name="users" :size="12" />
-          <span>{{ t('analytics.scopeTenant') }}</span>
-        </button>
-        <button
           :class="['scope-btn', { active: activeScope === 'user' }]"
           type="button"
           @click="setScope('user')"
         >
           <AppIcon name="user" :size="12" />
           <span>{{ t('analytics.scopePersonal') }}</span>
+        </button>
+        <button
+          :class="['scope-btn', { active: activeScope === 'tenant' }]"
+          type="button"
+          @click="setScope('tenant')"
+        >
+          <AppIcon name="users" :size="12" />
+          <span>{{ t('analytics.scopeTenant') }}</span>
         </button>
       </div>
 
@@ -285,7 +285,7 @@ function getInitialScope() {
     const saved = localStorage.getItem('aap_analytics_scope')
     if (saved === 'tenant' || saved === 'user') return saved
   } catch {}
-  return session.isAdmin ? 'tenant' : 'user'
+  return 'user'
 }
 
 const activeScope = ref(getInitialScope())
@@ -315,13 +315,6 @@ async function load() {
 }
 
 watch([days, activeScope, () => settings.credentialKey], load, { immediate: true })
-
-// If admin session state loads later, ensure scope reflects admin capabilities
-watch(() => session.isAdmin, (isAdmin) => {
-  if (isAdmin && !localStorage.getItem('aap_analytics_scope')) {
-    activeScope.value = 'tenant'
-  }
-})
 
 const fmtTokens = formatTokens
 const fmtCost = formatCost

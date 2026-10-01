@@ -97,11 +97,24 @@ async def test_admin_can_switch_to_personal_scope(fake_ch: FakeCH) -> None:
     assert params["user_id"] == str(actor.user_id)
 
 
-async def test_admin_defaults_to_tenant_scope(fake_ch: FakeCH) -> None:
+async def test_admin_defaults_to_personal_scope(fake_ch: FakeCH) -> None:
     import uuid
 
     actor = Actor(tenant_id="t", role="admin", user_id=uuid.uuid4())
     result = await analytics_router.get_usage(actor=actor, days=7, scope="auto")
+
+    assert result["scope"] == "user"
+    assert result["can_switch_scope"] is True
+    sql, params = fake_ch.queries[0]
+    assert "user_id = {user_id:String}" in sql
+    assert params["user_id"] == str(actor.user_id)
+
+
+async def test_admin_can_switch_to_tenant_scope(fake_ch: FakeCH) -> None:
+    import uuid
+
+    actor = Actor(tenant_id="t", role="admin", user_id=uuid.uuid4())
+    result = await analytics_router.get_usage(actor=actor, days=7, scope="tenant")
 
     assert result["scope"] == "tenant"
     assert result["can_switch_scope"] is True

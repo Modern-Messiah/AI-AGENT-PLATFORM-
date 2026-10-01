@@ -26,7 +26,7 @@ async def get_usage(
     - Personal scope (user): returns usage for the requesting user.
     - Tenant scope (tenant/all): returns aggregate usage across all users in the tenant.
       Available to admins (and unbound API keys). Non-admins are restricted to personal scope.
-    - Auto: defaults to tenant-wide for admins, personal for members.
+    - Auto: defaults to personal usage for authenticated users, tenant-wide for unbound keys.
     """
     tenant_id = actor.tenant_id
     user_id = str(actor.user_id) if actor.user_id else ""
@@ -40,7 +40,7 @@ async def get_usage(
     elif scope in ("user", "personal"):
         effective_scope = "user"
     else:  # "auto"
-        effective_scope = "tenant" if is_admin else ("user" if user_id else "tenant")
+        effective_scope = "user" if user_id else "tenant"
 
     # Scope filter for ClickHouse queries
     if effective_scope == "user" and user_id:
