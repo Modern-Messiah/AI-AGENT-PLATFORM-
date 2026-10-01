@@ -88,31 +88,33 @@
             <div class="card-title">{{ t('admin.tenantsTitle') }}</div>
             <span class="badge badge-muted">{{ tenants.length }}</span>
           </div>
-          <table>
-            <thead>
-              <tr>
-                <th>{{ t('admin.tenant') }}</th>
-                <th>{{ t('admin.users') }}</th>
-                <th>{{ t('admin.documents') }}</th>
-                <th>{{ t('admin.chunks') }}</th>
-                <th>{{ t('admin.sessions') }}</th>
-                <th>{{ t('admin.queries7d') }}</th>
-                <th>{{ t('admin.lastQuery') }}</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="tenant in tenants" :key="tenant.tenant_id">
-                <td class="td-mono">{{ tenant.tenant_id }}</td>
-                <td class="td-mono">{{ tenant.users }}</td>
-                <td class="td-mono">{{ tenant.documents }}</td>
-                <td class="td-mono">{{ tenant.chunks }}</td>
-                <td class="td-mono">{{ tenant.sessions }}</td>
-                <td class="td-mono">{{ tenant.queries_7d }}</td>
-                <td class="td-mono">{{ fmtDateTime(tenant.last_query_at) }}</td>
-              </tr>
-            </tbody>
-          </table>
+          <div class="table-wrap">
+            <table class="tenants-table">
+              <thead>
+                <tr>
+                  <th>{{ t('admin.tenant') }}</th>
+                  <th>{{ t('admin.users') }}</th>
+                  <th>{{ t('admin.documents') }}</th>
+                  <th>{{ t('admin.chunks') }}</th>
+                  <th>{{ t('admin.sessions') }}</th>
+                  <th>{{ t('admin.queries7d') }}</th>
+                  <th>{{ t('admin.lastQuery') }}</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="tenant in tenants" :key="tenant.tenant_id">
+                  <td class="td-mono">{{ tenant.tenant_id }}</td>
+                  <td class="td-mono">{{ tenant.users }}</td>
+                  <td class="td-mono">{{ tenant.documents }}</td>
+                  <td class="td-mono">{{ tenant.chunks }}</td>
+                  <td class="td-mono">{{ tenant.sessions }}</td>
+                  <td class="td-mono">{{ tenant.queries_7d }}</td>
+                  <td class="td-mono">{{ fmtDateTime(tenant.last_query_at) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       </template>
 
@@ -156,39 +158,41 @@
             <div class="empty-title">{{ t('admin.noPrompts') }}</div>
             <div class="empty-sub">{{ t('admin.noPromptsSub') }}</div>
           </div>
-          <table v-if="prompts && prompts.items.length">
-            <thead>
-              <tr>
-                <th>{{ t('admin.time') }}</th>
-                <th>{{ t('admin.tenant') }}</th>
-                <th>{{ t('admin.user') }}</th>
-                <th>{{ t('admin.mode') }}</th>
-                <th>{{ t('admin.status') }}</th>
-                <th class="col-query">{{ t('admin.prompt') }}</th>
-                <th>{{ t('admin.latency') }}</th>
-                <th>{{ t('admin.cost') }}</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr
-                v-for="item in prompts.items"
-                :key="item.id"
-                class="prompt-row"
-                @click="openPrompt(item.id)"
-              >
-                <td class="td-mono">{{ fmtDateTime(item.created_at) }}</td>
-                <td class="td-mono">{{ item.tenant_id }}</td>
-                <td>{{ promptActor(item, settings.locale) }}</td>
-                <td><span class="tag">{{ item.mode }}</span></td>
-                <td>
-                  <span :class="['badge', statusBadge(item.status)]">{{ item.status }}</span>
-                </td>
-                <td class="prompt-cell" :title="item.query">{{ item.query }}</td>
-                <td class="td-mono">{{ fmtMs(item.latency_ms) }}</td>
-                <td class="td-mono">{{ item.cost_usd == null ? '—' : fmtCost(item.cost_usd) }}</td>
-              </tr>
-            </tbody>
-          </table>
+          <div v-if="prompts && prompts.items.length" class="table-wrap">
+            <table class="prompts-table">
+              <thead>
+                <tr>
+                  <th>{{ t('admin.time') }}</th>
+                  <th>{{ t('admin.tenant') }}</th>
+                  <th>{{ t('admin.user') }}</th>
+                  <th>{{ t('admin.mode') }}</th>
+                  <th>{{ t('admin.status') }}</th>
+                  <th class="col-query">{{ t('admin.prompt') }}</th>
+                  <th>{{ t('admin.latency') }}</th>
+                  <th>{{ t('admin.cost') }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="item in prompts.items"
+                  :key="item.id"
+                  class="prompt-row"
+                  @click="openPrompt(item.id)"
+                >
+                  <td class="td-mono">{{ fmtDateTime(item.created_at) }}</td>
+                  <td class="td-mono">{{ item.tenant_id }}</td>
+                  <td>{{ promptActor(item, settings.locale) }}</td>
+                  <td><span class="tag">{{ item.mode }}</span></td>
+                  <td>
+                    <span :class="['badge', statusBadge(item.status)]">{{ item.status }}</span>
+                  </td>
+                  <td class="prompt-cell" :title="item.query">{{ item.query }}</td>
+                  <td class="td-mono">{{ fmtMs(item.latency_ms) }}</td>
+                  <td class="td-mono">{{ item.cost_usd == null ? '—' : fmtCost(item.cost_usd) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
 
           <div v-if="prompts && prompts.total > prompts.limit" class="pager">
             <button class="btn btn-ghost btn-sm" :disabled="promptsOffset === 0" @click="promptsOffset -= prompts.limit; loadPrompts()">
@@ -223,52 +227,54 @@
           <div v-if="users && !users.length" class="empty compact-empty">
             <div class="empty-title">{{ t('admin.noUsers') }}</div>
           </div>
-          <table v-if="users && users.length">
-            <thead>
-              <tr>
-                <th>{{ t('admin.user') }}</th>
-                <th>{{ t('login.email') }}</th>
-                <th>{{ t('admin.tenant') }}</th>
-                <th>{{ t('admin.role') }}</th>
-                <th>{{ t('admin.keyStatus') }}</th>
-                <th>{{ t('admin.keys') }}</th>
-                <th>{{ t('admin.queriesTotal') }}</th>
-                <th>{{ t('admin.queries7d') }}</th>
-                <th>{{ t('admin.lastQuery') }}</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="user in users" :key="user.id">
-                <td class="file-name">{{ user.name }}</td>
-                <td class="td-mono">{{ user.email || '—' }}</td>
-                <td class="td-mono">{{ user.tenant_id }}</td>
-                <td>
-                  <span :class="['badge', user.role === 'admin' ? 'badge-purple' : 'badge-blue']">
-                    {{ user.role }}
-                  </span>
-                </td>
-                <td>
-                  <span :class="['badge', user.is_active ? 'badge-green' : 'badge-red']">
-                    {{ user.is_active ? t('admin.keyActive') : t('admin.userBlocked') }}
-                  </span>
-                </td>
-                <td class="td-mono">{{ user.active_keys }}/{{ user.keys }}</td>
-                <td class="td-mono">{{ user.queries_total }}</td>
-                <td class="td-mono">{{ user.queries_7d }}</td>
-                <td class="td-mono">{{ fmtDateTime(user.last_query_at) }}</td>
-                <td>
-                  <button
-                    v-if="user.email"
-                    class="btn btn-ghost btn-sm"
-                    @click="resetTarget = user"
-                  >
-                    {{ t('admin.resetPassword') }}
-                  </button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+          <div v-if="users && users.length" class="table-wrap">
+            <table class="users-table">
+              <thead>
+                <tr>
+                  <th>{{ t('admin.user') }}</th>
+                  <th>{{ t('login.email') }}</th>
+                  <th>{{ t('admin.tenant') }}</th>
+                  <th>{{ t('admin.role') }}</th>
+                  <th>{{ t('admin.keyStatus') }}</th>
+                  <th>{{ t('admin.keys') }}</th>
+                  <th>{{ t('admin.queriesTotal') }}</th>
+                  <th>{{ t('admin.queries7d') }}</th>
+                  <th>{{ t('admin.lastQuery') }}</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="user in users" :key="user.id">
+                  <td class="file-name">{{ user.name }}</td>
+                  <td class="td-mono">{{ user.email || '—' }}</td>
+                  <td class="td-mono">{{ user.tenant_id }}</td>
+                  <td>
+                    <span :class="['badge', user.role === 'admin' ? 'badge-purple' : 'badge-blue']">
+                      {{ user.role }}
+                    </span>
+                  </td>
+                  <td>
+                    <span :class="['badge', user.is_active ? 'badge-green' : 'badge-red']">
+                      {{ user.is_active ? t('admin.keyActive') : t('admin.userBlocked') }}
+                    </span>
+                  </td>
+                  <td class="td-mono">{{ user.active_keys }}/{{ user.keys }}</td>
+                  <td class="td-mono">{{ user.queries_total }}</td>
+                  <td class="td-mono">{{ user.queries_7d }}</td>
+                  <td class="td-mono">{{ fmtDateTime(user.last_query_at) }}</td>
+                  <td>
+                    <button
+                      v-if="user.email"
+                      class="btn btn-ghost btn-sm"
+                      @click="resetTarget = user"
+                    >
+                      {{ t('admin.resetPassword') }}
+                    </button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       </template>
 
@@ -388,54 +394,56 @@
             <div class="empty-title">{{ t('admin.noLlmKeys') }}</div>
             <div class="empty-sub">{{ t('admin.noLlmKeysSub') }}</div>
           </div>
-          <table v-if="llmKeys && llmKeys.length">
-            <thead>
-              <tr>
-                <th>{{ t('admin.provider') }}</th>
-                <th>{{ t('admin.keyName') }}</th>
-                <th>{{ t('admin.keyValue') }}</th>
-                <th>{{ t('admin.keyStatus') }}</th>
-                <th>{{ t('admin.requests') }}</th>
-                <th>{{ t('admin.lastUsed') }}</th>
-                <th>{{ t('admin.created') }}</th>
-                <th>{{ t('admin.keyTestCol') }}</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="key in llmKeys" :key="key.id">
-                <td><span class="tag">{{ key.provider }}</span></td>
-                <td class="file-name">{{ key.name }}</td>
-                <td class="td-mono">{{ key.key_preview }}</td>
-                <td>
-                  <span :class="['badge', key.is_active ? 'badge-green' : 'badge-muted']">
-                    {{ key.is_active ? t('admin.keyActive') : t('admin.rotatedOut') }}
-                  </span>
-                </td>
-                <td class="td-mono">{{ key.requests_count }}</td>
-                <td class="td-mono">{{ fmtDateTime(key.last_used_at) }}</td>
-                <td class="td-mono">{{ fmtDateTime(key.created_at) }}</td>
-                <td>
-                  <span v-if="llmTestResults[key.id]" :class="['badge', llmTestResults[key.id].ok ? 'badge-green' : 'badge-red']">
-                    {{ llmTestResults[key.id].ok ? t('admin.keyWorks') : t('admin.keyFails') }}
-                  </span>
-                  <span
-                    v-if="!llmTestResults[key.id]?.ok && llmTestResults[key.id]?.error"
-                    class="doc-error"
-                    :title="llmTestResults[key.id].error"
-                  >{{ llmTestResults[key.id].error }}</span>
-                </td>
-                <td class="llm-row-actions">
-                  <button class="btn btn-ghost btn-sm" :disabled="llmTesting[key.id]" @click="testLlmKey(key)">
-                    {{ llmTesting[key.id] ? '…' : t('admin.testKey') }}
-                  </button>
-                  <button class="btn btn-danger btn-sm" @click="deleteLlmKey(key)">
-                    {{ llmDeleteTarget?.id === key.id ? t('admin.confirmDelete') : t('common.delete') }}
-                  </button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+          <div v-if="llmKeys && llmKeys.length" class="table-wrap">
+            <table class="llm-keys-table">
+              <thead>
+                <tr>
+                  <th>{{ t('admin.provider') }}</th>
+                  <th>{{ t('admin.keyName') }}</th>
+                  <th>{{ t('admin.keyValue') }}</th>
+                  <th>{{ t('admin.keyStatus') }}</th>
+                  <th>{{ t('admin.requests') }}</th>
+                  <th>{{ t('admin.lastUsed') }}</th>
+                  <th>{{ t('admin.created') }}</th>
+                  <th>{{ t('admin.keyTestCol') }}</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="key in llmKeys" :key="key.id">
+                  <td><span class="tag">{{ key.provider }}</span></td>
+                  <td class="file-name">{{ key.name }}</td>
+                  <td class="td-mono">{{ key.key_preview }}</td>
+                  <td>
+                    <span :class="['badge', key.is_active ? 'badge-green' : 'badge-muted']">
+                      {{ key.is_active ? t('admin.keyActive') : t('admin.rotatedOut') }}
+                    </span>
+                  </td>
+                  <td class="td-mono">{{ key.requests_count }}</td>
+                  <td class="td-mono">{{ fmtDateTime(key.last_used_at) }}</td>
+                  <td class="td-mono">{{ fmtDateTime(key.created_at) }}</td>
+                  <td>
+                    <span v-if="llmTestResults[key.id]" :class="['badge', llmTestResults[key.id].ok ? 'badge-green' : 'badge-red']">
+                      {{ llmTestResults[key.id].ok ? t('admin.keyWorks') : t('admin.keyFails') }}
+                    </span>
+                    <span
+                      v-if="!llmTestResults[key.id]?.ok && llmTestResults[key.id]?.error"
+                      class="doc-error"
+                      :title="llmTestResults[key.id].error"
+                    >{{ llmTestResults[key.id].error }}</span>
+                  </td>
+                  <td class="llm-row-actions">
+                    <button class="btn btn-ghost btn-sm" :disabled="llmTesting[key.id]" @click="testLlmKey(key)">
+                      {{ llmTesting[key.id] ? '…' : t('admin.testKey') }}
+                    </button>
+                    <button class="btn btn-danger btn-sm" @click="deleteLlmKey(key)">
+                      {{ llmDeleteTarget?.id === key.id ? t('admin.confirmDelete') : t('common.delete') }}
+                    </button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
 
         <div v-if="llmFormOpen" class="modal-overlay" @click.self="llmFormOpen = false">
@@ -502,46 +510,48 @@
           <div v-if="docs && !docs.items.length" class="empty compact-empty">
             <div class="empty-title">{{ t('admin.noDocuments') }}</div>
           </div>
-          <table v-if="docs && docs.items.length">
-            <thead>
-              <tr>
-                <th>{{ t('admin.fileName') }}</th>
-                <th>{{ t('admin.tenant') }}</th>
-                <th>{{ t('admin.status') }}</th>
-                <th>{{ t('admin.progress') }}</th>
-                <th>{{ t('admin.size') }}</th>
-                <th>{{ t('admin.created') }}</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="doc in docs.items" :key="doc.id">
-                <td class="file-name" :title="doc.error || doc.filename">{{ doc.filename }}</td>
-                <td class="td-mono">{{ doc.tenant_id }}</td>
-                <td>
-                  <span :class="['badge', docBadge(doc.status)]">{{ doc.status }}</span>
-                  <div v-if="doc.error" class="doc-error" :title="doc.error">{{ doc.error }}</div>
-                </td>
-                <td class="td-mono">
-                  {{ doc.total_pages ? `${doc.processed_pages}/${doc.total_pages}` : '—' }}
-                </td>
-                <td class="td-mono">{{ fmtBytes(doc.size_bytes) }}</td>
-                <td class="td-mono">{{ fmtDateTime(doc.created_at) }}</td>
-                <td class="llm-row-actions">
-                  <button
-                    v-if="doc.status !== 'processing' && doc.status !== 'pending'"
-                    class="btn btn-ghost btn-sm"
-                    @click="adminReindexDoc(doc)"
-                  >
-                    {{ docReindexTarget === doc.id ? '⏳' : t('admin.reindexDoc') }}
-                  </button>
-                  <button class="btn btn-danger btn-sm" @click="adminDeleteDoc(doc)">
-                    {{ docDeleteTarget === doc.id ? t('admin.confirmDelete') : t('common.delete') }}
-                  </button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+          <div v-if="docs && docs.items.length" class="table-wrap">
+            <table class="documents-table">
+              <thead>
+                <tr>
+                  <th>{{ t('admin.fileName') }}</th>
+                  <th>{{ t('admin.tenant') }}</th>
+                  <th>{{ t('admin.status') }}</th>
+                  <th>{{ t('admin.progress') }}</th>
+                  <th>{{ t('admin.size') }}</th>
+                  <th>{{ t('admin.created') }}</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="doc in docs.items" :key="doc.id">
+                  <td class="file-name" :title="doc.error || doc.filename">{{ doc.filename }}</td>
+                  <td class="td-mono">{{ doc.tenant_id }}</td>
+                  <td>
+                    <span :class="['badge', docBadge(doc.status)]">{{ doc.status }}</span>
+                    <div v-if="doc.error" class="doc-error" :title="doc.error">{{ doc.error }}</div>
+                  </td>
+                  <td class="td-mono">
+                    {{ doc.total_pages ? `${doc.processed_pages}/${doc.total_pages}` : '—' }}
+                  </td>
+                  <td class="td-mono">{{ fmtBytes(doc.size_bytes) }}</td>
+                  <td class="td-mono">{{ fmtDateTime(doc.created_at) }}</td>
+                  <td class="llm-row-actions">
+                    <button
+                      v-if="doc.status !== 'processing' && doc.status !== 'pending'"
+                      class="btn btn-ghost btn-sm"
+                      @click="adminReindexDoc(doc)"
+                    >
+                      {{ docReindexTarget === doc.id ? '⏳' : t('admin.reindexDoc') }}
+                    </button>
+                    <button class="btn btn-danger btn-sm" @click="adminDeleteDoc(doc)">
+                      {{ docDeleteTarget === doc.id ? t('admin.confirmDelete') : t('common.delete') }}
+                    </button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
           <div v-if="docs && docs.total > docs.limit" class="pager">
             <button class="btn btn-ghost btn-sm" :disabled="docsOffset === 0" @click="docsOffset -= docs.limit; loadDocuments()">
               ←
@@ -613,75 +623,81 @@
             </div>
             <span class="badge badge-muted">{{ userUsage.length }}</span>
           </div>
-          <table>
-            <thead>
-              <tr>
-                <th>{{ t('admin.user') }}</th>
-                <th>{{ t('login.email') }}</th>
-                <th>{{ t('analytics.callCount') }}</th>
-                <th>{{ t('analytics.tokens') }}</th>
-                <th>{{ t('admin.averageLatency') }}</th>
-                <th>{{ t('admin.cost') }}</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="row in userUsage" :key="row.user_id || 'unbound'">
-                <td class="file-name">{{ row.user_name || t('admin.unboundKey') }}</td>
-                <td class="td-mono">{{ row.email || '—' }}</td>
-                <td class="td-mono">{{ row.calls }}</td>
-                <td class="td-mono">{{ fmtTokens(row.total_tokens) }}</td>
-                <td class="td-mono">{{ fmtMs(row.avg_latency_ms) }}</td>
-                <td class="td-mono">{{ fmtCost(row.cost_usd) }}</td>
-              </tr>
-              <tr v-if="!userUsage.length"><td colspan="6" class="td-mono">—</td></tr>
-            </tbody>
-          </table>
+          <div class="table-wrap">
+            <table class="user-usage-table">
+              <thead>
+                <tr>
+                  <th>{{ t('admin.user') }}</th>
+                  <th>{{ t('login.email') }}</th>
+                  <th>{{ t('analytics.callCount') }}</th>
+                  <th>{{ t('analytics.tokens') }}</th>
+                  <th>{{ t('admin.averageLatency') }}</th>
+                  <th>{{ t('admin.cost') }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="row in userUsage" :key="row.user_id || 'unbound'">
+                  <td class="file-name">{{ row.user_name || t('admin.unboundKey') }}</td>
+                  <td class="td-mono">{{ row.email || '—' }}</td>
+                  <td class="td-mono">{{ row.calls }}</td>
+                  <td class="td-mono">{{ fmtTokens(row.total_tokens) }}</td>
+                  <td class="td-mono">{{ fmtMs(row.avg_latency_ms) }}</td>
+                  <td class="td-mono">{{ fmtCost(row.cost_usd) }}</td>
+                </tr>
+                <tr v-if="!userUsage.length"><td colspan="6" class="td-mono">—</td></tr>
+              </tbody>
+            </table>
+          </div>
         </div>
 
         <div v-if="usage" class="usage-grid">
           <div class="card">
             <div class="card-header"><div class="card-title">{{ t('admin.byTenant') }}</div></div>
-            <table>
-              <thead>
-                <tr>
-                  <th>{{ t('admin.tenant') }}</th>
-                  <th>{{ t('analytics.callCount') }}</th>
-                  <th>{{ t('analytics.tokens') }}</th>
-                  <th>{{ t('admin.cost') }}</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="row in usage.by_tenant" :key="row.tenant_id">
-                  <td class="td-mono">{{ row.tenant_id }}</td>
-                  <td class="td-mono">{{ row.calls }}</td>
-                  <td class="td-mono">{{ fmtTokens(row.total_tokens) }}</td>
-                  <td class="td-mono">{{ fmtCost(row.cost_usd) }}</td>
-                </tr>
-                <tr v-if="!usage.by_tenant.length"><td colspan="4" class="td-mono">—</td></tr>
-              </tbody>
-            </table>
+            <div class="table-wrap">
+              <table class="by-tenant-table">
+                <thead>
+                  <tr>
+                    <th>{{ t('admin.tenant') }}</th>
+                    <th>{{ t('analytics.callCount') }}</th>
+                    <th>{{ t('analytics.tokens') }}</th>
+                    <th>{{ t('admin.cost') }}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="row in usage.by_tenant" :key="row.tenant_id">
+                    <td class="td-mono">{{ row.tenant_id }}</td>
+                    <td class="td-mono">{{ row.calls }}</td>
+                    <td class="td-mono">{{ fmtTokens(row.total_tokens) }}</td>
+                    <td class="td-mono">{{ fmtCost(row.cost_usd) }}</td>
+                  </tr>
+                  <tr v-if="!usage.by_tenant.length"><td colspan="4" class="td-mono">—</td></tr>
+                </tbody>
+              </table>
+            </div>
           </div>
           <div class="card">
             <div class="card-header"><div class="card-title">{{ t('admin.byModel') }}</div></div>
-            <table>
-              <thead>
-                <tr>
-                  <th>{{ t('analytics.model') }}</th>
-                  <th>{{ t('analytics.callCount') }}</th>
-                  <th>{{ t('analytics.tokens') }}</th>
-                  <th>{{ t('admin.cost') }}</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="row in usage.by_model" :key="`${row.provider}/${row.model}`">
-                  <td><span class="tag">{{ row.model }}</span></td>
-                  <td class="td-mono">{{ row.calls }}</td>
-                  <td class="td-mono">{{ fmtTokens(row.total_tokens) }}</td>
-                  <td class="td-mono">{{ fmtCost(row.cost_usd) }}</td>
-                </tr>
-                <tr v-if="!usage.by_model.length"><td colspan="4" class="td-mono">—</td></tr>
-              </tbody>
-            </table>
+            <div class="table-wrap">
+              <table class="by-model-table">
+                <thead>
+                  <tr>
+                    <th>{{ t('analytics.model') }}</th>
+                    <th>{{ t('analytics.callCount') }}</th>
+                    <th>{{ t('analytics.tokens') }}</th>
+                    <th>{{ t('admin.cost') }}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="row in usage.by_model" :key="`${row.provider}/${row.model}`">
+                    <td><span class="tag">{{ row.model }}</span></td>
+                    <td class="td-mono">{{ row.calls }}</td>
+                    <td class="td-mono">{{ fmtTokens(row.total_tokens) }}</td>
+                    <td class="td-mono">{{ fmtCost(row.cost_usd) }}</td>
+                  </tr>
+                  <tr v-if="!usage.by_model.length"><td colspan="4" class="td-mono">—</td></tr>
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       </template>
@@ -1226,10 +1242,11 @@ function docBadge(status) {
   gap: 6px;
   height: 160px;
   padding: 18px;
+  overflow-x: auto;
 }
 .query-bar-col {
   flex: 1;
-  min-width: 0;
+  min-width: 28px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1413,6 +1430,15 @@ function docBadge(status) {
   background: color-mix(in oklch, var(--red) 8%, transparent);
   color: var(--red);
 }
+
+.tenants-table { min-width: 680px; }
+.prompts-table { min-width: 840px; }
+.users-table { min-width: 900px; }
+.llm-keys-table { min-width: 860px; }
+.documents-table { min-width: 780px; }
+.user-usage-table { min-width: 640px; }
+.by-tenant-table { min-width: 400px; }
+.by-model-table { min-width: 400px; }
 
 @media (max-width: 900px) {
   .usage-grid { grid-template-columns: 1fr; }
