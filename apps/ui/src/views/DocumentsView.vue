@@ -143,18 +143,18 @@
                         ></div>
                     </div>
                     <button
-                        class="btn btn-ghost btn-sm"
+                        class="btn btn-ghost btn-sm doc-header-btn"
                         :title="t('common.refresh')"
                         @click="loadDocs()"
                     >
-                        <AppIcon name="refresh" :size="11" />
+                        <AppIcon name="refresh" :size="13" />
                     </button>
                     <button
-                        class="btn btn-ghost btn-sm"
+                        class="btn btn-ghost btn-sm doc-header-btn"
                         :title="t('documents.clearList')"
                         @click="clearAll"
                     >
-                        <AppIcon name="trash" :size="11" />
+                        <AppIcon name="trash" :size="13" />
                     </button>
                 </div>
             </div>
@@ -953,17 +953,19 @@ function handleFileInput(e) {
 .url-source-panel {
     display: grid;
     grid-template-columns: minmax(220px, 0.8fr) minmax(320px, 1.2fr);
-    gap: 14px;
-    align-items: start;
-    padding: 14px;
+    gap: 16px;
+    align-items: center;
+    padding: 20px 22px;
     border: 1px solid var(--border);
-    border-radius: 12px;
+    border-radius: 16px;
     background: var(--s1);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 .url-source-title {
     color: var(--text);
-    font-size: 13px;
-    font-weight: 700;
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: -0.015em;
 }
 .url-source-sub,
 .source-url {
@@ -973,27 +975,38 @@ function handleFileInput(e) {
     align-items: center;
     margin-top: 3px;
     color: var(--muted);
-    font-size: 11px;
-    line-height: 1.45;
+    font-size: 12px;
+    line-height: 1.5;
 }
 .url-source-sub {
     display: block;
 }
 .source-pill {
-    padding: 1px 6px;
+    padding: 2px 7px;
     border: 1px solid color-mix(in oklch, var(--accent) 35%, transparent);
     border-radius: 999px;
     background: color-mix(in oklch, var(--accent) 10%, transparent);
     color: var(--accent);
     font-family: var(--mono);
-    font-size: 9px;
-    font-weight: 700;
+    font-size: 9.5px;
+    font-weight: 600;
     text-transform: uppercase;
 }
 .url-source-controls {
     display: grid;
     grid-template-columns: minmax(220px, 1fr) auto auto;
     gap: 8px;
+    align-items: center;
+}
+.url-source-controls .btn {
+    height: 38px;
+    padding: 0 14px;
+    border-radius: 9px;
+    font-weight: 500;
+    transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.url-source-controls .btn:active:not(:disabled) {
+    transform: scale(0.96);
 }
 .url-source-input {
     width: 100%;
@@ -1254,6 +1267,18 @@ function handleFileInput(e) {
     border-radius: 8px;
 }
 .document-row-actions .btn-sm:active:not(:disabled) {
+    transform: scale(0.93);
+}
+.doc-header-btn {
+    width: 32px;
+    height: 32px;
+    flex: 0 0 32px;
+    padding: 0;
+    justify-content: center;
+    border-radius: 8px;
+    transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.doc-header-btn:active {
     transform: scale(0.93);
 }
 
