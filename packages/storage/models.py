@@ -51,6 +51,15 @@ class Document(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    # Personal knowledge base: NULL = legacy tenant-shared document; a set
+    # owner makes it private unless is_shared is true. Unbound tenant API
+    # keys always see everything (operational scripts).
+    owner_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    is_shared: Mapped[bool] = mapped_column(default=False, nullable=False)
     filename: Mapped[str] = mapped_column(String(512), nullable=False)
     mime_type: Mapped[str] = mapped_column(String(128), nullable=False)
     object_key: Mapped[str] = mapped_column(String(512), nullable=False)
@@ -93,7 +102,10 @@ class Document(Base):
         back_populates="document", cascade="all, delete-orphan"
     )
 
-    __table_args__ = (Index("ix_documents_tenant_source_type", "tenant_id", "source_type"),)
+    __table_args__ = (
+        Index("ix_documents_tenant_source_type", "tenant_id", "source_type"),
+        Index("ix_documents_tenant_owner", "tenant_id", "owner_user_id"),
+    )
 
 
 class DocumentAsset(Base):
@@ -147,6 +159,13 @@ class Notebook(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    # Same ownership model as documents (see Document.owner_user_id).
+    owner_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    is_shared: Mapped[bool] = mapped_column(default=False, nullable=False)
     title: Mapped[str] = mapped_column(String(256), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -168,6 +187,8 @@ class Notebook(Base):
     document_links: Mapped[list[NotebookDocument]] = relationship(
         back_populates="notebook", cascade="all, delete-orphan"
     )
+
+    __table_args__ = (Index("ix_notebooks_tenant_owner", "tenant_id", "owner_user_id"),)
 
 
 class NotebookDocument(Base):
@@ -237,6 +258,13 @@ class ChatSession(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    # Creator; NULL for sessions started with an unbound tenant API key.
+    # Sessions of other users are private to them.
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     title: Mapped[str] = mapped_column(String(256), default="New Chat", nullable=False)
     model: Mapped[str | None] = mapped_column(String(128), nullable=True)
     scope_type: Mapped[str | None] = mapped_column(String(16), nullable=True)
@@ -271,6 +299,7 @@ class ChatSession(Base):
         ),
         Index("ix_chat_sessions_tenant_document", "tenant_id", "document_id"),
         Index("ix_chat_sessions_tenant_notebook", "tenant_id", "notebook_id"),
+        Index("ix_chat_sessions_tenant_user", "tenant_id", "user_id"),
     )
 
 

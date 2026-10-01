@@ -6,8 +6,8 @@ import uuid
 from datetime import UTC, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
-from packages.auth import Actor, require_actor, require_destroy_permission
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
+from packages.auth import Actor, require_actor
 from packages.core import settings
 from packages.storage import Chunk, Document, DocumentAsset, DocumentStatus, object_store
 from packages.storage.db import tenant_session
@@ -15,7 +15,7 @@ from sqlalchemy import select, update
 from starlette.responses import Response
 from temporalio.client import Client
 
-from apps.api.deps import TenantID, content_length_exceeds, read_with_limit
+from apps.api.deps import ActorDep, TenantID, content_length_exceeds, read_with_limit
 from apps.api.schemas import (
     AddUrlDocumentRequest,
     DocumentAssetResponse,
@@ -31,6 +31,7 @@ from apps.api.serializers import (
     document_response,
     metadata_page,
 )
+from apps.api.services.access import can_access, can_manage, scope_condition
 from apps.api.services.cache import invalidate_semantic_cache
 from apps.api.services.filenames import safe_upload_filename
 from apps.api.services.url_source_limits import enforce_url_ingest_limit
@@ -87,33 +88,34 @@ def _apply_url_source_metadata(doc: Document, fetched: FetchedUrlSource) -> None
 
 @router.get("/documents", response_model=list[DocumentResponse])
 async def list_documents(
-    tenant_id: TenantID,
+    actor: ActorDep,
+    scope: str = Query(default="all", pattern="^(mine|shared|all)$"),
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
 ) -> list[DocumentResponse]:
+    tenant_id = actor.tenant_id
     async with tenant_session(tenant_id) as s:
-        rows = (
-            (
-                await s.execute(
-                    select(Document)
-                    .where(Document.tenant_id == tenant_id)
-                    .order_by(Document.created_at.desc())
-                    .limit(limit)
-                    .offset(offset)
-                )
-            )
-            .scalars()
-            .all()
+        stmt = (
+            select(Document)
+            .where(Document.tenant_id == tenant_id)
+            .order_by(Document.created_at.desc())
+            .limit(limit)
+            .offset(offset)
         )
+        if (condition := scope_condition(Document, actor, scope)) is not None:
+            stmt = stmt.where(condition)
+        rows = (await s.execute(stmt)).scalars().all()
     return [document_response(doc) for doc in rows]
 
 
 @router.post("/documents", response_model=DocumentResponse, status_code=202)
 async def upload_document(
     request: Request,
-    tenant_id: TenantID,
+    actor: ActorDep,
     file: UploadFile = File(...),
+    shared: bool = Form(default=False),
 ) -> DocumentResponse:
+    tenant_id = actor.tenant_id
     # Early rejection before reading body (Content-Length may include multipart overhead,
     # so use a 2x guard here; exact byte-level check happens inside read_with_limit).
     if content_length_exceeds(request, settings.max_upload_bytes * 2):
@@ -141,6 +143,8 @@ async def upload_document(
             Document(
                 id=document_id,
                 tenant_id=tenant_id,
+                owner_user_id=actor.user_id,
+                is_shared=shared,
                 filename=filename,
                 mime_type=file.content_type or "application/octet-stream",
                 object_key=object_key,
@@ -181,10 +185,12 @@ async def upload_document(
 @router.post("/documents/bulk", response_model=list[DocumentResponse], status_code=202)
 async def upload_documents_bulk(
     request: Request,
-    tenant_id: TenantID,
+    actor: ActorDep,
     files: list[UploadFile] = File(...),
+    shared: bool = Form(default=False),
 ) -> list[DocumentResponse]:
     """Upload multiple documents at once. Each gets its own IngestionWorkflow."""
+    tenant_id = actor.tenant_id
     if not files:
         raise HTTPException(status_code=400, detail="no files provided")
     if len(files) > 20:
@@ -238,6 +244,8 @@ async def upload_documents_bulk(
                 Document(
                     id=document_id,
                     tenant_id=tenant_id,
+                    owner_user_id=actor.user_id,
+                    is_shared=shared,
                     filename=filename,
                     mime_type=file.content_type or "application/octet-stream",
                     object_key=object_key,
@@ -315,8 +323,9 @@ async def check_url_document(body: UrlCheckRequest, tenant_id: TenantID) -> UrlC
 async def add_url_document(
     body: AddUrlDocumentRequest,
     request: Request,
-    tenant_id: TenantID,
+    actor: ActorDep,
 ) -> DocumentResponse:
+    tenant_id = actor.tenant_id
     await enforce_url_ingest_limit(tenant_id, "/documents/url")
     try:
         fetched = await fetch_url_source(body.url)
@@ -333,6 +342,8 @@ async def add_url_document(
             Document(
                 id=document_id,
                 tenant_id=tenant_id,
+                owner_user_id=actor.user_id,
+                is_shared=body.shared,
                 filename=fetched.filename,
                 mime_type=fetched.content_type,
                 object_key=object_key,
@@ -379,14 +390,16 @@ async def add_url_document(
 
 
 @router.get("/documents/{document_id}", response_model=DocumentResponse)
-async def get_document(document_id: uuid.UUID, tenant_id: TenantID) -> DocumentResponse:
+async def get_document(document_id: uuid.UUID, actor: ActorDep) -> DocumentResponse:
+    tenant_id = actor.tenant_id
     async with tenant_session(tenant_id) as s:
         doc = (
             await s.execute(
                 select(Document).where(Document.id == document_id, Document.tenant_id == tenant_id)
             )
         ).scalar_one_or_none()
-    if doc is None:
+    # Inaccessible documents are reported as missing — existence is private too.
+    if doc is None or not can_access(actor, doc):
         raise HTTPException(status_code=404, detail="document not found")
     return document_response(doc)
 
@@ -394,10 +407,11 @@ async def get_document(document_id: uuid.UUID, tenant_id: TenantID) -> DocumentR
 @router.get("/documents/{document_id}/assets", response_model=list[DocumentAssetResponse])
 async def list_document_assets(
     document_id: uuid.UUID,
-    tenant_id: TenantID,
+    actor: ActorDep,
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
 ) -> list[DocumentAssetResponse]:
+    tenant_id = actor.tenant_id
     async with tenant_session(tenant_id) as s:
         doc = (
             await s.execute(
@@ -407,7 +421,7 @@ async def list_document_assets(
                 )
             )
         ).scalar_one_or_none()
-        if doc is None:
+        if doc is None or not can_access(actor, doc):
             raise HTTPException(status_code=404, detail="document not found")
         assets = (
             (
@@ -432,9 +446,20 @@ async def list_document_assets(
 async def get_document_asset_content(
     document_id: uuid.UUID,
     asset_id: uuid.UUID,
-    tenant_id: TenantID,
+    actor: ActorDep,
 ) -> Response:
+    tenant_id = actor.tenant_id
     async with tenant_session(tenant_id) as s:
+        doc = (
+            await s.execute(
+                select(Document).where(
+                    Document.id == document_id,
+                    Document.tenant_id == tenant_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if doc is None or not can_access(actor, doc):
+            raise HTTPException(status_code=404, detail="document not found")
         asset = (
             await s.execute(
                 select(DocumentAsset).where(
@@ -473,17 +498,18 @@ async def get_document_asset_content(
 @router.get("/documents/{document_id}/chunks", response_model=list[DocumentChunkPreview])
 async def list_document_chunks(
     document_id: uuid.UUID,
-    tenant_id: TenantID,
+    actor: ActorDep,
     limit: int = Query(default=25, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
 ) -> list[DocumentChunkPreview]:
+    tenant_id = actor.tenant_id
     async with tenant_session(tenant_id) as s:
         doc = (
             await s.execute(
                 select(Document).where(Document.id == document_id, Document.tenant_id == tenant_id)
             )
         ).scalar_one_or_none()
-        if doc is None:
+        if doc is None or not can_access(actor, doc):
             raise HTTPException(status_code=404, detail="document not found")
         chunks = (
             (
@@ -515,9 +541,10 @@ async def list_document_chunks(
 )
 async def reindex_document(
     document_id: uuid.UUID,
-    tenant_id: TenantID,
+    actor: ActorDep,
     request: Request,
 ) -> DocumentReindexResponse:
+    tenant_id = actor.tenant_id
     # Phase 1 — short read transaction: is the document reindexable right now?
     async with tenant_session(tenant_id) as s:
         doc = (
@@ -525,7 +552,7 @@ async def reindex_document(
                 select(Document).where(Document.id == document_id, Document.tenant_id == tenant_id)
             )
         ).scalar_one_or_none()
-        if doc is None:
+        if doc is None or not can_access(actor, doc):
             raise HTTPException(status_code=404, detail="document not found")
         if doc.status in {DocumentStatus.pending, DocumentStatus.processing}:
             raise HTTPException(status_code=409, detail="document is already being indexed")
@@ -618,7 +645,6 @@ async def reindex_document(
 async def delete_document(
     document_id: uuid.UUID, actor: Annotated[Actor, Depends(require_actor)]
 ) -> None:
-    require_destroy_permission(actor)
     tenant_id = actor.tenant_id
     object_key = ""
     preview_object_keys: list[str] = []
@@ -628,8 +654,14 @@ async def delete_document(
                 select(Document).where(Document.id == document_id, Document.tenant_id == tenant_id)
             )
         ).scalar_one_or_none()
-        if doc is None:
+        if doc is None or not can_access(actor, doc):
             raise HTTPException(status_code=404, detail="document not found")
+        if not can_manage(actor, doc):
+            # Members may destroy only their own documents; shared/foreign
+            # ones stay admin-only (same contract as require_destroy_permission).
+            raise HTTPException(
+                status_code=403, detail="member keys cannot delete shared documents"
+            )
         object_key = doc.object_key
         preview_object_keys = list(
             (

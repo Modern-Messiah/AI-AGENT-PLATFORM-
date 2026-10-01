@@ -77,8 +77,10 @@ class MultiStepResearchWorkflow:
                 AgentRunWorkflow.run,
                 AgentRunInput(
                     tenant_id=payload.tenant_id,
+                    user_id=payload.user_id,
                     user_query=sub_query,
                     model=payload.model,
+                    document_ids=payload.document_ids,
                 ),
                 id=f"{workflow.info().workflow_id}-step-{i}",
                 task_queue=workflow.info().task_queue,
@@ -93,8 +95,10 @@ class MultiStepResearchWorkflow:
 
         synthesis_input = AgentRunInput(
             tenant_id=payload.tenant_id,
+            user_id=payload.user_id,
             user_query=_synthesis_prompt(payload.main_query, sub_results),
             model=payload.model,
+            document_ids=payload.document_ids,
         )
         final: AgentRunOutput = await workflow.execute_activity(
             run_agent_step,

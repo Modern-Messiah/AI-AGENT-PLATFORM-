@@ -25,15 +25,16 @@ from packages.rag import (
     select_diverse_chunks,
     verify_answer_faithfulness,
 )
-from packages.storage import ChatMessage, ChatSession, Chunk, Document, DocumentStatus, Notebook
+from packages.storage import ChatMessage, ChatSession, Document, DocumentStatus, Notebook
 from packages.storage.db import tenant_session
-from sqlalchemy import func, select
+from sqlalchemy import select
 from starlette.responses import StreamingResponse
 from temporalio.client import Client
 
 from apps.api.deps import ActorDep
 from apps.api.schemas import AgentRunApiResponse, AgentStreamRequest
 from apps.api.serializers import serialize_sources
+from apps.api.services.access import accessible_document_ids, can_access
 from apps.api.services.agent_limits import enforce_agent_limits, validate_agent_query
 from apps.api.services.notebooks import load_notebook_documents
 from apps.api.services.query_condensation import condense_query
@@ -57,15 +58,13 @@ async def run_agent(
     payload = payload.model_copy(update={"user_query": user_query})
     model_name = resolve_chat_model(actor, payload.model)
 
+    # Personal knowledge base: the run may only retrieve documents the acting
+    # user can access (own + shared). Unbound tenant keys search everything.
     async with tenant_session(tenant_id) as db:
-        chunk_count = (
-            await db.execute(
-                select(func.count()).select_from(Chunk).where(Chunk.tenant_id == tenant_id)
-            )
-        ).scalar()
-    if not chunk_count:
+        accessible_ids = await accessible_document_ids(db, tenant_id, actor)
+    if accessible_ids is not None and not accessible_ids:
         answer = (
-            "У вас ещё нет проиндексированных документов. "
+            "У вас ещё нет доступных проиндексированных документов. "
             "Перейдите в раздел «Документы», загрузите файлы — "
             "после индексации я смогу отвечать на вопросы по ним."
         )
@@ -89,6 +88,7 @@ async def run_agent(
         update={
             "tenant_id": tenant_id,
             "user_id": str(actor.user_id) if actor.user_id else "",
+            "document_ids": [str(doc_id) for doc_id in accessible_ids or []],
         }
     )
     client: Client = request.app.state.temporal
@@ -203,6 +203,9 @@ async def agent_stream(body: AgentStreamRequest, actor: ActorDep) -> StreamingRe
     scoped_document_id = body.document_id
     scoped_notebook_id = body.notebook_id
     scoped_document_ids: list[uuid.UUID] | None = None
+    # Cached answers are private per user: a member's answer over their
+    # personal documents must never surface for a colleague.
+    cache_scope = f"user:{actor.user_id}" if actor.user_id else "tenant"
 
     # Conversation memory: load recent turns of the session (when the client
     # sent one) and rewrite follow-ups into a standalone retrieval query.
@@ -217,7 +220,11 @@ async def agent_stream(body: AgentStreamRequest, actor: ActorDep) -> StreamingRe
                     )
                 )
             ).scalar_one_or_none()
-            if session is None:
+            if session is None or (
+                session.user_id is not None
+                and actor.user_id is not None
+                and session.user_id != actor.user_id
+            ):
                 raise HTTPException(status_code=404, detail="session not found")
             rows = (
                 (
@@ -248,7 +255,7 @@ async def agent_stream(body: AgentStreamRequest, actor: ActorDep) -> StreamingRe
                     )
                 )
             ).scalar_one_or_none()
-        if doc is None:
+        if doc is None or not can_access(actor, doc):
             raise HTTPException(status_code=404, detail="document not found")
         if doc.status != DocumentStatus.done:
             raise HTTPException(status_code=409, detail="document is not indexed yet")
@@ -262,9 +269,11 @@ async def agent_stream(body: AgentStreamRequest, actor: ActorDep) -> StreamingRe
                     )
                 )
             ).scalar_one_or_none()
-            if notebook is None:
+            if notebook is None or not can_access(actor, notebook):
                 raise HTTPException(status_code=404, detail="notebook not found")
-            notebook_documents = await load_notebook_documents(db, tenant_id, scoped_notebook_id)
+            notebook_documents = await load_notebook_documents(
+                db, tenant_id, scoped_notebook_id, actor
+            )
         if not notebook_documents:
             raise HTTPException(status_code=409, detail="notebook has no documents")
         scoped_document_ids = [
@@ -272,6 +281,17 @@ async def agent_stream(body: AgentStreamRequest, actor: ActorDep) -> StreamingRe
         ]
         if not scoped_document_ids:
             raise HTTPException(status_code=409, detail="notebook has no indexed documents yet")
+
+    # Personal knowledge base: without an explicit scope, retrieval is limited
+    # to the acting user's documents plus shared ones. None = unbound tenant
+    # key = whole tenant corpus (empty list must NOT reach the retriever: it
+    # treats an empty document_ids as "no filter").
+    accessible_ids: list[uuid.UUID] | None = None
+    no_accessible_documents = False
+    if scoped_document_id is None and scoped_notebook_id is None:
+        async with tenant_session(tenant_id) as db:
+            accessible_ids = await accessible_document_ids(db, tenant_id, actor)
+        no_accessible_documents = accessible_ids is not None and not accessible_ids
 
     async def generate() -> AsyncIterator[str]:
         request_t0 = time.monotonic()
@@ -319,13 +339,27 @@ async def agent_stream(body: AgentStreamRequest, actor: ActorDep) -> StreamingRe
                 completion_tokens=completion_tokens,
             )
 
+        if no_accessible_documents:
+            answer = (
+                "У вас ещё нет доступных проиндексированных документов. "
+                "Перейдите в раздел «Документы», загрузите файлы — "
+                "после индексации я смогу отвечать на вопросы по ним."
+            )
+            yield f"data: {json.dumps({'type': 'token', 'content': answer})}\n\n"
+            yield (
+                "data: "
+                f"{json.dumps({'type': 'done', 'answer': answer, 'sources': [], 'confidence': 1.0, 'cached': False})}\n\n"
+            )
+            await log_agent_query(log_entry(answer=answer, confidence=1.0))
+            return
+
         cached = None
         if not scoped:
             cache_t0 = time.monotonic()
             # Semantic cache - instant reply if hit. Scoped document requests skip it:
             # the same wording can mean different things inside different files.
             try:
-                cached = await semantic_cache.get(retrieval_query, tenant_id)
+                cached = await semantic_cache.get(retrieval_query, tenant_id, scope=cache_scope)
             except Exception:
                 cached = None
             log.info(
@@ -367,7 +401,11 @@ async def agent_stream(body: AgentStreamRequest, actor: ActorDep) -> StreamingRe
                 k=settings.fast_rag_candidate_k,
                 max_distance=settings.retrieval_max_distance,
                 document_id=scoped_document_id,
-                document_ids=scoped_document_ids,
+                # Unscoped chat searches the actor's personal + shared corpus
+                # (accessible_ids is None only for unbound tenant keys).
+                document_ids=scoped_document_ids
+                if scoped_document_ids is not None
+                else accessible_ids,
             )
             log.info(
                 "agent_stream retrieve | tenant=%s document=%s notebook=%s chunks=%d latency_ms=%d matches=%s",
@@ -502,7 +540,7 @@ async def agent_stream(body: AgentStreamRequest, actor: ActorDep) -> StreamingRe
 
             if not scoped:
                 with contextlib.suppress(Exception):
-                    await semantic_cache.set(retrieval_query, tenant_id, output)
+                    await semantic_cache.set(retrieval_query, tenant_id, output, scope=cache_scope)
 
         except Exception as exc:
             log.exception("agent_stream error | tenant=%s", tenant_id)
@@ -533,12 +571,15 @@ async def run_research(
     tenant_id = actor.tenant_id
     main_query = await enforce_agent_limits(tenant_id, payload.main_query, "/agent/research")
     sub_queries = [validate_agent_query(q) for q in payload.sub_queries]
+    async with tenant_session(tenant_id) as db:
+        research_accessible_ids = await accessible_document_ids(db, tenant_id, actor)
     payload = payload.model_copy(
         update={
             "tenant_id": tenant_id,
             "user_id": str(actor.user_id) if actor.user_id else "",
             "main_query": main_query,
             "sub_queries": sub_queries,
+            "document_ids": [str(doc_id) for doc_id in research_accessible_ids or []],
         }
     )
     model_name = resolve_chat_model(actor, payload.model)

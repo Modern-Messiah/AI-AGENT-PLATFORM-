@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import logging
+import uuid
 import zipfile
 from datetime import UTC, datetime
 from types import SimpleNamespace
@@ -23,6 +24,7 @@ from apps.api.services.url_sources import (
     url_image_sidecar_payload,
     validate_fetch_url,
 )
+from packages.auth import Actor
 from packages.storage import DocumentStatus
 
 
@@ -1049,10 +1051,11 @@ async def test_add_url_document_persists_metadata_and_starts_ingestion(monkeypat
 
     monkeypatch.setattr(documents_router, "invalidate_semantic_cache", fake_invalidate)
 
+    actor = Actor(tenant_id="tenant-a", role="member", user_id=uuid.uuid4(), user_name="alice")
     response = await documents_router.add_url_document(
         documents_router.AddUrlDocumentRequest(url="https://example.com/docs"),
         request,
-        "tenant-a",
+        actor,
     )
 
     assert response.source_type == "url"
@@ -1070,6 +1073,8 @@ async def test_add_url_document_persists_metadata_and_starts_ingestion(monkeypat
     assert temporal.started
     assert temporal.started[0][1].filename == "Example_Docs.txt"
     assert fake_session.added[0].source_type == "url"
+    assert fake_session.added[0].owner_user_id == actor.user_id
+    assert fake_session.added[0].is_shared is False
     assert fake_session.added[0].source_checked_at.replace(tzinfo=UTC) <= datetime.now(UTC)
 
 

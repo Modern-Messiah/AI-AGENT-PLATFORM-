@@ -56,6 +56,10 @@ def document_response(doc: Document) -> DocumentResponse:
     return DocumentResponse(
         id=str(doc.id),
         tenant_id=doc.tenant_id,
+        owner_user_id=(
+            str(owner_id) if (owner_id := getattr(doc, "owner_user_id", None)) is not None else None
+        ),
+        is_shared=bool(getattr(doc, "is_shared", False)),
         filename=doc.filename,
         status=doc.status,
         size_bytes=doc.size_bytes,
@@ -104,6 +108,12 @@ def notebook_response(
     return NotebookResponse(
         id=str(notebook.id),
         tenant_id=notebook.tenant_id,
+        owner_user_id=(
+            str(owner_id)
+            if (owner_id := getattr(notebook, "owner_user_id", None)) is not None
+            else None
+        ),
+        is_shared=bool(getattr(notebook, "is_shared", False)),
         title=notebook.title,
         description=notebook.description,
         document_ids=[str(doc.id) for doc in docs],

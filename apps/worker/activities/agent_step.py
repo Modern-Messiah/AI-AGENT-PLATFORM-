@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
+import uuid
 from functools import lru_cache
 
 from packages.agents import AgentDeps, AgentRunInput, AgentRunOutput, build_research_agent
@@ -25,8 +26,11 @@ def _get_agent(model_name: str | None) -> Agent:  # type: ignore[type-arg]
 async def run_agent_step(payload: AgentRunInput) -> AgentRunOutput:
     info = activity.info()
 
+    # Personal knowledge base: cached answers must never cross users.
+    cache_scope = f"user:{payload.user_id}" if payload.user_id else "tenant"
+
     # ── Semantic cache lookup ────────────────────────────────────────────────
-    cached = await semantic_cache.get(payload.user_query, payload.tenant_id)
+    cached = await semantic_cache.get(payload.user_query, payload.tenant_id, scope=cache_scope)
     if cached is not None:
         await record_usage(
             UsageEvent(
@@ -45,7 +49,12 @@ async def run_agent_step(payload: AgentRunInput) -> AgentRunOutput:
 
     # ── LLM call ─────────────────────────────────────────────────────────────
     agent = _get_agent(payload.model)
-    deps = AgentDeps(tenant_id=payload.tenant_id)
+    deps = AgentDeps(
+        tenant_id=payload.tenant_id,
+        # Empty list = unbound tenant key (whole-tenant corpus); keep it None
+        # so the retriever does not treat [] as "no document filter".
+        document_ids=[uuid.UUID(doc_id) for doc_id in payload.document_ids] or None,
+    )
 
     model_name = payload.model or settings.strong_model
 
@@ -82,6 +91,6 @@ async def run_agent_step(payload: AgentRunInput) -> AgentRunOutput:
 
     # Store result for future semantic cache hits.
     output = result.data
-    await semantic_cache.set(payload.user_query, payload.tenant_id, output)
+    await semantic_cache.set(payload.user_query, payload.tenant_id, output, scope=cache_scope)
 
     return output
