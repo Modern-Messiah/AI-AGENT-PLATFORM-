@@ -111,7 +111,10 @@ test('notebook lists can load additional document and notebook pages', () => {
   assert.match(listViewSource, /function documentListPath\(offset\)/)
   assert.match(listViewSource, /function notebookListPath\(offset\)/)
   assert.match(listViewSource, /`\/documents\?limit=\$\{DOCUMENT_PICKER_PAGE_SIZE \+ 1\}&offset=\$\{offset\}`/)
-  assert.match(listViewSource, /`\/notebooks\?limit=\$\{NOTEBOOK_PAGE_SIZE \+ 1\}&offset=\$\{offset\}`/)
+  assert.match(
+    listViewSource,
+    /`\/notebooks\?limit=\$\{NOTEBOOK_PAGE_SIZE \+ 1\}&offset=\$\{offset\}&scope=\$\{notebookScope\.value\}`/,
+  )
   assert.match(listViewSource, /async function loadMoreDocuments\(\)/)
   assert.match(listViewSource, /async function loadMoreNotebooks\(\)/)
   assert.match(listViewSource, /notebooks\.loadMoreDocuments/)

@@ -1,10 +1,14 @@
 import { formatLocaleDate, translate } from '../i18n/index.js'
 
-export function normalizeNotebook(notebook, locale = 'ru') {
+export function normalizeNotebook(notebook, locale = 'ru', currentUserId = null) {
+  const ownerUserId = notebook.owner_user_id || notebook.ownerUserId || null
   return {
     id: notebook.id,
     title: notebook.title || translate(locale, 'notebooks.untitled'),
     description: notebook.description || '',
+    ownerUserId,
+    isShared: Boolean(notebook.is_shared ?? notebook.isShared ?? (ownerUserId === null)),
+    isMine: Boolean(ownerUserId && currentUserId && ownerUserId === String(currentUserId)),
     documentCount: notebook.document_count ?? notebook.documentCount ?? 0,
     documentIds: Array.isArray(notebook.document_ids)
       ? notebook.document_ids

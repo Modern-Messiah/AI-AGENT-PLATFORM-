@@ -8,15 +8,19 @@ export function formatFileSize(bytes) {
   return `${(bytes / 1073741824).toFixed(1)} GB`
 }
 
-export function normalizeDocument(doc, locale = 'ru') {
+export function normalizeDocument(doc, locale = 'ru', currentUserId = null) {
   const processedPages = Number.isInteger(doc.processed_pages) ? doc.processed_pages : 0
   const totalPages = Number.isInteger(doc.total_pages) ? doc.total_pages : 0
+  const ownerUserId = doc.owner_user_id || doc.ownerUserId || null
   return {
     id: doc.id,
     name: doc.filename || doc.name || translate(locale, 'documents.unnamed'),
     status: doc.status || 'pending',
     error: doc.error || null,
     size: formatFileSize(doc.size_bytes || doc.sizeBytes || 0),
+    ownerUserId,
+    isShared: Boolean(doc.is_shared ?? doc.isShared ?? (ownerUserId === null)),
+    isMine: Boolean(ownerUserId && currentUserId && ownerUserId === String(currentUserId)),
     sourceType: doc.source_type || doc.sourceType || 'file',
     sourceUrl: doc.source_url || doc.sourceUrl || '',
     sourceTitle: doc.source_title || doc.sourceTitle || '',
