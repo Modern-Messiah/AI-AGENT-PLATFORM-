@@ -37,8 +37,9 @@
     <div class="sidebar-bottom">
       <div
         v-if="session.isAuthenticated"
-        class="tenant-pill session-pill"
-        :title="session.user?.email || session.displayName"
+        :class="['tenant-pill', 'session-pill', { clickable: collapsed }]"
+        :title="collapsed ? t('app.expandPanel') : (session.user?.email || session.displayName)"
+        @click="collapsed && $emit('toggle')"
       >
         <div class="tenant-dot session"></div>
         <div class="tenant-info">
@@ -115,7 +116,7 @@ const nav = computed(() => {
   const items = [
     { path: '/chat', label: t('app.agent'), icon: 'chat' },
     { path: '/documents', label: t('app.knowledgeBase'), icon: 'docs' },
-    { path: '/notebooks', label: t('app.notebooks'), icon: 'docs' },
+    { path: '/notebooks', label: t('app.notebooks'), icon: 'book' },
     { path: '/analytics', label: t('app.analytics'), icon: 'analytics' },
   ]
   if (showAdmin.value) {
