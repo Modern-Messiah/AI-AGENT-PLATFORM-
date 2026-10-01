@@ -287,3 +287,15 @@ test('protected asset previews load lazily for documents with many pages', () =>
   assert.match(protectedAssetSource, /rootMargin:\s*'200px'/)
   assert.match(protectedAssetSource, /if \(!visible\.value\)/)
 })
+
+test('knowledge base rows expose a share toggle for manageable documents', () => {
+  assert.match(documentsViewSource, /function canToggleShare\(doc\)/)
+  assert.match(documentsViewSource, /async function toggleDocumentShare\(doc\)/)
+  assert.match(documentsViewSource, /\/documents\/\$\{doc\.id\}\/share/)
+  assert.match(documentsViewSource, /method: "PATCH"/)
+  assert.match(documentsViewSource, /ownership-toggle/)
+  assert.match(i18nSource, /Поделиться с командой/)
+  assert.match(i18nSource, /Make private/)
+  assert.match(i18nSource, /теперь общая для команды/)
+  assert.match(i18nSource, /is private again/)
+})

@@ -251,6 +251,23 @@
                                                         : t("documents.sharedBadge")
                                                 }}
                                             </span>
+                                            <button
+                                                v-if="canToggleShare(doc)"
+                                                type="button"
+                                                class="ownership-toggle"
+                                                :title="
+                                                    doc.isShared
+                                                        ? t('documents.unshareAction')
+                                                        : t('documents.shareAction')
+                                                "
+                                                :disabled="doc._sharePending"
+                                                @click="toggleDocumentShare(doc)"
+                                            >
+                                                <AppIcon
+                                                    :name="doc.isShared ? 'lock' : 'users'"
+                                                    :size="11"
+                                                />
+                                            </button>
                                         </div>
                                         <div
                                             v-if="isExternalSource(doc)"
@@ -645,8 +662,7 @@ function sourceIcon(doc) {
     return isExternalSource(doc) ? "🌐" : mimeIcon(doc?.name);
 }
 
-function isExternalSource(doc) {
-    return doc?.sourceType === "url" || doc?.sourceType === "github";
+function isExternalSource(doc) {    return doc?.sourceType === "url" || doc?.sourceType === "github";
 }
 
 function sourceBadge(doc) {
@@ -823,6 +839,41 @@ async function pollStatus(docId, options = {}) {
         _pending: false,
         _reindexing: false,
     });
+}
+
+function canToggleShare(doc) {
+    // The API enforces the same rule (owner, admin or unbound key); the
+    // button is hidden when the current visitor clearly cannot manage it.
+    return Boolean(
+        doc && !doc._pending && (doc.isMine || session.isAdmin || !session.isAuthenticated),
+    );
+}
+
+async function toggleDocumentShare(doc) {
+    if (doc._sharePending) return;
+    updateDoc(doc.id, { _sharePending: true });
+    try {
+        const data = await apiFetch(`/documents/${doc.id}/share`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ shared: !doc.isShared }),
+        });
+        updateDoc(doc.id, {
+            ...normalizeDocument(data, settings.locale, currentUserId.value),
+        });
+        toast.value = {
+            msg: t(data.is_shared ? "documents.sharedToast" : "documents.unsharedToast", {
+                name: data.filename,
+            }),
+            type: "info",
+        };
+    } catch (e) {
+        updateDoc(doc.id, { _sharePending: false });
+        toast.value = {
+            msg: t("common.error", { message: e.message }),
+            type: "error",
+        };
+    }
 }
 
 async function uploadFile(file) {
@@ -1034,6 +1085,32 @@ function handleFileInput(e) {
 .ownership-pill.shared {
     color: var(--muted2);
     background: color-mix(in oklch, var(--muted2) 14%, transparent);
+}
+.ownership-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border: 1px solid color-mix(in oklch, var(--border) 80%, transparent);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--muted2);
+    cursor: pointer;
+    transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.ownership-toggle:hover:not(:disabled) {
+    color: var(--purple, #7c6cf0);
+    border-color: color-mix(in oklch, var(--purple, #7c6cf0) 45%, transparent);
+    background: color-mix(in oklch, var(--purple, #7c6cf0) 10%, transparent);
+}
+.ownership-toggle:active:not(:disabled) {
+    transform: scale(0.92);
+}
+.ownership-toggle:disabled {
+    opacity: 0.45;
+    cursor: default;
 }
 .kb-hero {
     display: flex;
