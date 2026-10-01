@@ -554,7 +554,8 @@ html, body, #app {
   color: var(--red);
   border-color: color-mix(in oklch, var(--red) 24%, transparent);
 }
-.badge-blue {
+.badge-blue,
+.badge-primary {
   background: color-mix(in oklch, var(--accent) 14%, transparent);
   color: var(--accent);
   border-color: color-mix(in oklch, var(--accent) 24%, transparent);

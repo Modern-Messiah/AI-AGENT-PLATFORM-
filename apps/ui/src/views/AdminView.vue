@@ -392,7 +392,7 @@
                   <div class="config-model-title">{{ modelMeta(key).title }}</div>
                   <div class="config-model-sub">{{ modelMeta(key).sub }}</div>
                 </div>
-                <span class="badge badge-primary">{{ modelMeta(key).badge }}</span>
+                <span :class="['badge', modelMeta(key).badgeClass]">{{ modelMeta(key).badge }}</span>
               </div>
               <div class="config-model-value-box">
                 <span class="config-model-key">{{ key }}</span>
@@ -1228,25 +1228,29 @@ function modelMeta(key) {
     strong: {
       title: t('admin.modelStrong'),
       sub: t('admin.modelStrongSub'),
-      badge: 'Strong',
+      badge: 'Reasoning',
+      badgeClass: 'badge-purple',
     },
     weak: {
       title: t('admin.modelWeak'),
       sub: t('admin.modelWeakSub'),
       badge: 'Fast',
+      badgeClass: 'badge-blue',
     },
     vision: {
       title: t('admin.modelVision'),
       sub: t('admin.modelVisionSub'),
       badge: 'Vision',
+      badgeClass: 'badge-yellow',
     },
     embedding: {
       title: t('admin.modelEmbedding'),
       sub: t('admin.modelEmbeddingSub'),
-      badge: 'Embedding',
+      badge: 'Vector',
+      badgeClass: 'badge-green',
     },
   }
-  return map[key] || { title: key, sub: '', badge: key }
+  return map[key] || { title: key, sub: '', badge: key, badgeClass: 'badge-muted' }
 }
 
 const fmtTokens = formatTokens
@@ -1581,60 +1585,60 @@ function docBadge(status) {
   padding: 18px;
 }
 .config-section-header {
-  padding: 18px 18px 8px;
-  border-top: 1px solid var(--apple-separator);
+  padding: 24px 18px 12px;
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
 }
 .config-models-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
   gap: 12px;
-  padding: 8px 18px 18px;
+  padding: 0 18px 20px;
 }
 .config-model-card {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  gap: 14px;
-  padding: 16px;
-  border-radius: var(--apple-radius-card);
-  border: 1px solid var(--apple-separator);
-  background: var(--apple-fill-quaternary);
-  backdrop-filter: blur(var(--apple-blur-subtle));
-  -webkit-backdrop-filter: blur(var(--apple-blur-subtle));
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  gap: 16px;
+  padding: 16px 18px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: color-mix(in oklch, var(--s2) 60%, transparent);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
   transition: all 0.2s cubic-bezier(0.25, 1, 0.5, 1);
 }
 .config-model-card:hover {
-  background: var(--apple-fill-tertiary);
-  border-color: var(--apple-primary-muted);
-  transform: translateY(-1px);
+  background: color-mix(in oklch, var(--s2) 85%, transparent);
+  border-color: color-mix(in oklch, var(--accent) 35%, var(--border));
+  transform: translateY(-2px);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 .config-model-top {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 10px;
+  gap: 12px;
 }
 .config-model-title {
   font-size: 13.5px;
   font-weight: 600;
-  color: var(--apple-text-primary);
+  color: var(--text);
   line-height: 1.3;
 }
 .config-model-sub {
   font-size: 11.5px;
-  color: var(--apple-text-tertiary);
-  margin-top: 2px;
+  color: var(--muted);
+  margin-top: 4px;
   line-height: 1.35;
 }
 .config-model-value-box {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  border-radius: var(--apple-radius-interactive);
-  background: color-mix(in oklch, var(--apple-card-bg) 85%, transparent);
-  border: 1px solid var(--apple-separator);
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: color-mix(in oklch, var(--s1) 90%, transparent);
+  border: 1px solid color-mix(in oklch, var(--border) 80%, transparent);
   overflow: hidden;
 }
 .config-model-key {
@@ -1642,15 +1646,17 @@ function docBadge(status) {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--apple-text-tertiary);
-  padding-right: 8px;
-  border-right: 1px solid var(--apple-separator);
+  color: var(--accent);
+  background: color-mix(in oklch, var(--accent) 12%, transparent);
+  border-radius: 4px;
+  padding: 2px 6px;
   flex-shrink: 0;
+  font-family: var(--mono);
 }
 .config-model-value {
   font-family: var(--mono);
   font-size: 11.5px;
-  color: var(--apple-primary);
+  color: var(--text);
   word-break: break-all;
   font-weight: 500;
 }
@@ -1658,28 +1664,33 @@ function docBadge(status) {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 16px;
+  justify-content: space-between;
+  gap: 12px;
   padding: 14px 18px;
-  border-top: 1px solid var(--apple-separator);
-  background: color-mix(in oklch, var(--apple-card-bg) 50%, transparent);
+  border-top: 1px solid var(--border);
+  background: color-mix(in oklch, var(--s1) 50%, transparent);
   border-bottom-left-radius: inherit;
   border-bottom-right-radius: inherit;
 }
 .config-env-item {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 8px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: color-mix(in oklch, var(--s2) 70%, transparent);
+  border: 1px solid var(--border);
   font-size: 12px;
 }
 .config-env-label {
-  color: var(--apple-text-tertiary);
+  color: var(--muted);
   font-weight: 500;
 }
 .config-env-val {
   font-family: var(--mono);
   font-size: 12px;
   font-weight: 600;
-  color: var(--apple-text-primary);
+  color: var(--text);
 }
 .llm-row-actions {
   white-space: nowrap;
