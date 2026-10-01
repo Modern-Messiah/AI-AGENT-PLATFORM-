@@ -185,7 +185,7 @@ test('ChatScopeModal renders options and emits select with global scope', async 
     const wrapper = withSetup(ChatScopeModal, {
       currentScope: { type: 'global', documentId: null, notebookId: null },
     })
-    expect(wrapper.text()).toContain('Вся база знаний')
+    expect(wrapper.text()).toContain('Моя база знаний')
     expect(wrapper.text()).toContain('По документу')
     expect(wrapper.text()).toContain('По блокноту')
 
