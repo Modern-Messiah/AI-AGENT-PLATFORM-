@@ -18,7 +18,7 @@ Two execution modes:
 
    REQUIREMENT: the executing process needs the docker CLI and access to
    the daemon socket. The compose worker container has NEITHER — this mode
-   currently works only when the worker runs on the host (make worker).
+   currently works only when the worker runs on the host (just dev-worker).
    Mounting /var/run/docker.sock into the worker would enable it inside
    compose but hands the worker effective root on the host — weigh that
    against your threat model, or run a dedicated dind sidecar.

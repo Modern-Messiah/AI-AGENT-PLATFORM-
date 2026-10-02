@@ -70,12 +70,36 @@
       <div class="card notebook-collection">
         <div class="card-header">
           <div>
-            <div class="card-title">{{ t('notebooks.mine') }}</div>
+            <div class="card-title">
+              {{ notebookScope === 'mine' ? t('notebooks.mine') : t('notebooks.sharedTitle') }}
+            </div>
             <div class="card-sub">{{ t('notebooks.mineSub') }}</div>
           </div>
-          <button class="btn btn-ghost btn-sm" type="button" @click="loadData">
-            {{ t('common.refresh') }}
-          </button>
+          <div style="display: flex; gap: 8px; align-items: center">
+            <div v-if="session.isAuthenticated" class="scope-control">
+              <button
+                type="button"
+                class="scope-btn"
+                :class="{ active: notebookScope === 'mine' }"
+                @click="notebookScope = 'mine'"
+              >
+                <AppIcon name="user" :size="12" />
+                {{ t('documents.scopeMine') }}
+              </button>
+              <button
+                type="button"
+                class="scope-btn"
+                :class="{ active: notebookScope === 'shared' }"
+                @click="notebookScope = 'shared'"
+              >
+                <AppIcon name="users" :size="12" />
+                {{ t('documents.scopeShared') }}
+              </button>
+            </div>
+            <button class="btn btn-ghost btn-sm" type="button" @click="loadData">
+              {{ t('common.refresh') }}
+            </button>
+          </div>
         </div>
 
         <div v-if="loading" class="empty">
@@ -129,6 +153,7 @@ import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useApi } from '@/composables/useApi'
 import { useSettingsStore } from '@/stores/settings'
+import { useSessionStore } from '@/stores/session'
 import { useI18n } from '@/composables/useI18n'
 import AppIcon from '@/components/AppIcon.vue'
 import AppToast from '@/components/AppToast.vue'
@@ -138,6 +163,7 @@ import { buildNotebookRoute, normalizeNotebook } from '@/utils/notebooks'
 const { apiFetch } = useApi()
 const router = useRouter()
 const settings = useSettingsStore()
+const session = useSessionStore()
 const { t } = useI18n()
 
 const DOCUMENT_PICKER_PAGE_SIZE = 100
@@ -157,16 +183,29 @@ const notebooksLoadedCount = ref(0)
 const notebooksHasMore = ref(false)
 const notebooksLoadingMore = ref(false)
 
+// Personal knowledge base: notebooks default to the user's own; the
+// document picker always shows everything the user may attach.
+const notebookScope = ref(
+  localStorage.getItem('aap_notebooks_scope')
+    || (session.isAuthenticated ? 'mine' : 'shared'),
+)
+watch(notebookScope, value => localStorage.setItem('aap_notebooks_scope', value))
+const currentUserId = computed(() => session.user?.user_id || null)
+
 const readyDocs = computed(() => docs.value.filter(doc => doc.status === 'done'))
 
-watch([() => settings.credentialKey, () => settings.locale], loadData, { immediate: true })
+watch(
+  [() => settings.credentialKey, () => settings.locale, notebookScope],
+  loadData,
+  { immediate: true },
+)
 
 function documentListPath(offset) {
   return `/documents?limit=${DOCUMENT_PICKER_PAGE_SIZE + 1}&offset=${offset}`
 }
 
 function notebookListPath(offset) {
-  return `/notebooks?limit=${NOTEBOOK_PAGE_SIZE + 1}&offset=${offset}`
+  return `/notebooks?limit=${NOTEBOOK_PAGE_SIZE + 1}&offset=${offset}&scope=${notebookScope.value}`
 }
 
 function appendUniqueById(existing, incoming) {
@@ -199,8 +238,8 @@ async function loadData() {
     ])
     const documentPage = docRows.slice(0, DOCUMENT_PICKER_PAGE_SIZE)
     const notebookPage = notebookRows.slice(0, NOTEBOOK_PAGE_SIZE)
-    docs.value = documentPage.map(doc => normalizeDocument(doc, settings.locale))
-    notebooks.value = notebookPage.map(notebook => normalizeNotebook(notebook, settings.locale))
+    docs.value = documentPage.map(doc => normalizeDocument(doc, settings.locale, currentUserId.value))
+    notebooks.value = notebookPage.map(notebook => normalizeNotebook(notebook, settings.locale, currentUserId.value))
     documentsLoadedCount.value = documentPage.length
     documentsHasMore.value = docRows.length > DOCUMENT_PICKER_PAGE_SIZE
     notebooksLoadedCount.value = notebookPage.length
@@ -239,7 +278,7 @@ async function loadMoreNotebooks() {
     const notebookPage = notebookRows.slice(0, NOTEBOOK_PAGE_SIZE)
     notebooks.value = appendUniqueById(
       notebooks.value,
-      notebookPage.map(notebook => normalizeNotebook(notebook, settings.locale)),
+      notebookPage.map(notebook => normalizeNotebook(notebook, settings.locale, currentUserId.value)),
     )
     notebooksLoadedCount.value += notebookPage.length
     notebooksHasMore.value = notebookRows.length > NOTEBOOK_PAGE_SIZE
@@ -266,7 +305,7 @@ async function createNotebook() {
         document_ids: selectedDocumentIds.value,
       }),
     })
-    notebooks.value = [normalizeNotebook(data, settings.locale), ...notebooks.value]
+    notebooks.value = [normalizeNotebook(data, settings.locale, currentUserId.value), ...notebooks.value]
     title.value = ''
     description.value = ''
     selectedDocumentIds.value = []
@@ -293,29 +332,68 @@ function openNotebook(id) {
 </script>
 
 <style scoped>
+.scope-control {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid color-mix(in oklch, var(--border) 80%, transparent);
+  border-radius: 8px;
+  background: color-mix(in oklch, var(--s2) 65%, var(--s1));
+}
+.scope-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted2);
+  font-family: var(--font);
+  font-size: 11.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+  user-select: none;
+}
+.scope-btn:hover {
+  color: var(--text);
+}
+.scope-btn.active {
+  background: var(--s1);
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+.scope-btn:active {
+  transform: scale(0.96);
+}
 .notebook-hero {
   display: flex;
   justify-content: space-between;
   gap: 24px;
-  padding: 18px;
+  padding: 20px 22px;
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: 16px;
   background:
     radial-gradient(circle at 10% 0%, color-mix(in oklch, var(--purple) 18%, transparent), transparent 28%),
     var(--s1);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 .notebook-eyebrow {
   margin-bottom: 6px;
   color: var(--accent);
   font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.08em;
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  font-weight: 600;
   text-transform: uppercase;
 }
 .notebook-hero h1 {
   margin: 0 0 8px;
   font-size: 24px;
-  letter-spacing: -0.04em;
+  font-weight: 700;
+  letter-spacing: -0.025em;
 }
 .notebook-hero p {
   max-width: 620px;
@@ -325,10 +403,11 @@ function openNotebook(id) {
 }
 .notebook-stat {
   min-width: 120px;
-  padding: 12px;
+  padding: 12px 14px;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 12px;
   background: color-mix(in oklch, var(--s2) 86%, transparent);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 .notebook-stat span {
   display: block;
@@ -381,11 +460,20 @@ function openNotebook(id) {
   display: flex;
   gap: 10px;
   align-items: flex-start;
-  padding: 10px;
+  padding: 10px 12px;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 12px;
   background: var(--s2);
   cursor: pointer;
+  transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+  user-select: none;
+}
+.doc-option:hover {
+  background: color-mix(in oklch, var(--s2) 70%, var(--s3));
+  border-color: color-mix(in oklch, var(--accent) 30%, var(--border));
+}
+.doc-option:active {
+  transform: scale(0.98);
 }
 .doc-option strong {
   display: block;
@@ -445,10 +533,20 @@ function openNotebook(id) {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 12px;
+  padding: 14px 16px;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 14px;
   background: color-mix(in oklch, var(--s2) 74%, transparent);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.notebook-card:hover {
+  border-color: color-mix(in oklch, var(--accent) 32%, var(--border));
+  background: color-mix(in oklch, var(--s2) 90%, transparent);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
+}
+.notebook-card .btn-ghost.btn-sm:active {
+  transform: scale(0.93);
 }
 .notebook-open {
   flex: 1;

@@ -4,8 +4,14 @@ On cache miss the caller runs the LLM and then stores the result here.
 On cache hit the result is returned without any LLM call.
 
 Storage layout (plain Redis — no vector-search module required):
-  scache:{tenant_id}:idx          — Redis ZSET (score=timestamp) of entry UUIDs
-  scache:{tenant_id}:{entry_uuid} — Redis STRING (JSON) with vec + result, TTL-d
+  scache:{tenant_id}:{scope}:idx          — Redis ZSET (score=timestamp) of entry UUIDs
+  scache:{tenant_id}:{scope}:{entry_uuid} — Redis STRING (JSON) with vec + result, TTL-d
+
+`scope` isolates tenants from each other AND users from each other inside a
+tenant: user A's answer over their private documents must never be served
+to user B. Use "tenant" for tenant-wide (unbound key) requests and
+"user:{user_id}" for personal ones. A scoped question ("in this document…")
+skips the cache entirely at the call sites.
 
 Lookup scans the newest _MAX_SCAN entries from the ZSET index, then computes
 cosine in numpy. The ZSET is capped at _MAX_INDEX entries; oldest are evicted on
@@ -30,19 +36,19 @@ log = logging.getLogger(__name__)
 _TTL_SECONDS = 3600  # 1 hour per entry
 _THRESHOLD = 0.92  # cosine similarity required for a hit
 _MAX_SCAN = 500  # max entries to scan per lookup
-_MAX_INDEX = 1000  # hard cap on index size per tenant; oldest entries evicted first
+_MAX_INDEX = 1000  # hard cap on index size per scope; oldest entries evicted first
 
 
 class SemanticCache:
-    def _idx_key(self, tenant_id: str) -> str:
-        return f"scache:{tenant_id}:idx"
+    def _idx_key(self, tenant_id: str, scope: str) -> str:
+        return f"scache:{tenant_id}:{scope}:idx"
 
-    def _entry_key(self, tenant_id: str, entry_id: str) -> str:
-        return f"scache:{tenant_id}:{entry_id}"
+    def _entry_key(self, tenant_id: str, scope: str, entry_id: str) -> str:
+        return f"scache:{tenant_id}:{scope}:{entry_id}"
 
-    async def get(self, query: str, tenant_id: str) -> AgentRunOutput | None:
+    async def get(self, query: str, tenant_id: str, scope: str = "tenant") -> AgentRunOutput | None:
         r = get_redis()
-        idx_key = self._idx_key(tenant_id)
+        idx_key = self._idx_key(tenant_id, scope)
 
         # Fetch the newest _MAX_SCAN entries (highest scores = most recent timestamps).
         entry_ids = [
@@ -56,7 +62,7 @@ class SemanticCache:
         # Batch-fetch all entries in one round trip.
         pipe = r.pipeline(transaction=False)
         for eid in entry_ids:
-            pipe.get(self._entry_key(tenant_id, eid))
+            pipe.get(self._entry_key(tenant_id, scope, eid))
         raw_values = await pipe.execute()
 
         candidates: list[tuple[str, np.ndarray, float, AgentRunOutput]] = []
@@ -111,10 +117,12 @@ class SemanticCache:
                 best_result = result
 
         if best_result is not None:
-            log.info("semantic cache hit | tenant=%s sim=%.4f", tenant_id, best_sim)
+            log.info("semantic cache hit | tenant=%s scope=%s sim=%.4f", tenant_id, scope, best_sim)
         return best_result
 
-    async def set(self, query: str, tenant_id: str, result: AgentRunOutput) -> None:
+    async def set(
+        self, query: str, tenant_id: str, result: AgentRunOutput, scope: str = "tenant"
+    ) -> None:
         if not result.answer.strip():
             log.warning("semantic cache skip empty answer | tenant=%s", tenant_id)
             return
@@ -132,29 +140,23 @@ class SemanticCache:
         data = json.dumps({"vec": vec.tolist(), "result": result.model_dump()})
 
         pipe = r.pipeline(transaction=False)
-        pipe.set(self._entry_key(tenant_id, entry_id), data, ex=_TTL_SECONDS)
+        idx_key = self._idx_key(tenant_id, scope)
+        pipe.set(self._entry_key(tenant_id, scope, entry_id), data, ex=_TTL_SECONDS)
         # Add to ZSET with current timestamp as score so we can sort by recency.
-        pipe.zadd(self._idx_key(tenant_id), {entry_id: time.time()})
-        pipe.expire(self._idx_key(tenant_id), _TTL_SECONDS)
+        pipe.zadd(idx_key, {entry_id: time.time()})
+        pipe.expire(idx_key, _TTL_SECONDS)
         # Trim to _MAX_INDEX by removing oldest entries (rank 0 … N-_MAX_INDEX-1).
-        pipe.zremrangebyrank(self._idx_key(tenant_id), 0, -(_MAX_INDEX + 1))
+        pipe.zremrangebyrank(idx_key, 0, -(_MAX_INDEX + 1))
         await pipe.execute()
 
     async def clear(self, tenant_id: str) -> None:
-        """Delete every semantic-cache entry belonging to a tenant."""
+        """Delete every semantic-cache entry of a tenant across all scopes."""
         r = get_redis()
-        idx_key = self._idx_key(tenant_id)
-        entry_ids = [
-            decoded
-            for eid in await r.zrange(idx_key, 0, -1)
-            if isinstance(decoded := eid.decode() if isinstance(eid, bytes) else eid, str)
-        ]
-
-        pipe = r.pipeline(transaction=False)
-        if entry_ids:
-            pipe.delete(*(self._entry_key(tenant_id, entry_id) for entry_id in entry_ids))
-        pipe.delete(idx_key)
-        await pipe.execute()
+        # Index keys carry the scope; entry keys share the prefix, so one
+        # pattern covers both for every user of the tenant.
+        keys = [key async for key in r.scan_iter(match=f"scache:{tenant_id}:*")]
+        if keys:
+            await r.delete(*keys)
 
 
 semantic_cache = SemanticCache()

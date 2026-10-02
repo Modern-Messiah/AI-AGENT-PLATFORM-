@@ -70,14 +70,17 @@ class _FakeRedis:
         *,
         entry_ids: list[bytes | str] | None = None,
         raw_values: list[str | bytes | None] | None = None,
+        scan_keys: list[str] | None = None,
     ) -> None:
         self.pipeline_instance = _FakePipeline(raw_values)
         self.entry_ids = entry_ids or [b"entry-one", b"entry-two"]
         self.zrange_calls: list[tuple[str, int, int, bool]] = []
         self.zrem_calls: list[tuple[str, tuple[str, ...]]] = []
+        self.deleted: list[str] = []
+        self._scan_keys = scan_keys
 
     async def zrange(self, key: str, start: int, end: int, desc: bool = False) -> list[bytes]:
-        assert key == "scache:tenant-a:idx"
+        assert key == "scache:tenant-a:tenant:idx"
         self.zrange_calls.append((key, start, end, desc))
         return self.entry_ids
 
@@ -93,22 +96,40 @@ class _FakeRedis:
         raise AssertionError(f"semantic cache must not use global Redis keys scan: {pattern}")
 
     async def scan_iter(self, match: str):
-        raise AssertionError(f"semantic cache must not use Redis scan_iter: {match}")
+        # Allowed only for clear() (one-shot invalidation); get/set paths
+        # must never scan.
+        if self._scan_keys is None:
+            raise AssertionError(f"semantic cache must not use Redis scan_iter: {match}")
+        assert match == "scache:tenant-a:*"
+        for key in self._scan_keys:
+            yield key
+
+    async def delete(self, *keys: str) -> int:
+        self.deleted.extend(keys)
+        return len(keys)
 
 
-async def test_clear_removes_tenant_index_and_all_cached_entries(monkeypatch) -> None:
-    redis = _FakeRedis()
+async def test_clear_removes_entries_of_every_scope(monkeypatch) -> None:
+    redis = _FakeRedis(
+        scan_keys=[
+            "scache:tenant-a:tenant:entry-one",
+            "scache:tenant-a:tenant:entry-two",
+            "scache:tenant-a:tenant:idx",
+            "scache:tenant-a:user:u1:idx",
+        ]
+    )
     monkeypatch.setattr(semantic_module, "get_redis", lambda: redis)
 
     await SemanticCache().clear("tenant-a")
 
-    assert redis.pipeline_instance.deleted == [
-        "scache:tenant-a:entry-one",
-        "scache:tenant-a:entry-two",
-        "scache:tenant-a:idx",
-    ]
-    assert redis.zrange_calls == [("scache:tenant-a:idx", 0, -1, False)]
-    assert redis.pipeline_instance.executed is True
+    assert sorted(redis.deleted) == sorted(
+        [
+            "scache:tenant-a:tenant:entry-one",
+            "scache:tenant-a:tenant:entry-two",
+            "scache:tenant-a:tenant:idx",
+            "scache:tenant-a:user:u1:idx",
+        ]
+    )
 
 
 async def test_get_uses_bounded_tenant_index_without_global_key_scan(monkeypatch) -> None:
@@ -125,10 +146,12 @@ async def test_get_uses_bounded_tenant_index_without_global_key_scan(monkeypatch
 
     assert result is not None
     assert result.answer == "cached answer"
-    assert redis.zrange_calls == [("scache:tenant-a:idx", 0, semantic_module._MAX_SCAN - 1, True)]
+    assert redis.zrange_calls == [
+        ("scache:tenant-a:tenant:idx", 0, semantic_module._MAX_SCAN - 1, True)
+    ]
     assert redis.pipeline_instance.get_keys == [
-        "scache:tenant-a:entry-one",
-        "scache:tenant-a:entry-two",
+        "scache:tenant-a:tenant:entry-one",
+        "scache:tenant-a:tenant:entry-two",
     ]
 
 
@@ -157,7 +180,7 @@ async def test_get_removes_stale_index_members_without_embedding_when_all_entrie
     assert result is None
     assert redis.zrem_calls == [
         (
-            "scache:tenant-a:idx",
+            "scache:tenant-a:tenant:idx",
             ("missing", "malformed", "not-object", "empty-answer", "bad-vector"),
         )
     ]
@@ -182,12 +205,14 @@ async def test_set_caps_tenant_index(monkeypatch) -> None:
     )
 
     assert redis.pipeline_instance.set_calls
-    assert redis.pipeline_instance.zadd_calls == [("scache:tenant-a:idx", {"entry-fixed": 123.45})]
+    assert redis.pipeline_instance.zadd_calls == [
+        ("scache:tenant-a:tenant:idx", {"entry-fixed": 123.45})
+    ]
     assert redis.pipeline_instance.expire_calls == [
-        ("scache:tenant-a:idx", semantic_module._TTL_SECONDS)
+        ("scache:tenant-a:tenant:idx", semantic_module._TTL_SECONDS)
     ]
     assert redis.pipeline_instance.zremrangebyrank_calls == [
-        ("scache:tenant-a:idx", 0, -(semantic_module._MAX_INDEX + 1))
+        ("scache:tenant-a:tenant:idx", 0, -(semantic_module._MAX_INDEX + 1))
     ]
 
 

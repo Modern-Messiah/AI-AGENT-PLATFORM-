@@ -13,6 +13,7 @@ from apps.api.services.url_sources import (
     url_image_sidecar_key,
     url_image_sidecar_payload,
 )
+from packages.auth import Actor
 from packages.storage import DocumentStatus
 
 
@@ -94,7 +95,9 @@ async def test_reindex_document_starts_new_ingestion_workflow(monkeypatch) -> No
     monkeypatch.setattr(document_routes, "invalidate_semantic_cache", fake_invalidate)
 
     request = SimpleNamespace(app=api.app)
-    response = await document_routes.reindex_document(document_id, "tenant-a", request)
+    response = await document_routes.reindex_document(
+        document_id, Actor(tenant_id="tenant-a", role=None), request
+    )
 
     assert fake_session.session.flushed is True
     assert response.document.status == DocumentStatus.pending
@@ -179,7 +182,9 @@ async def test_reindex_url_document_refetches_source(monkeypatch) -> None:
     monkeypatch.setattr(document_routes, "invalidate_semantic_cache", fake_invalidate)
 
     request = SimpleNamespace(app=api.app)
-    response = await document_routes.reindex_document(document_id, "tenant-url", request)
+    response = await document_routes.reindex_document(
+        document_id, Actor(tenant_id="tenant-url", role=None), request
+    )
 
     assert fetched_urls == ["https://example.com/old"]
     assert stored == [
@@ -278,7 +283,9 @@ async def test_reindex_github_document_rewrites_image_sidecar(monkeypatch) -> No
     monkeypatch.setattr(document_routes, "invalidate_semantic_cache", fake_invalidate)
 
     request = SimpleNamespace(app=api.app)
-    response = await document_routes.reindex_document(document_id, "tenant-github", request)
+    response = await document_routes.reindex_document(
+        document_id, Actor(tenant_id="tenant-github", role=None), request
+    )
 
     assert stored == [
         (
@@ -381,7 +388,9 @@ async def test_reindex_github_document_reports_no_changes_without_workflow(monke
     monkeypatch.setattr(document_routes, "invalidate_semantic_cache", fake_invalidate)
 
     request = SimpleNamespace(app=api.app)
-    response = await document_routes.reindex_document(document_id, "tenant-github", request)
+    response = await document_routes.reindex_document(
+        document_id, Actor(tenant_id="tenant-github", role=None), request
+    )
 
     assert stored == []
     assert cleared == []

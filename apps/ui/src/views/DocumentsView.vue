@@ -22,6 +22,31 @@
             </div>
         </div>
 
+        <div v-if="session.isAuthenticated" class="documents-toolbar">
+            <div class="scope-control">
+                <button
+                    type="button"
+                    :class="['scope-btn', { active: scope === 'mine' }]"
+                    @click="scope = 'mine'"
+                >
+                    <AppIcon name="user" :size="12" />
+                    {{ t("documents.scopeMine") }}
+                </button>
+                <button
+                    type="button"
+                    :class="['scope-btn', { active: scope === 'shared' }]"
+                    @click="scope = 'shared'"
+                >
+                    <AppIcon name="users" :size="12" />
+                    {{ t("documents.scopeShared") }}
+                </button>
+            </div>
+            <label class="share-toggle">
+                <input v-model="shareUploads" type="checkbox" />
+                <span>{{ t("documents.shareUploads") }}</span>
+            </label>
+        </div>
+
         <div
             :class="['drop-zone', { 'drag-over': dragging }]"
             @dragover.prevent="dragging = true"
@@ -143,27 +168,37 @@
                         ></div>
                     </div>
                     <button
-                        class="btn btn-ghost btn-sm"
+                        class="btn btn-ghost btn-sm doc-header-btn"
                         :title="t('common.refresh')"
                         @click="loadDocs()"
                     >
-                        <AppIcon name="refresh" :size="11" />
+                        <AppIcon name="refresh" :size="13" />
                     </button>
                     <button
-                        class="btn btn-ghost btn-sm"
+                        class="btn btn-ghost btn-sm doc-header-btn"
                         :title="t('documents.clearList')"
                         @click="clearAll"
                     >
-                        <AppIcon name="trash" :size="11" />
+                        <AppIcon name="trash" :size="13" />
                     </button>
                 </div>
             </div>
 
             <div v-if="docs.length === 0" class="empty" style="padding: 40px">
                 <div class="empty-icon">📂</div>
-                <div class="empty-title">{{ t("documents.emptyTitle") }}</div>
+                <div class="empty-title">
+                    {{
+                        scope === "mine"
+                            ? t("documents.emptyMineTitle")
+                            : t("documents.emptyTitle")
+                    }}
+                </div>
                 <div class="empty-sub">
-                    {{ t("documents.emptyDescription") }}
+                    {{
+                        scope === "mine"
+                            ? t("documents.emptyMineDescription")
+                            : t("documents.emptyDescription")
+                    }}
                 </div>
             </div>
             <div v-else class="documents-table-scroll">
@@ -200,6 +235,23 @@
                                         >
                                             {{ doc.name }}
                                         </button>
+                                        <div
+                                            v-if="session.isAuthenticated"
+                                            class="ownership-row"
+                                        >
+                                            <span
+                                                :class="[
+                                                    'ownership-pill',
+                                                    doc.isMine ? 'mine' : 'shared',
+                                                ]"
+                                            >
+                                                {{
+                                                    doc.isMine
+                                                        ? t("documents.mineBadge")
+                                                        : t("documents.sharedBadge")
+                                                }}
+                                            </span>
+                                        </div>
                                         <div
                                             v-if="isExternalSource(doc)"
                                             class="source-url"
@@ -392,6 +444,7 @@ import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { useApi } from "@/composables/useApi";
 import { useSettingsStore } from "@/stores/settings";
+import { useSessionStore } from "@/stores/session";
 import { useI18n } from "@/composables/useI18n";
 import AppIcon from "@/components/AppIcon.vue";
 import AppToast from "@/components/AppToast.vue";
@@ -407,6 +460,7 @@ import {
 
 const { apiFetch, apiUpload } = useApi();
 const settings = useSettingsStore();
+const session = useSessionStore();
 const { t } = useI18n();
 const router = useRouter();
 
@@ -421,6 +475,16 @@ const checkedUrl = ref("");
 const urlChecking = ref(false);
 const urlAdding = ref(false);
 const deleteConfirmDoc = ref(null);
+
+// Personal knowledge base: signed-in users default to their own documents;
+// the choice persists like the analytics scope toggle.
+const scope = ref(
+    localStorage.getItem("aap_documents_scope")
+        || (session.isAuthenticated ? "mine" : "shared"),
+);
+const shareUploads = ref(false);
+const currentUserId = computed(() => session.user?.user_id || null);
+watch(scope, (value) => localStorage.setItem("aap_documents_scope", value));
 const DOCUMENT_PAGE_SIZE = 100;
 const documentsLoadedCount = ref(0);
 const documentsHasMore = ref(false);
@@ -435,11 +499,11 @@ onBeforeUnmount(() => {
 });
 
 function documentListPath(offset) {
-    return `/documents?limit=${DOCUMENT_PAGE_SIZE + 1}&offset=${offset}`;
+    return `/documents?limit=${DOCUMENT_PAGE_SIZE + 1}&offset=${offset}&scope=${scope.value}`;
 }
 
 function normalizeDocumentPage(rows) {
-    return rows.map((doc) => normalizeDocument(doc, settings.locale));
+    return rows.map((doc) => normalizeDocument(doc, settings.locale, currentUserId.value));
 }
 
 function appendUniqueDocuments(existing, incoming) {
@@ -537,9 +601,11 @@ async function loadMoreDocuments() {
     }
 }
 
-watch([() => settings.credentialKey, () => settings.locale], loadDocs, {
-    immediate: true,
-});
+watch(
+    [() => settings.credentialKey, () => settings.locale, scope],
+    loadDocs,
+    { immediate: true },
+);
 
 const stats = computed(() => knowledgeBaseStats(docs.value));
 const canAddCheckedUrl = computed(() =>
@@ -710,7 +776,11 @@ async function pollStatus(docId, options = {}) {
         if (statusPollsCancelled) return;
         try {
             const data = await apiFetch(`/documents/${docId}`);
-            const normalized = normalizeDocument(data, settings.locale);
+            const normalized = normalizeDocument(
+                data,
+                settings.locale,
+                currentUserId.value,
+            );
             if (data.status === "done") {
                 updateDoc(docId, {
                     ...normalized,
@@ -785,6 +855,7 @@ async function uploadFile(file) {
     try {
         const form = new FormData();
         form.append("file", file);
+        if (shareUploads.value) form.append("shared", "true");
         const data = await apiUpload("/documents", {
             body: form,
             onProgress: (fraction) => {
@@ -847,9 +918,9 @@ async function addUrlSource() {
         const data = await apiFetch("/documents/url", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ url }),
+            body: JSON.stringify({ url, shared: shareUploads.value }),
         });
-        const normalized = normalizeDocument(data, settings.locale);
+        const normalized = normalizeDocument(data, settings.locale, currentUserId.value);
         docs.value = [
             { ...normalized, _pending: true },
             ...docs.value.filter((d) => d.id !== normalized.id),
@@ -886,13 +957,91 @@ function handleFileInput(e) {
 </script>
 
 <style scoped>
+.documents-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+.scope-control {
+    display: inline-flex;
+    gap: 2px;
+    padding: 2px;
+    border: 1px solid color-mix(in oklch, var(--border) 80%, transparent);
+    border-radius: 8px;
+    background: color-mix(in oklch, var(--s2) 65%, var(--s1));
+}
+.scope-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 10px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--muted2);
+    font-family: var(--font);
+    font-size: 11.5px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+    user-select: none;
+}
+.scope-btn:hover {
+    color: var(--text);
+}
+.scope-btn.active {
+    background: var(--s1);
+    color: var(--text);
+    font-weight: 600;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+.scope-btn:active {
+    transform: scale(0.96);
+}
+.share-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    color: var(--muted);
+    font-size: 12px;
+    cursor: pointer;
+    user-select: none;
+}
+.share-toggle input {
+    accent-color: var(--purple, #7c6cf0);
+    cursor: pointer;
+}
+.ownership-row {
+    display: flex;
+    gap: 6px;
+    margin-top: 2px;
+}
+.ownership-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 1px 7px;
+    border-radius: 999px;
+    font-size: 10.5px;
+    font-weight: 600;
+    line-height: 1.5;
+}
+.ownership-pill.mine {
+    color: var(--purple, #7c6cf0);
+    background: color-mix(in oklch, var(--purple, #7c6cf0) 14%, transparent);
+}
+.ownership-pill.shared {
+    color: var(--muted2);
+    background: color-mix(in oklch, var(--muted2) 14%, transparent);
+}
 .kb-hero {
     display: flex;
     justify-content: space-between;
     gap: 24px;
-    padding: 18px;
+    padding: 20px 22px;
     border: 1px solid var(--border);
-    border-radius: 14px;
+    border-radius: 16px;
     background:
         radial-gradient(
             circle at 10% 0%,
@@ -900,19 +1049,22 @@ function handleFileInput(e) {
             transparent 28%
         ),
         var(--s1);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 .kb-eyebrow {
     margin-bottom: 6px;
     color: var(--accent);
     font-family: var(--mono);
-    font-size: 10px;
-    letter-spacing: 0.08em;
+    font-size: 10.5px;
+    letter-spacing: 0.06em;
+    font-weight: 600;
     text-transform: uppercase;
 }
 .kb-hero h1 {
     margin: 0 0 8px;
     font-size: 24px;
-    letter-spacing: -0.04em;
+    font-weight: 700;
+    letter-spacing: -0.025em;
 }
 .kb-hero p {
     max-width: 620px;
@@ -927,10 +1079,11 @@ function handleFileInput(e) {
     min-width: 280px;
 }
 .kb-stat {
-    padding: 12px;
+    padding: 12px 14px;
     border: 1px solid var(--border);
-    border-radius: 10px;
+    border-radius: 12px;
     background: color-mix(in oklch, var(--s2) 86%, transparent);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 .kb-stat span {
     display: block;
@@ -949,17 +1102,19 @@ function handleFileInput(e) {
 .url-source-panel {
     display: grid;
     grid-template-columns: minmax(220px, 0.8fr) minmax(320px, 1.2fr);
-    gap: 14px;
-    align-items: start;
-    padding: 14px;
+    gap: 16px;
+    align-items: center;
+    padding: 20px 22px;
     border: 1px solid var(--border);
-    border-radius: 12px;
+    border-radius: 16px;
     background: var(--s1);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 .url-source-title {
     color: var(--text);
-    font-size: 13px;
-    font-weight: 700;
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: -0.015em;
 }
 .url-source-sub,
 .source-url {
@@ -969,27 +1124,38 @@ function handleFileInput(e) {
     align-items: center;
     margin-top: 3px;
     color: var(--muted);
-    font-size: 11px;
-    line-height: 1.45;
+    font-size: 12px;
+    line-height: 1.5;
 }
 .url-source-sub {
     display: block;
 }
 .source-pill {
-    padding: 1px 6px;
+    padding: 2px 7px;
     border: 1px solid color-mix(in oklch, var(--accent) 35%, transparent);
     border-radius: 999px;
     background: color-mix(in oklch, var(--accent) 10%, transparent);
     color: var(--accent);
     font-family: var(--mono);
-    font-size: 9px;
-    font-weight: 700;
+    font-size: 9.5px;
+    font-weight: 600;
     text-transform: uppercase;
 }
 .url-source-controls {
     display: grid;
     grid-template-columns: minmax(220px, 1fr) auto auto;
     gap: 8px;
+    align-items: center;
+}
+.url-source-controls .btn {
+    height: 38px;
+    padding: 0 14px;
+    border-radius: 9px;
+    font-weight: 500;
+    transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.url-source-controls .btn:active:not(:disabled) {
+    transform: scale(0.96);
 }
 .url-source-input {
     width: 100%;
@@ -1149,12 +1315,17 @@ function handleFileInput(e) {
     cursor: pointer;
     font-family: var(--font);
     font-size: 13px;
+    font-weight: 500;
     text-overflow: ellipsis;
     text-align: left;
     white-space: nowrap;
+    transition: color 0.15s, opacity 0.12s;
 }
 .file-title-button:hover {
     color: var(--accent);
+}
+.file-title-button:active:not(:disabled) {
+    opacity: 0.7;
 }
 .file-title-button:disabled {
     color: var(--muted2);
@@ -1242,6 +1413,22 @@ function handleFileInput(e) {
     flex: 0 0 36px;
     justify-content: center;
     padding: 0;
+    border-radius: 8px;
+}
+.document-row-actions .btn-sm:active:not(:disabled) {
+    transform: scale(0.93);
+}
+.doc-header-btn {
+    width: 32px;
+    height: 32px;
+    flex: 0 0 32px;
+    padding: 0;
+    justify-content: center;
+    border-radius: 8px;
+    transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.doc-header-btn:active {
+    transform: scale(0.93);
 }
 
 @media (max-width: 900px) {

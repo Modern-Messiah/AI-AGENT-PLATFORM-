@@ -470,10 +470,14 @@ watch([() => chat.isActiveSessionLoading(), () => chat.streamTick], () => scroll
   background: transparent;
   color: var(--muted);
   cursor: pointer;
+  transition: all 0.12s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .msg-action:hover {
   background: color-mix(in oklch, var(--s3) 70%, transparent);
   color: var(--text);
+}
+.msg-action:active {
+  transform: scale(0.92);
 }
 .streaming-cursor {
   display: inline-block;
@@ -495,7 +499,8 @@ watch([() => chat.isActiveSessionLoading(), () => chat.streamTick], () => scroll
   font-size: 11.5px;
   line-height: 1.2;
   text-align: left;
-  transition: border-color 0.12s, background 0.12s, color 0.12s, box-shadow 0.12s;
+  transition: border-color 0.12s, background 0.12s, color 0.12s, box-shadow 0.12s, transform 0.08s cubic-bezier(0.2, 0, 0, 1);
+  user-select: none;
 }
 .source-chip-button:hover,
 .source-chip-button.active {
@@ -503,6 +508,9 @@ watch([() => chat.isActiveSessionLoading(), () => chat.streamTick], () => scroll
   background: color-mix(in oklch, var(--accent) 13%, var(--s2));
   color: var(--text);
   box-shadow: 0 0 0 1px color-mix(in oklch, var(--accent) 10%, transparent);
+}
+.source-chip-button:active {
+  transform: scale(0.96);
 }
 .source-chip-button.referenced {
   border-color: color-mix(in oklch, var(--accent) 48%, var(--border));
@@ -534,11 +542,11 @@ watch([() => chat.isActiveSessionLoading(), () => chat.streamTick], () => scroll
   width: min(100%, 760px);
   overflow: hidden;
   border: 1px solid color-mix(in oklch, var(--border2) 88%, transparent);
-  border-radius: 14px;
+  border-radius: 16px;
   background:
     linear-gradient(135deg, color-mix(in oklch, var(--accent) 7%, transparent), transparent 42%),
     var(--s2);
-  box-shadow: 0 14px 36px var(--shadow-soft);
+  box-shadow: 0 14px 40px var(--shadow-soft), inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 .citation-panel-header {
   display: flex;

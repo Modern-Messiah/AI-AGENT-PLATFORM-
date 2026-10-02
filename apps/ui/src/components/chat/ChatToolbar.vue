@@ -119,6 +119,9 @@ const { t } = useI18n()
 .scope-back-btn:hover {
   color: var(--text);
 }
+.scope-back-btn:active {
+  transform: scale(0.96);
+}
 
 .scope-pill-btn {
   display: inline-flex;
@@ -131,8 +134,12 @@ const { t } = useI18n()
   color: var(--text);
   font-size: 11.5px;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
   max-width: 340px;
+  user-select: none;
+}
+.scope-pill-btn:active:not(.is-locked) {
+  transform: scale(0.97);
 }
 
 .scope-pill-btn:hover {

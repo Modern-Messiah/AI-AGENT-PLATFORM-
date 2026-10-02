@@ -191,7 +191,7 @@ test('knowledge base document list can load additional pages', () => {
   assert.match(documentsViewSource, /documentsLoadedCount/)
   assert.match(documentsViewSource, /documentsHasMore/)
   assert.match(documentsViewSource, /function documentListPath\(offset\)/)
-  assert.match(documentsViewSource, /`\/documents\?limit=\$\{DOCUMENT_PAGE_SIZE \+ 1\}&offset=\$\{offset\}`/)
+  assert.match(documentsViewSource, /`\/documents\?limit=\$\{DOCUMENT_PAGE_SIZE \+ 1\}&offset=\$\{offset\}&scope=\$\{scope\.value\}`/)
   assert.match(documentsViewSource, /async function loadMoreDocuments\(\)/)
   assert.match(documentsViewSource, /class="load-more-row"/)
   assert.match(documentsViewSource, /documents\.loadMore/)

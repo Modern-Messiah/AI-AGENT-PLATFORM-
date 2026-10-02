@@ -282,13 +282,15 @@ class AdminPrincipal:
 async def require_admin_principal(
     x_admin_secret: str | None = Header(None, alias="X-Admin-Secret"),
     authorization: str | None = Header(None, alias="Authorization"),
+    session_cookie: str | None = Cookie(None, alias=SESSION_COOKIE_NAME),
 ) -> AdminPrincipal:
     """FastAPI dependency for /admin/* and /auth/* management endpoints.
 
     Accepts either an admin-role session token (Google login with the email
     listed in ADMIN_EMAILS) or the classic X-Admin-Secret header.
     """
-    bearer = _bearer_token(authorization)
+    raw_cookie = session_cookie if isinstance(session_cookie, str) and session_cookie else None
+    bearer = _bearer_token(authorization) or raw_cookie
     if bearer is not None:
         claims = verify_session_token(bearer)
         actor = actor_from_claims(claims)

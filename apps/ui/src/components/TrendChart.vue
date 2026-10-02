@@ -120,28 +120,35 @@ onBeforeUnmount(() => {
 }
 .chart-metric-toggle {
   display: inline-flex;
-  gap: 4px;
+  gap: 2px;
   align-self: flex-end;
-  padding: 3px;
-  border: 1px solid var(--border);
-  border-radius: 9px;
-  background: color-mix(in oklch, var(--s2) 70%, transparent);
+  padding: 2px;
+  border: 1px solid color-mix(in oklch, var(--border) 80%, transparent);
+  border-radius: 8px;
+  background: color-mix(in oklch, var(--s2) 65%, var(--s1));
 }
 .chart-metric-btn {
   padding: 4px 10px;
   border: none;
   border-radius: 6px;
   background: transparent;
-  color: var(--muted);
+  color: var(--muted2);
   font-family: var(--font);
   font-size: 11px;
+  font-weight: 500;
   cursor: pointer;
-  transition: background 0.12s, color 0.12s;
+  transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+  user-select: none;
 }
 .chart-metric-btn:hover { color: var(--text); }
 .chart-metric-btn.active {
-  background: color-mix(in oklch, var(--accent) 16%, transparent);
+  background: var(--s1);
   color: var(--text);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+.chart-metric-btn:active {
+  transform: scale(0.96);
 }
 .chart-canvas-wrap {
   position: relative;

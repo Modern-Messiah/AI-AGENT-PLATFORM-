@@ -6,8 +6,8 @@ import uuid
 from datetime import UTC, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
-from packages.auth import Actor, require_actor, require_destroy_permission
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
+from packages.auth import Actor, require_actor
 from packages.core import settings
 from packages.rag import generate_notebook_insights
 from packages.storage import Document, DocumentStatus, Notebook, NotebookDocument, object_store
@@ -15,7 +15,7 @@ from packages.storage.db import tenant_session
 from sqlalchemy import delete, select, update
 from temporalio.client import Client
 
-from apps.api.deps import TenantID, content_length_exceeds, read_with_limit
+from apps.api.deps import ActorDep, content_length_exceeds, read_with_limit
 from apps.api.schemas import (
     CreateNotebookRequest,
     DocumentResponse,
@@ -23,6 +23,7 @@ from apps.api.schemas import (
     UpdateNotebookDocumentsRequest,
 )
 from apps.api.serializers import document_response, notebook_response
+from apps.api.services.access import can_access, can_manage
 from apps.api.services.cache import invalidate_semantic_cache
 from apps.api.services.filenames import safe_upload_filename
 from apps.api.services.notebooks import (
@@ -40,18 +41,44 @@ log = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def _reject_private_documents_in_shared_notebook(
+    notebook_shared: bool, documents: list[Document]
+) -> None:
+    """A shared notebook must only contain tenant-visible documents.
+
+    Stored insights (summary, key topics, suggested questions) are readable
+    by everyone who can open the notebook; deriving them from a private
+    document would leak its content to the whole tenant.
+    """
+    if not notebook_shared:
+        return
+    private = [doc.filename for doc in documents if not doc.is_shared]
+    if private:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "shared notebook cannot include private documents "
+                f"(share them first: {', '.join(private[:3])})"
+            ),
+        )
+
+
 @router.get("/notebooks", response_model=list[NotebookResponse])
 async def list_notebooks(
-    tenant_id: TenantID,
+    actor: ActorDep,
+    scope: str = Query(default="all", pattern="^(mine|shared|all)$"),
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
 ) -> list[NotebookResponse]:
+    tenant_id = actor.tenant_id
     async with tenant_session(tenant_id) as s:
         rows = await load_notebooks_with_documents(
             s,
             tenant_id=tenant_id,
             limit=limit,
             offset=offset,
+            actor=actor,
+            scope=scope,
         )
     return [notebook_response(notebook, documents) for notebook, documents in rows]
 
@@ -59,14 +86,18 @@ async def list_notebooks(
 @router.post("/notebooks", response_model=NotebookResponse, status_code=201)
 async def create_notebook(
     body: CreateNotebookRequest,
-    tenant_id: TenantID,
+    actor: ActorDep,
 ) -> NotebookResponse:
+    tenant_id = actor.tenant_id
     document_ids = dedupe_uuid_list(body.document_ids)
     async with tenant_session(tenant_id) as s:
-        documents = await load_tenant_documents(s, tenant_id, document_ids)
+        documents = await load_tenant_documents(s, tenant_id, document_ids, actor)
+        _reject_private_documents_in_shared_notebook(body.shared, documents)
         notebook = Notebook(
             id=uuid.uuid4(),
             tenant_id=tenant_id,
+            owner_user_id=actor.user_id,
+            is_shared=body.shared,
             title=clean_notebook_title(body.title),
             description=body.description.strip() if body.description else None,
         )
@@ -89,16 +120,17 @@ async def create_notebook(
 
 
 @router.get("/notebooks/{notebook_id}", response_model=NotebookResponse)
-async def get_notebook(notebook_id: uuid.UUID, tenant_id: TenantID) -> NotebookResponse:
+async def get_notebook(notebook_id: uuid.UUID, actor: ActorDep) -> NotebookResponse:
+    tenant_id = actor.tenant_id
     async with tenant_session(tenant_id) as s:
         notebook = (
             await s.execute(
                 select(Notebook).where(Notebook.id == notebook_id, Notebook.tenant_id == tenant_id)
             )
         ).scalar_one_or_none()
-        if notebook is None:
+        if notebook is None or not can_access(actor, notebook):
             raise HTTPException(status_code=404, detail="notebook not found")
-        documents = await load_notebook_documents(s, tenant_id, notebook_id)
+        documents = await load_notebook_documents(s, tenant_id, notebook_id, actor)
         response = notebook_response(notebook, documents)
     return response
 
@@ -107,8 +139,9 @@ async def get_notebook(notebook_id: uuid.UUID, tenant_id: TenantID) -> NotebookR
 async def replace_notebook_documents(
     notebook_id: uuid.UUID,
     body: UpdateNotebookDocumentsRequest,
-    tenant_id: TenantID,
+    actor: ActorDep,
 ) -> NotebookResponse:
+    tenant_id = actor.tenant_id
     document_ids = dedupe_uuid_list(body.document_ids)
     async with tenant_session(tenant_id) as s:
         notebook = (
@@ -116,9 +149,10 @@ async def replace_notebook_documents(
                 select(Notebook).where(Notebook.id == notebook_id, Notebook.tenant_id == tenant_id)
             )
         ).scalar_one_or_none()
-        if notebook is None:
+        if notebook is None or not can_access(actor, notebook):
             raise HTTPException(status_code=404, detail="notebook not found")
-        documents = await load_tenant_documents(s, tenant_id, document_ids)
+        documents = await load_tenant_documents(s, tenant_id, document_ids, actor)
+        _reject_private_documents_in_shared_notebook(bool(notebook.is_shared), documents)
         await s.execute(
             delete(NotebookDocument).where(
                 NotebookDocument.notebook_id == notebook_id,
@@ -151,9 +185,11 @@ async def replace_notebook_documents(
 async def upload_notebook_document(
     notebook_id: uuid.UUID,
     request: Request,
-    tenant_id: TenantID,
+    actor: ActorDep,
     file: UploadFile = File(...),
+    shared: bool = Form(default=False),
 ) -> DocumentResponse:
+    tenant_id = actor.tenant_id
     if content_length_exceeds(request, settings.max_upload_bytes * 2):
         raise HTTPException(
             status_code=413,
@@ -174,7 +210,7 @@ async def upload_notebook_document(
                 select(Notebook).where(Notebook.id == notebook_id, Notebook.tenant_id == tenant_id)
             )
         ).scalar_one_or_none()
-        if notebook is None:
+        if notebook is None or not can_access(actor, notebook):
             raise HTTPException(status_code=404, detail="notebook not found")
 
         await asyncio.to_thread(
@@ -183,9 +219,13 @@ async def upload_notebook_document(
             data,
             content_type=file.content_type or "application/octet-stream",
         )
+        # Uploading into a shared notebook is an explicit share: stored
+        # notebook insights are visible to everyone who can open it.
         doc = Document(
             id=document_id,
             tenant_id=tenant_id,
+            owner_user_id=actor.user_id,
+            is_shared=bool(notebook.is_shared) or shared,
             filename=filename,
             mime_type=file.content_type or "application/octet-stream",
             object_key=object_key,
@@ -239,18 +279,19 @@ async def upload_notebook_document(
 @router.post("/notebooks/{notebook_id}/insights", response_model=NotebookResponse)
 async def rebuild_notebook_insights(
     notebook_id: uuid.UUID,
-    tenant_id: TenantID,
+    actor: ActorDep,
 ) -> NotebookResponse:
+    tenant_id = actor.tenant_id
     async with tenant_session(tenant_id) as s:
         notebook = (
             await s.execute(
                 select(Notebook).where(Notebook.id == notebook_id, Notebook.tenant_id == tenant_id)
             )
         ).scalar_one_or_none()
-        if notebook is None:
+        if notebook is None or not can_access(actor, notebook):
             raise HTTPException(status_code=404, detail="notebook not found")
 
-        documents = await load_notebook_documents(s, tenant_id, notebook_id)
+        documents = await load_notebook_documents(s, tenant_id, notebook_id, actor)
         ready_documents = [doc for doc in documents if doc.status == DocumentStatus.done]
         if not ready_documents:
             raise HTTPException(status_code=409, detail="notebook has no indexed documents yet")
@@ -288,10 +329,10 @@ async def rebuild_notebook_insights(
                 )
             )
         ).scalar_one_or_none()
-        if notebook is None:
+        if notebook is None or not can_access(actor, notebook):
             raise HTTPException(status_code=404, detail="notebook not found")
 
-        documents = await load_notebook_documents(s, tenant_id, notebook_id)
+        documents = await load_notebook_documents(s, tenant_id, notebook_id, actor)
         current_ready_ids = {doc.id for doc in documents if doc.status == DocumentStatus.done}
         if current_ready_ids != ready_document_ids:
             raise HTTPException(
@@ -314,7 +355,6 @@ async def rebuild_notebook_insights(
 async def delete_notebook(
     notebook_id: uuid.UUID, actor: Annotated[Actor, Depends(require_actor)]
 ) -> None:
-    require_destroy_permission(actor)
     tenant_id = actor.tenant_id
     async with tenant_session(tenant_id) as s:
         notebook = (
@@ -322,6 +362,10 @@ async def delete_notebook(
                 select(Notebook).where(Notebook.id == notebook_id, Notebook.tenant_id == tenant_id)
             )
         ).scalar_one_or_none()
-        if notebook is None:
+        if notebook is None or not can_access(actor, notebook):
             raise HTTPException(status_code=404, detail="notebook not found")
+        if not can_manage(actor, notebook):
+            raise HTTPException(
+                status_code=403, detail="member keys cannot delete shared notebooks"
+            )
         await s.delete(notebook)

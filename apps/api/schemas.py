@@ -60,6 +60,8 @@ class AddMessageRequest(BaseModel):
 class DocumentResponse(BaseModel):
     id: str
     tenant_id: str
+    owner_user_id: str | None = None
+    is_shared: bool = False
     filename: str
     status: DocumentStatus
     size_bytes: int = 0
@@ -89,6 +91,7 @@ class UrlCheckRequest(BaseModel):
 
 class AddUrlDocumentRequest(BaseModel):
     url: str = Field(min_length=1, max_length=4096)
+    shared: bool = Field(default=False, description="Share with the whole tenant")
 
 
 class UrlCheckResponse(BaseModel):
@@ -131,6 +134,7 @@ class CreateNotebookRequest(BaseModel):
     title: str = Field(min_length=1, max_length=256)
     description: str | None = Field(default=None, max_length=2000)
     document_ids: list[uuid.UUID] = Field(default_factory=list)
+    shared: bool = Field(default=False, description="Share with the whole tenant")
 
 
 class UpdateNotebookDocumentsRequest(BaseModel):
@@ -140,6 +144,8 @@ class UpdateNotebookDocumentsRequest(BaseModel):
 class NotebookResponse(BaseModel):
     id: str
     tenant_id: str
+    owner_user_id: str | None = None
+    is_shared: bool = False
     title: str
     description: str | None = None
     document_ids: list[str] = Field(default_factory=list)

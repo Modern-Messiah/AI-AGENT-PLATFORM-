@@ -263,13 +263,35 @@
                   <td class="td-mono">{{ user.queries_7d }}</td>
                   <td class="td-mono">{{ fmtDateTime(user.last_query_at) }}</td>
                   <td>
-                    <button
-                      v-if="user.email"
-                      class="btn btn-ghost btn-sm"
-                      @click="resetTarget = user"
-                    >
-                      {{ t('admin.resetPassword') }}
-                    </button>
+                    <div style="display: flex; gap: 6px; flex-wrap: wrap">
+                      <button
+                        v-if="user.email"
+                        class="btn btn-ghost btn-sm"
+                        @click="resetTarget = user"
+                      >
+                        {{ t('admin.resetPassword') }}
+                      </button>
+                      <button
+                        class="btn btn-ghost btn-sm"
+                        :title="t('admin.roleRevokesSessions')"
+                        @click="toggleUserRole(user)"
+                      >
+                        {{ t('admin.toggleRole') }}
+                      </button>
+                      <button class="btn btn-ghost btn-sm" @click="toggleUserBlock(user)">
+                        {{ user.is_active ? t('admin.blockUser') : t('admin.unblockUser') }}
+                      </button>
+                      <button
+                        :class="['btn', 'btn-sm', userDeleteTarget?.id === user.id ? 'btn-danger' : 'btn-ghost']"
+                        @click="deleteUserRow(user)"
+                      >
+                        {{
+                          userDeleteTarget?.id === user.id
+                            ? t('admin.deleteUserConfirm')
+                            : t('admin.deleteUser')
+                        }}
+                      </button>
+                    </div>
                   </td>
                 </tr>
               </tbody>
@@ -281,8 +303,15 @@
       <!-- Add user modal -->
       <div v-if="userFormOpen" class="modal-overlay" @click.self="userFormOpen = false">
         <div class="modal key-modal">
-          <div class="modal-title">{{ t('admin.addUser') }}</div>
-          <div class="modal-sub">{{ t('admin.addUserSub') }}</div>
+          <div class="modal-header">
+            <div>
+              <div class="modal-title">{{ t('admin.addUser') }}</div>
+              <div class="modal-sub">{{ t('admin.addUserSub') }}</div>
+            </div>
+            <button type="button" class="modal-close-btn" :aria-label="t('common.cancel')" @click="userFormOpen = false">
+              <AppIcon name="close" :size="14" />
+            </button>
+          </div>
           <div class="form-group">
             <label class="form-label">{{ t('login.email') }}</label>
             <input v-model="userForm.email" type="email" class="form-input" placeholder="name@example.com" />
@@ -321,8 +350,15 @@
       <!-- Reset password modal -->
       <div v-if="resetTarget" class="modal-overlay" @click.self="resetTarget = null">
         <div class="modal key-modal">
-          <div class="modal-title">{{ t('admin.resetPassword') }}</div>
-          <div class="modal-sub">{{ t('admin.resetPasswordSub', { email: resetTarget.email }) }}</div>
+          <div class="modal-header">
+            <div>
+              <div class="modal-title">{{ t('admin.resetPassword') }}</div>
+              <div class="modal-sub">{{ t('admin.resetPasswordSub', { email: resetTarget.email }) }}</div>
+            </div>
+            <button type="button" class="modal-close-btn" :aria-label="t('common.cancel')" @click="resetTarget = null">
+              <AppIcon name="close" :size="14" />
+            </button>
+          </div>
           <div class="form-group">
             <label class="form-label">{{ t('settings.newPassword') }}</label>
             <input v-model="resetPasswordValue" type="password" class="form-input" :placeholder="t('login.passwordPlaceholder')" />
@@ -344,7 +380,7 @@
 
       <!-- ── Config ──────────────────────────────────────────────── -->
       <template v-if="activeTab === 'config'">
-        <div v-if="configData" class="card">
+        <div v-if="configData" class="card config-card">
           <div class="card-header">
             <div>
               <div class="card-title">{{ t('admin.configTitle') }}</div>
@@ -365,14 +401,37 @@
               </div>
             </div>
           </div>
-          <div class="config-models">
-            <div v-for="(value, key) in configData.models" :key="key" class="mini-metric" style="margin: 6px">
-              <span>{{ key }}</span>
-              <strong class="td-mono">{{ value }}</strong>
+
+          <div class="config-section-header">
+            <div class="card-title">{{ t('admin.configModelsTitle') }}</div>
+            <div class="card-sub">{{ t('admin.configModelsSub') }}</div>
+          </div>
+
+          <div class="config-models-grid">
+            <div v-for="(value, key) in configData.models" :key="key" class="config-model-card">
+              <div class="config-model-top">
+                <div>
+                  <div class="config-model-title">{{ modelMeta(key).title }}</div>
+                  <div class="config-model-sub">{{ modelMeta(key).sub }}</div>
+                </div>
+                <span :class="['badge', modelMeta(key).badgeClass]">{{ modelMeta(key).badge }}</span>
+              </div>
+              <div class="config-model-value-box">
+                <span class="config-model-key">{{ key }}</span>
+                <code class="config-model-value">{{ value }}</code>
+              </div>
             </div>
           </div>
-          <div class="language-hint" style="padding: 0 18px 16px">
-            {{ t('admin.configHint', { tenant: configData.default_tenant_id, emails: configData.admin_emails.join(', ') || '—' }) }}
+
+          <div class="config-env-strip">
+            <div class="config-env-item">
+              <span class="config-env-label">{{ t('admin.defaultTenant') }}:</span>
+              <span class="config-env-val">{{ configData.default_tenant_id }}</span>
+            </div>
+            <div class="config-env-item">
+              <span class="config-env-label">{{ t('admin.adminEmails') }}:</span>
+              <span class="config-env-val">{{ configData.admin_emails.join(', ') || '—' }}</span>
+            </div>
           </div>
         </div>
       </template>
@@ -448,8 +507,15 @@
 
         <div v-if="llmFormOpen" class="modal-overlay" @click.self="llmFormOpen = false">
           <div class="modal key-modal">
-            <div class="modal-title">{{ t('admin.addLlmKey') }}</div>
-            <div class="modal-sub">{{ t('admin.addLlmKeySub') }}</div>
+            <div class="modal-header">
+              <div>
+                <div class="modal-title">{{ t('admin.addLlmKey') }}</div>
+                <div class="modal-sub">{{ t('admin.addLlmKeySub') }}</div>
+              </div>
+              <button type="button" class="modal-close-btn" :aria-label="t('common.cancel')" @click="llmFormOpen = false">
+                <AppIcon name="close" :size="14" />
+              </button>
+            </div>
             <div class="form-group">
               <label class="form-label">{{ t('admin.provider') }}</label>
               <select v-model="llmForm.provider" class="form-input">
@@ -636,8 +702,11 @@
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="row in userUsage" :key="row.user_id || 'unbound'">
-                  <td class="file-name">{{ row.user_name || t('admin.unboundKey') }}</td>
+                <tr v-for="row in userUsage" :key="row.user_id || 'unbound'" :class="{ 'current-user-row': isCurrentUser(row) }">
+                  <td class="file-name">
+                    {{ row.user_name || t('admin.unboundKey') }}
+                    <span v-if="isCurrentUser(row)" class="badge badge-primary you-badge">{{ t('analytics.you') }}</span>
+                  </td>
                   <td class="td-mono">{{ row.email || '—' }}</td>
                   <td class="td-mono">{{ row.calls }}</td>
                   <td class="td-mono">{{ fmtTokens(row.total_tokens) }}</td>
@@ -730,7 +799,12 @@
     <!-- Prompt detail modal -->
     <div v-if="detail" class="modal-overlay" @click.self="detail = null">
       <div class="modal prompt-modal">
-        <div class="modal-title">{{ t('admin.promptDetail') }}</div>
+        <div class="modal-header">
+          <div class="modal-title">{{ t('admin.promptDetail') }}</div>
+          <button type="button" class="modal-close-btn" :aria-label="t('common.close')" @click="detail = null">
+            <AppIcon name="close" :size="14" />
+          </button>
+        </div>
         <div class="detail-grid">
           <div><span class="detail-label">{{ t('admin.tenant') }}</span><span class="td-mono">{{ detail.tenant_id }}</span></div>
           <div><span class="detail-label">{{ t('admin.user') }}</span>{{ promptActor(detail, settings.locale) }}</div>
@@ -772,7 +846,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useApi } from '@/composables/useApi'
 import { useSessionStore } from '@/stores/session'
 import { useSettingsStore } from '@/stores/settings'
@@ -799,6 +873,23 @@ const { apiAdminFetch } = useApi()
 const settings = useSettingsStore()
 const session = useSessionStore()
 const { t } = useI18n()
+
+function onAdminKeydown(e) {
+  if (e.key === 'Escape') {
+    if (detail.value) detail.value = null
+    else if (userFormOpen.value) userFormOpen.value = false
+    else if (resetTarget.value) resetTarget.value = null
+    else if (llmFormOpen.value) llmFormOpen.value = false
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('keydown', onAdminKeydown)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', onAdminKeydown)
+})
 
 const tabs = [
   { id: 'overview', labelKey: 'admin.tabOverview' },
@@ -1115,6 +1206,10 @@ const usageTrend = computed(() => (
   usage.value ? buildUsageTrend(usage.value.daily, settings.locale) : []
 ))
 
+function isCurrentUser(row) {
+  return Boolean(session.user?.user_id && row?.user_id === session.user.user_id)
+}
+
 const overviewCards = computed(() => {
   if (!overview.value) return []
   const data = overview.value
@@ -1150,6 +1245,36 @@ const configFlags = computed(() => {
   ]
 })
 
+function modelMeta(key) {
+  const map = {
+    strong: {
+      title: t('admin.modelStrong'),
+      sub: t('admin.modelStrongSub'),
+      badge: 'Reasoning',
+      badgeClass: 'badge-purple',
+    },
+    weak: {
+      title: t('admin.modelWeak'),
+      sub: t('admin.modelWeakSub'),
+      badge: 'Fast',
+      badgeClass: 'badge-blue',
+    },
+    vision: {
+      title: t('admin.modelVision'),
+      sub: t('admin.modelVisionSub'),
+      badge: 'Vision',
+      badgeClass: 'badge-yellow',
+    },
+    embedding: {
+      title: t('admin.modelEmbedding'),
+      sub: t('admin.modelEmbeddingSub'),
+      badge: 'Vector',
+      badgeClass: 'badge-green',
+    },
+  }
+  return map[key] || { title: key, sub: '', badge: key, badgeClass: 'badge-muted' }
+}
+
 const fmtTokens = formatTokens
 const fmtMs = formatMs
 const fmtCost = formatCost
@@ -1174,29 +1299,39 @@ function docBadge(status) {
 .admin-toolbar.sub { margin-bottom: -4px; }
 .admin-tabs {
   display: flex;
-  gap: 4px;
-  padding: 4px;
-  border: 1px solid var(--border);
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid color-mix(in oklch, var(--border) 80%, transparent);
   border-radius: 10px;
-  background: var(--s1);
+  background: color-mix(in oklch, var(--s2) 65%, var(--s1));
   overflow-x: auto;
 }
 .admin-tab {
   border: 0;
   border-radius: 7px;
-  padding: 7px 14px;
+  padding: 6px 14px;
   background: transparent;
   color: var(--muted2);
   cursor: pointer;
   font-family: var(--font);
   font-size: 12.5px;
-  font-weight: 600;
+  font-weight: 500;
+  letter-spacing: -0.01em;
   white-space: nowrap;
+  transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+  user-select: none;
+}
+.admin-tab:hover {
+  color: var(--text);
 }
 .admin-tab.active {
-  background: var(--s3);
+  background: var(--s1);
   color: var(--text);
-  box-shadow: inset 0 0 0 1px var(--border2);
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+.admin-tab:active {
+  transform: scale(0.97);
 }
 .secret-pill {
   margin-left: auto;
@@ -1257,7 +1392,8 @@ function docBadge(status) {
 .query-bar {
   width: 100%;
   max-width: 34px;
-  border-radius: 4px 4px 0 0;
+  border-radius: 6px 6px 0 0;
+  transition: opacity 0.15s;
 }
 .query-bar.queries { background: linear-gradient(180deg, var(--accent), color-mix(in oklch, var(--accent) 55%, transparent)); }
 .query-bar.errors { background: var(--red); opacity: 0.85; }
@@ -1338,10 +1474,16 @@ function docBadge(status) {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 14px;
+  padding: 14px 16px;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 12px;
   background: color-mix(in oklch, var(--s2) 60%, transparent);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.health-check:hover {
+  background: color-mix(in oklch, var(--s2) 80%, transparent);
+  border-color: color-mix(in oklch, var(--accent) 30%, var(--border));
 }
 .health-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
 .health-check.good .health-dot { background: var(--green); }
@@ -1437,6 +1579,16 @@ function docBadge(status) {
 .llm-keys-table { min-width: 860px; }
 .documents-table { min-width: 780px; }
 .user-usage-table { min-width: 640px; }
+.current-user-row {
+  background: color-mix(in oklch, var(--primary) 7%, transparent);
+}
+.you-badge {
+  font-size: 10px;
+  padding: 1px 6px;
+  margin-left: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
 .by-tenant-table { min-width: 400px; }
 .by-model-table { min-width: 400px; }
 
@@ -1454,16 +1606,158 @@ function docBadge(status) {
   gap: 12px;
   padding: 18px;
 }
-.config-models {
+.config-section-header {
+  padding: 24px 18px 12px;
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+}
+.config-models-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+  padding: 0 18px 20px;
+}
+.config-model-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 18px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: color-mix(in oklch, var(--s2) 60%, transparent);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  transition: all 0.2s cubic-bezier(0.25, 1, 0.5, 1);
+}
+.config-model-card:hover {
+  background: color-mix(in oklch, var(--s2) 85%, transparent);
+  border-color: color-mix(in oklch, var(--accent) 35%, var(--border));
+  transform: translateY(-2px);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+.config-model-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.config-model-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.3;
+}
+.config-model-sub {
+  font-size: 11.5px;
+  color: var(--muted);
+  margin-top: 4px;
+  line-height: 1.35;
+}
+.config-model-value-box {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: color-mix(in oklch, var(--s1) 90%, transparent);
+  border: 1px solid color-mix(in oklch, var(--border) 80%, transparent);
+  overflow: hidden;
+}
+.config-model-key {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--accent);
+  background: color-mix(in oklch, var(--accent) 12%, transparent);
+  border-radius: 4px;
+  padding: 2px 6px;
+  flex-shrink: 0;
+  font-family: var(--mono);
+}
+.config-model-value {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--text);
+  word-break: break-all;
+  font-weight: 500;
+}
+.config-env-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 18px;
+  border-top: 1px solid var(--border);
+  background: color-mix(in oklch, var(--s1) 50%, transparent);
+  border-bottom-left-radius: inherit;
+  border-bottom-right-radius: inherit;
+}
+.config-env-item {
+  display: inline-flex;
+  align-items: center;
   gap: 8px;
-  padding: 0 18px 8px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: color-mix(in oklch, var(--s2) 70%, transparent);
+  border: 1px solid var(--border);
+  font-size: 12px;
+}
+.config-env-label {
+  color: var(--muted);
+  font-weight: 500;
+}
+.config-env-val {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
 }
 .llm-row-actions {
   white-space: nowrap;
+  text-align: right;
 }
 .llm-row-actions .btn + .btn {
   margin-left: 6px;
+}
+.th-actions {
+  text-align: right;
+}
+.table-wrap table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.table-wrap th {
+  padding: 12px 18px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+.table-wrap td {
+  padding: 14px 18px;
+  border-bottom: 1px solid color-mix(in oklch, var(--border) 60%, transparent);
+  font-size: 13px;
+  vertical-align: middle;
+  display: table-cell;
+}
+.table-wrap td.file-name {
+  display: table-cell !important;
+  vertical-align: middle;
+  font-weight: 500;
+  color: var(--text);
+}
+.table-wrap tr:last-child td {
+  border-bottom: none;
+}
+.table-wrap tr {
+  transition: background 0.12s cubic-bezier(0.25, 1, 0.5, 1);
+}
+.table-wrap tr:hover td {
+  background: color-mix(in oklch, var(--s2) 45%, transparent);
 }
 </style>

@@ -441,3 +441,53 @@ async def test_admin_overview_daily_series_uses_cast_not_postgres_cast_operator(
     daily_sql = next(sql for sql in session.statements if "generate_series" in sql)
     assert "CAST(:days AS int)" in daily_sql
     assert "::int" not in daily_sql
+
+
+async def test_admin_role_change_revokes_live_sessions(monkeypatch) -> None:
+    """Role is baked into JWT claims for up to AUTH_SESSION_TTL_HOURS —
+    changing it must kill existing sessions so a demoted admin loses the
+    panel immediately (next login re-issues claims)."""
+    from datetime import UTC, datetime
+    from types import SimpleNamespace
+
+    from apps.api.schemas import AdminRoleChangeRequest
+
+    user = SimpleNamespace(
+        id=uuid.uuid4(),
+        tenant_id="tenant-a",
+        name="alice",
+        email="alice@example.com",
+        password_hash="scrypt$x$y",
+        role="admin",
+        is_active=True,
+        created_at=datetime.now(UTC),
+    )
+
+    class RoleSession:
+        async def __aenter__(self) -> RoleSession:
+            return self
+
+        async def __aexit__(self, *args: object) -> None:
+            return None
+
+        async def execute(self, statement: object):
+            class _Result:
+                def scalar_one_or_none(self):
+                    return user
+
+            return _Result()
+
+    denied: list[object] = []
+
+    async def fake_deny(user_id) -> None:
+        denied.append(user_id)
+
+    monkeypatch.setattr(admin_router, "admin_session", lambda: RoleSession())
+    monkeypatch.setattr(admin_router, "deny_user_sessions", fake_deny)
+
+    response = await admin_router.admin_change_user_role(
+        user.id, AdminRoleChangeRequest(role="member"), _principal=_SECRET_PRINCIPAL
+    )
+
+    assert response.role == "member"
+    assert denied == [user.id]

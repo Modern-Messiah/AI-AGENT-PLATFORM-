@@ -70,8 +70,19 @@
     <path d="M5.5 6.5V4.5a2.5 2.5 0 0 1 5 0v2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
     <circle cx="8" cy="10.2" r="0.9" fill="currentColor"/>
   </svg>
+  <svg :width="size" :height="size" viewBox="0 0 16 16" fill="none" v-else-if="name === 'close' || name === 'x'">
+    <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+  </svg>
+  <svg :width="size" :height="size" viewBox="0 0 16 16" fill="none" v-else-if="name === 'user'">
+    <circle cx="8" cy="5" r="3" stroke="currentColor" stroke-width="1.3"/>
+    <path d="M2.5 14a5.5 5.5 0 0 1 11 0" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+  </svg>
+  <svg :width="size" :height="size" viewBox="0 0 16 16" fill="none" v-else-if="name === 'users'">
+    <circle cx="6" cy="5" r="2.5" stroke="currentColor" stroke-width="1.3"/>
+    <path d="M1.5 13.5a4.5 4.5 0 0 1 9 0" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+    <path d="M10.5 3.5a2.5 2.5 0 0 1 0 4.5M12.5 13.5a4 4 0 0 0-4-3.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+  </svg>
   <span v-else-if="name === 'agent'">A</span>
-  <span v-else-if="name === 'user'">U</span>
 </template>
 
 <script setup>

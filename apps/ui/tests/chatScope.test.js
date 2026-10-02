@@ -51,9 +51,9 @@ test('normalizes global chat when route has no scope', () => {
   const scope = normalizeChatScope({})
 
   assert.equal(scope.type, 'global')
-  assert.equal(scope.title, 'По всей базе знаний')
-  assert.match(scope.description, /по всем документам/)
-  assert.match(scopeWelcomeMessage(scope), /по всей базе знаний/)
+  assert.equal(scope.title, 'Моя база знаний')
+  assert.match(scope.description, /личных документах и общих/)
+  assert.match(scopeWelcomeMessage(scope), /по вашей базе знаний/)
   assert.deepEqual(buildChatScopeQuery(scope), {})
   assert.deepEqual(scopeSendOptions(scope), {})
 })
@@ -62,9 +62,9 @@ test('normalizes global chat when route has no scope', () => {
 test('builds global scope metadata when includeGlobal option is set', () => {
   assert.deepEqual(sessionScopeMetaFromSession({ title: 'New Chat' }, 'ru', { includeGlobal: true }), {
     type: 'global',
-    badge: 'Вся база',
+    badge: 'Моя база',
     title: 'New Chat',
-    subtitle: 'По всей базе знаний',
+    subtitle: 'Моя база знаний',
   })
 })
 

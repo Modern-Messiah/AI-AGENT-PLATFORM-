@@ -34,7 +34,12 @@ def register_retrieval_tool(agent: Agent[AgentDeps, AgentRunOutput]) -> None:
         whose content you directly cited or paraphrased. If a chunk was not
         helpful for your answer, do not include its filename.
         """
-        results = await retrieve_chunks(query=query, tenant_id=ctx.deps.tenant_id, k=k)
+        results = await retrieve_chunks(
+            query=query,
+            tenant_id=ctx.deps.tenant_id,
+            k=k,
+            document_ids=ctx.deps.document_ids,
+        )
         return [
             RetrievedSource(
                 document_id=r.document_id,

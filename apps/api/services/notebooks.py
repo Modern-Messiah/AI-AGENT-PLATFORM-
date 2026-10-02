@@ -3,10 +3,13 @@ from __future__ import annotations
 import uuid
 
 from fastapi import HTTPException
+from packages.auth import Actor
 from packages.rag import NotebookInsightSource
 from packages.storage import Chunk, Document, Notebook, NotebookDocument
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from apps.api.services.access import accessible_condition, scope_condition
 
 
 def dedupe_uuid_list(ids: list[uuid.UUID]) -> list[uuid.UUID]:
@@ -31,20 +34,15 @@ async def load_tenant_documents(
     db: AsyncSession,
     tenant_id: str,
     document_ids: list[uuid.UUID],
+    actor: Actor | None = None,
 ) -> list[Document]:
+    """Fetch documents by id, restricted to what the actor may attach."""
     if not document_ids:
         return []
-    rows = (
-        (
-            await db.execute(
-                select(Document)
-                .where(Document.id.in_(document_ids), Document.tenant_id == tenant_id)
-                .order_by(Document.created_at.desc())
-            )
-        )
-        .scalars()
-        .all()
-    )
+    stmt = select(Document).where(Document.id.in_(document_ids), Document.tenant_id == tenant_id)
+    if actor is not None and (condition := accessible_condition(Document, actor)) is not None:
+        stmt = stmt.where(condition)
+    rows = (await db.execute(stmt.order_by(Document.created_at.desc()))).scalars().all()
     if len(rows) != len(document_ids):
         raise HTTPException(status_code=404, detail="one or more documents not found")
     by_id = {doc.id: doc for doc in rows}
@@ -52,21 +50,25 @@ async def load_tenant_documents(
 
 
 async def load_notebook_documents(
-    db: AsyncSession, tenant_id: str, notebook_id: uuid.UUID
+    db: AsyncSession,
+    tenant_id: str,
+    notebook_id: uuid.UUID,
+    actor: Actor | None = None,
 ) -> list[Document]:
-    return list(
-        (
-            await db.execute(
-                select(Document)
-                .join(NotebookDocument, NotebookDocument.document_id == Document.id)
-                .where(
-                    NotebookDocument.notebook_id == notebook_id,
-                    NotebookDocument.tenant_id == tenant_id,
-                    Document.tenant_id == tenant_id,
-                )
-                .order_by(NotebookDocument.created_at, Document.created_at.desc())
-            )
+    """Documents linked to a notebook, filtered to the actor's knowledge base."""
+    stmt = (
+        select(Document)
+        .join(NotebookDocument, NotebookDocument.document_id == Document.id)
+        .where(
+            NotebookDocument.notebook_id == notebook_id,
+            NotebookDocument.tenant_id == tenant_id,
+            Document.tenant_id == tenant_id,
         )
+    )
+    if actor is not None and (condition := accessible_condition(Document, actor)) is not None:
+        stmt = stmt.where(condition)
+    return list(
+        (await db.execute(stmt.order_by(NotebookDocument.created_at, Document.created_at.desc())))
         .scalars()
         .all()
     )
@@ -78,17 +80,14 @@ async def load_notebooks_with_documents(
     tenant_id: str,
     limit: int,
     offset: int,
+    actor: Actor | None = None,
+    scope: str = "all",
 ) -> list[tuple[Notebook, list[Document]]]:
+    stmt = select(Notebook).where(Notebook.tenant_id == tenant_id)
+    if actor is not None and (condition := scope_condition(Notebook, actor, scope)) is not None:
+        stmt = stmt.where(condition)
     notebooks = (
-        (
-            await db.execute(
-                select(Notebook)
-                .where(Notebook.tenant_id == tenant_id)
-                .order_by(Notebook.created_at.desc())
-                .limit(limit)
-                .offset(offset)
-            )
-        )
+        (await db.execute(stmt.order_by(Notebook.created_at.desc()).limit(limit).offset(offset)))
         .scalars()
         .all()
     )
@@ -99,17 +98,21 @@ async def load_notebooks_with_documents(
     documents_by_notebook: dict[uuid.UUID, list[Document]] = {
         notebook_id: [] for notebook_id in notebook_ids
     }
+    doc_stmt = (
+        select(NotebookDocument.notebook_id, Document)
+        .select_from(NotebookDocument)
+        .join(Document, NotebookDocument.document_id == Document.id)
+        .where(
+            NotebookDocument.notebook_id.in_(notebook_ids),
+            NotebookDocument.tenant_id == tenant_id,
+            Document.tenant_id == tenant_id,
+        )
+    )
+    if actor is not None and (doc_condition := accessible_condition(Document, actor)) is not None:
+        doc_stmt = doc_stmt.where(doc_condition)
     rows = (
         await db.execute(
-            select(NotebookDocument.notebook_id, Document)
-            .select_from(NotebookDocument)
-            .join(Document, NotebookDocument.document_id == Document.id)
-            .where(
-                NotebookDocument.notebook_id.in_(notebook_ids),
-                NotebookDocument.tenant_id == tenant_id,
-                Document.tenant_id == tenant_id,
-            )
-            .order_by(
+            doc_stmt.order_by(
                 NotebookDocument.notebook_id,
                 NotebookDocument.created_at,
                 Document.created_at.desc(),

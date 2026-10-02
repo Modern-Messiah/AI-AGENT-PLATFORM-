@@ -125,9 +125,20 @@ class ScalarResult:
         return self.value
 
 
+class _ScalarsResult(ScalarResult):
+    def scalars(self) -> ScalarResult:
+        return self
+
+    def all(self) -> list[object]:
+        return self.value if isinstance(self.value, list) else []
+
+
 class ScalarSession:
-    def __init__(self, value: object = 0) -> None:
+    """Backs both scalar() and scalars().all() results (accessible ids query)."""
+
+    def __init__(self, value: object = 0, *, scalars_value: list[object] | None = None) -> None:
         self.value = value
+        self.scalars_value = scalars_value if scalars_value is not None else []
 
     async def __aenter__(self) -> ScalarSession:
         return self
@@ -139,7 +150,7 @@ class ScalarSession:
         return self
 
     async def execute(self, statement: object) -> ScalarResult:
-        return ScalarResult(self.value)
+        return _ScalarsResult(self.scalars_value)
 
 
 async def test_run_agent_logs_empty_kb_answer_with_user_attribution(monkeypatch) -> None:
@@ -181,10 +192,12 @@ class FakeSemanticCache:
     def __init__(self, cached: AgentRunOutput | None) -> None:
         self.cached = cached
 
-    async def get(self, query: str, tenant_id: str) -> AgentRunOutput | None:
+    async def get(self, query: str, tenant_id: str, scope: str = "tenant") -> AgentRunOutput | None:
         return self.cached
 
-    async def set(self, query: str, tenant_id: str, result: AgentRunOutput) -> None:
+    async def set(
+        self, query: str, tenant_id: str, result: AgentRunOutput, scope: str = "tenant"
+    ) -> None:
         return None
 
 
@@ -203,6 +216,12 @@ async def test_agent_stream_logs_cached_hit(monkeypatch) -> None:
         agent_router,
         "semantic_cache",
         FakeSemanticCache(AgentRunOutput(answer="из кэша", confidence=0.9, sources=["a.txt"])),
+    )
+    # Unscoped stream resolves the actor's accessible documents first.
+    monkeypatch.setattr(
+        agent_router,
+        "tenant_session",
+        lambda tenant_id: ScalarSession(scalars_value=[uuid.uuid4()]),
     )
     actor = Actor(tenant_id="tenant-a", role=None, user_id=uuid.uuid4(), user_name="bob")
 

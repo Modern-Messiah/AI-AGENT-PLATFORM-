@@ -346,8 +346,12 @@ Fill the required secrets in `.env`, including provider keys and `ADMIN_SECRET`.
 ### 3. Start the full local stack
 
 ```bash
-docker compose up -d --build
+just up
 ```
+
+This builds the images and starts Postgres, Redis, ClickHouse, MinIO, Temporal,
+the API, the worker, the migration container, and the UI — then prints all
+service URLs. (Equivalent to `docker compose up -d --build`.)
 
 This starts Postgres, Redis, ClickHouse, MinIO, Temporal, the API, the worker,
 the migration container, and the UI.
@@ -387,6 +391,12 @@ Install Python dependencies:
 
 ```bash
 uv sync
+```
+
+or everything (Python + frontend) at once:
+
+```bash
+just install
 ```
 
 Run backend tests:
@@ -438,28 +448,34 @@ E2E_GITHUB_EXPECTED_SUBSTRING='text expected in retrieved chunks' \
 PYTHONPATH=$PWD .venv/bin/pytest -q tests/e2e/test_url_github_lifecycle.py
 ```
 
-Run API and worker manually against already running infrastructure:
+Run API and worker manually against already running infrastructure
+(`just dev-infra` starts the infra services and runs migrations first):
 
 ```bash
-uv run uvicorn apps.api.main:app --reload --port 8000
+just dev-api      # uv run uvicorn apps.api.main:app --reload --port 8000
 ```
 
 ```bash
-uv run python -m apps.worker.main
+just dev-worker   # uv run python -m apps.worker.main
 ```
 
-Useful Make targets:
+Useful just recipes (`just` with no arguments lists them all):
 
-| Target | Purpose |
+| Recipe | Purpose |
 |---|---|
-| `make up` | Start the Compose stack |
-| `make down` | Stop services without deleting volumes |
-| `make down-volumes` | Stop services and delete local data |
-| `make logs` | Tail service logs |
-| `make ps` | Show service status |
-| `make migrate` | Run Alembic migrations |
-| `make test` | Run backend pytest through `uv` |
-| `make backup` | Dump Postgres to MinIO using `scripts/backup.py` |
+| `just up` | Build and start the full Compose stack |
+| `just infra` | Start only infrastructure services (for host-run dev) |
+| `just down` | Stop services without deleting volumes |
+| `just reset` | Stop services and delete all local data (asks to confirm) |
+| `just logs [service]` | Tail logs from all services or one |
+| `just ps` | Show service status |
+| `just migrate` | Run Alembic migrations |
+| `just key <tenant> <name>` | Create a tenant API key via the running API |
+| `just dev-api` / `just dev-worker` / `just dev-ui` | Run API, worker, or UI on the host with reload |
+| `just test` / `just test-ui` | Run backend / frontend tests |
+| `just lint` / `just lint-ui` / `just format` | Lint gates as in CI |
+| `just psql` / `just ch` | Interactive Postgres / ClickHouse shells |
+| `just backup` | Dump Postgres to MinIO using `scripts/backup.py` |
 
 For full disaster recovery, use the backup and restore runbook:
 [docs/runbooks/backup-restore.md](docs/runbooks/backup-restore.md).

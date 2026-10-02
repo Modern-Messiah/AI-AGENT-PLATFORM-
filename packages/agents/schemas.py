@@ -8,6 +8,11 @@ class AgentRunInput(BaseModel):
     user_id: str = Field(default="", description="Owner attribution for analytics")
     user_query: str
     model: str | None = None
+    document_ids: list[str] = Field(
+        default_factory=list,
+        description="Server-injected retrieval scope: documents the acting user may "
+        "access (personal + shared). Empty = unbound tenant key = whole tenant.",
+    )
     require_approval: bool = Field(
         default=False,
         description="Pause after generating an answer and wait for human approve/reject signal",
@@ -23,6 +28,11 @@ class AgentRunOutput(BaseModel):
 
 class MultiStepResearchInput(BaseModel):
     tenant_id: str = ""
+    user_id: str = ""
     main_query: str
     sub_queries: list[str] = Field(..., min_length=1, max_length=10)
     model: str | None = None
+    document_ids: list[str] = Field(
+        default_factory=list,
+        description="Server-injected retrieval scope, same meaning as in AgentRunInput",
+    )

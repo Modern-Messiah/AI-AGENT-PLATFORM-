@@ -2,20 +2,53 @@
   <div class="screen-body analytics-screen">
     <div class="analytics-toolbar">
       <span class="toolbar-label">{{ t('analytics.period') }}</span>
-      <button
-        v-for="d in [7, 14, 30]"
-        :key="d"
-        :class="['btn btn-ghost btn-sm', { 'btn-primary': days === d }]"
-        @click="days = d"
-      >
-        {{ t('analytics.daysShort', { days: d }) }}
-      </button>
-      <button class="btn btn-ghost btn-sm" :disabled="loading" @click="load">
+      <div class="period-control" role="group">
+        <button
+          v-for="d in [7, 14, 30]"
+          :key="d"
+          :class="['period-btn', { active: days === d }]"
+          type="button"
+          @click="days = d"
+        >
+          {{ t('analytics.daysShort', { days: d }) }}
+        </button>
+      </div>
+
+      <button class="btn btn-ghost btn-sm" :disabled="loading" :title="t('common.refresh')" @click="load">
         <div v-if="loading" class="spinner"></div>
         <AppIcon v-else name="refresh" :size="13" />
       </button>
+
+      <!-- Scope switcher: shown for admins -->
+      <div v-if="canSwitchScope" class="scope-control" role="group" :aria-label="t('analytics.scopeSelector')">
+        <button
+          :class="['scope-btn', { active: activeScope === 'user' }]"
+          type="button"
+          @click="setScope('user')"
+        >
+          <AppIcon name="user" :size="12" />
+          <span>{{ t('analytics.scopePersonal') }}</span>
+        </button>
+        <button
+          :class="['scope-btn', { active: activeScope === 'tenant' }]"
+          type="button"
+          @click="setScope('tenant')"
+        >
+          <AppIcon name="users" :size="12" />
+          <span>{{ t('analytics.scopeTenant') }}</span>
+        </button>
+      </div>
+
       <span class="tenant-label">
-        {{ data ? (data.scope === 'user' ? t('analytics.personalScope') : `tenant: ${data.tenant_id}`) : t('analytics.noData') }}
+        <span v-if="data?.scope === 'tenant'" class="scope-pill tenant">
+          <span class="scope-dot"></span>
+          {{ t('analytics.tenantScope', { tenant: data.tenant_id }) }}
+        </span>
+        <span v-else-if="data?.scope === 'user'" class="scope-pill user">
+          <span class="scope-dot"></span>
+          {{ t('analytics.personalScope') }}
+        </span>
+        <span v-else>{{ t('analytics.noData') }}</span>
       </span>
     </div>
 
@@ -131,6 +164,50 @@
         </div>
       </div>
 
+      <!-- Breakdown by user: visible in tenant scope when users data is available -->
+      <div v-if="data.scope === 'tenant' && data.users && data.users.length" class="card user-breakdown-card">
+        <div class="card-header">
+          <div>
+            <div class="card-title">{{ t('analytics.byUserTitle') }}</div>
+            <div class="card-sub">{{ t('analytics.byUserSub') }}</div>
+          </div>
+          <span class="badge badge-muted">{{ data.users.length }}</span>
+        </div>
+        <div class="table-wrap">
+          <table class="user-usage-table">
+            <thead>
+              <tr>
+                <th>{{ t('analytics.user') }}</th>
+                <th>{{ t('analytics.email') }}</th>
+                <th>{{ t('analytics.callCount') }}</th>
+                <th>{{ t('analytics.tokens') }}</th>
+                <th>{{ t('analytics.averageLatency') }}</th>
+                <th>{{ t('analytics.costColumn') }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="u in data.users"
+                :key="u.user_id || 'unbound'"
+                :class="{ 'current-user-row': u.is_current }"
+              >
+                <td>
+                  <span class="user-name-cell">
+                    {{ u.user_name || (u.user_id ? t('analytics.unnamedUser') : t('analytics.unboundKey')) }}
+                    <span v-if="u.is_current" class="badge badge-primary you-badge">{{ t('analytics.you') }}</span>
+                  </span>
+                </td>
+                <td class="td-mono">{{ u.email || '—' }}</td>
+                <td class="td-mono">{{ u.call_count }}</td>
+                <td class="td-mono">{{ fmtTokens(u.total_tokens) }}</td>
+                <td class="td-mono">{{ fmtMs(u.avg_latency_ms) }}</td>
+                <td><span style="font-family: var(--mono); font-weight: 600">{{ fmtCost(u.total_cost_usd) }}</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       <div class="card">
         <div class="card-header">
           <div class="card-title">{{ t('analytics.breakdown') }}</div>
@@ -178,6 +255,7 @@
 import { ref, computed, watch } from 'vue'
 import { useApi } from '@/composables/useApi'
 import { useSettingsStore } from '@/stores/settings'
+import { useSessionStore } from '@/stores/session'
 import { useI18n } from '@/composables/useI18n'
 import TrendChart from '@/components/TrendChart.vue'
 import AppIcon from '@/components/AppIcon.vue'
@@ -190,6 +268,7 @@ import {
 
 const { apiFetch } = useApi()
 const settings = useSettingsStore()
+const session = useSessionStore()
 const { t } = useI18n()
 
 const days = ref(7)
@@ -197,11 +276,37 @@ const data = ref(null)
 const loading = ref(false)
 const error = ref(null)
 
+const canSwitchScope = computed(() => (
+  Boolean(session.isAdmin || settings.hasAdminSecret || data.value?.can_switch_scope)
+))
+
+function getInitialScope() {
+  try {
+    const saved = localStorage.getItem('aap_analytics_scope')
+    if (saved === 'tenant' || saved === 'user') return saved
+  } catch {}
+  return 'user'
+}
+
+const activeScope = ref(getInitialScope())
+
+function setScope(s) {
+  if (activeScope.value === s) return
+  activeScope.value = s
+  try {
+    localStorage.setItem('aap_analytics_scope', s)
+  } catch {}
+}
+
 async function load() {
   if (!settings.isConnected) return
   loading.value = true; error.value = null
   try {
-    data.value = await apiFetch(`/analytics/usage?days=${days.value}`)
+    const scopeParam = canSwitchScope.value ? activeScope.value : 'user'
+    data.value = await apiFetch(`/analytics/usage?days=${days.value}&scope=${scopeParam}`)
+    if (data.value?.scope && !localStorage.getItem('aap_analytics_scope')) {
+      activeScope.value = data.value.scope
+    }
   } catch (e) {
     error.value = e.message
   } finally {
@@ -209,7 +314,7 @@ async function load() {
   }
 }
 
-watch([days, () => settings.credentialKey], load, { immediate: true })
+watch([days, activeScope, () => settings.credentialKey], load, { immediate: true })
 
 const fmtTokens = formatTokens
 const fmtCost = formatCost
@@ -253,11 +358,106 @@ const stats = computed(() => {
   color: var(--muted);
   font-size: 13px;
 }
+.period-control {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid color-mix(in oklch, var(--border) 80%, transparent);
+  border-radius: 8px;
+  background: color-mix(in oklch, var(--s2) 65%, var(--s1));
+}
+.period-btn {
+  padding: 4px 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted2);
+  font-family: var(--font);
+  font-size: 11.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+  user-select: none;
+}
+.period-btn:hover {
+  color: var(--text);
+}
+.period-btn.active {
+  background: var(--s1);
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+.period-btn:active {
+  transform: scale(0.96);
+}
+.scope-control {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid color-mix(in oklch, var(--border) 80%, transparent);
+  border-radius: 8px;
+  background: color-mix(in oklch, var(--s2) 65%, var(--s1));
+}
+.scope-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted2);
+  font-family: var(--font);
+  font-size: 11.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+  user-select: none;
+}
+.scope-btn:hover {
+  color: var(--text);
+}
+.scope-btn.active {
+  background: var(--s1);
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+.scope-btn:active {
+  transform: scale(0.96);
+}
 .tenant-label {
   margin-left: auto;
   color: var(--muted);
   font-family: var(--mono);
   font-size: 12px;
+}
+.scope-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-family: var(--mono);
+  font-weight: 500;
+}
+.scope-pill.tenant {
+  background: color-mix(in oklch, var(--primary) 12%, transparent);
+  color: var(--primary);
+  border: 1px solid color-mix(in oklch, var(--primary) 25%, transparent);
+}
+.scope-pill.user {
+  background: color-mix(in oklch, var(--s2) 75%, transparent);
+  color: var(--muted);
+  border: 1px solid color-mix(in oklch, var(--border) 60%, transparent);
+}
+.scope-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
 }
 .analytics-error {
   padding: 12px 16px;
@@ -395,7 +595,26 @@ const stats = computed(() => {
     grid-template-columns: 1fr;
   }
 }
-.breakdown-table {
+.breakdown-table,
+.user-usage-table {
   min-width: 600px;
+}
+.user-breakdown-card {
+  margin-top: 0;
+}
+.user-name-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+.you-badge {
+  font-size: 10px;
+  padding: 1px 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.current-user-row {
+  background: color-mix(in oklch, var(--primary) 7%, transparent);
 }
 </style>

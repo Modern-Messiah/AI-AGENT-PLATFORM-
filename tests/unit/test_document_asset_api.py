@@ -6,7 +6,10 @@ from types import SimpleNamespace
 import pytest
 from apps.api.routers import documents as document_routes
 from fastapi import HTTPException
+from packages.auth import Actor
 from packages.storage import DocumentAssetStatus
+
+_UNBOUND_KEY = Actor(tenant_id="tenant-a", role=None)
 
 
 class _ScalarResult:
@@ -59,7 +62,7 @@ async def test_asset_content_is_tenant_scoped_and_returns_webp(monkeypatch) -> N
 
     monkeypatch.setattr(document_routes.object_store, "get", fake_get)
 
-    response = await document_routes.get_document_asset_content(document_id, asset_id, "tenant-a")
+    response = await document_routes.get_document_asset_content(document_id, asset_id, _UNBOUND_KEY)
 
     query = str(fake_session.session.statement)
     assert "document_assets.id" in query
@@ -92,7 +95,7 @@ async def test_url_image_asset_content_is_not_exposed(monkeypatch) -> None:
     )
 
     with pytest.raises(HTTPException) as exc:
-        await document_routes.get_document_asset_content(document_id, asset_id, "tenant-a")
+        await document_routes.get_document_asset_content(document_id, asset_id, _UNBOUND_KEY)
 
     assert exc.value.status_code == 404
     assert requested_keys == []

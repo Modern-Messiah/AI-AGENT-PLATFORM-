@@ -7,6 +7,11 @@ from uuid import UUID
 from apps.api.routers import documents as documents_router
 from apps.api.routers import notebooks as notebooks_router
 from apps.api.routers import sessions as sessions_router
+from packages.auth import Actor
+
+
+def _actor(*, user_id=None) -> Actor:
+    return Actor(tenant_id="tenant-a", role=None, user_id=user_id)
 
 
 class _Result:
@@ -73,7 +78,7 @@ async def test_list_documents_applies_limit_and_offset(monkeypatch) -> None:
     session = _FakeSession([_Result([])])
     _patch_tenant_session(monkeypatch, documents_router, session)
 
-    rows = await documents_router.list_documents("tenant-a", limit=7, offset=14)
+    rows = await documents_router.list_documents(_actor(), limit=7, offset=14)
 
     assert rows == []
     statement = str(session.statements[0])
@@ -85,7 +90,7 @@ async def test_list_sessions_applies_limit_and_offset(monkeypatch) -> None:
     session = _FakeSession([_Result(rows=[])])
     _patch_tenant_session(monkeypatch, sessions_router, session)
 
-    rows = await sessions_router.list_sessions("tenant-a", limit=9, offset=18)
+    rows = await sessions_router.list_sessions(_actor(), limit=9, offset=18)
 
     assert rows == []
     statement = str(session.statements[0])
@@ -107,7 +112,7 @@ async def test_list_notebooks_batches_document_loading_in_two_queries(monkeypatc
     )
     _patch_tenant_session(monkeypatch, notebooks_router, session)
 
-    rows = await notebooks_router.list_notebooks("tenant-a", limit=50, offset=0)
+    rows = await notebooks_router.list_notebooks(_actor(), limit=50, offset=0)
 
     assert len(rows) == 2
     assert len(session.statements) == 2
@@ -116,18 +121,30 @@ async def test_list_notebooks_batches_document_loading_in_two_queries(monkeypatc
 
 
 async def test_get_messages_applies_limit_and_offset(monkeypatch) -> None:
-    session = _FakeSession([_Result([])])
+    session = _FakeSession(
+        [
+            _Result(
+                [
+                    SimpleNamespace(
+                        id=UUID("9caa5d8d-0f6d-4f06-98cb-c49d7f991b32"),
+                        user_id=None,
+                    )
+                ]
+            ),
+            _Result([]),
+        ]
+    )
     _patch_tenant_session(monkeypatch, sessions_router, session)
 
     rows = await sessions_router.get_messages(
         UUID("9caa5d8d-0f6d-4f06-98cb-c49d7f991b32"),
-        "tenant-a",
+        _actor(),
         limit=20,
         offset=40,
     )
 
     assert rows == []
-    statement = str(session.statements[0])
+    statement = str(session.statements[1])
     assert "LIMIT" in statement
     assert "OFFSET" in statement
 
@@ -144,7 +161,7 @@ async def test_list_document_assets_applies_limit_and_offset(monkeypatch) -> Non
 
     rows = await documents_router.list_document_assets(
         document_id,
-        "tenant-a",
+        _actor(),
         limit=12,
         offset=24,
     )
@@ -167,7 +184,7 @@ async def test_list_document_chunks_applies_limit_and_offset(monkeypatch) -> Non
 
     rows = await documents_router.list_document_chunks(
         document_id,
-        "tenant-a",
+        _actor(),
         limit=12,
         offset=24,
     )
