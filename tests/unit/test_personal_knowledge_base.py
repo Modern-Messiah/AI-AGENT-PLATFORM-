@@ -329,7 +329,7 @@ async def test_agent_research_without_accessible_documents_short_circuits(
     async def fake_limits(tenant_id: str, query: str, endpoint: str) -> str:
         return query
 
-    async def fake_validate(query: str) -> str:
+    def fake_validate(query: str) -> str:
         return query
 
     logged: list[object] = []

@@ -185,6 +185,7 @@ app.add_middleware(
     allow_origins=settings.allowed_origins or ["*"],
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["Content-Disposition"],
 )
 
 app.include_router(health_router)

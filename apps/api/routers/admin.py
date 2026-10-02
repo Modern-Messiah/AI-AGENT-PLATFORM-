@@ -810,13 +810,21 @@ async def admin_reindex_document(
         if doc.status in (DocumentStatus.pending, DocumentStatus.processing):
             raise HTTPException(status_code=409, detail="document is already being processed")
         tenant_id = doc.tenant_id
+        object_key = doc.object_key
+        filename = doc.filename
+    from apps.worker.activities.ingestion_types import IngestionInput
     from apps.worker.workflows.ingestion import IngestionWorkflow
 
     client = request.app.state.temporal
     workflow_id = f"reindex-{tenant_id}-{document_id}-{uuid.uuid4()}"
     await client.start_workflow(
         IngestionWorkflow.run,
-        {"tenant_id": tenant_id, "document_id": str(document_id)},
+        IngestionInput(
+            document_id=str(document_id),
+            tenant_id=tenant_id,
+            object_key=object_key,
+            filename=filename,
+        ),
         id=workflow_id,
         task_queue=settings.temporal_task_queue,
     )

@@ -8,8 +8,8 @@ from typing import Any
 class IngestionInput:
     document_id: str
     tenant_id: str
-    object_key: str
-    filename: str
+    object_key: str = ""
+    filename: str = ""
 
 
 @dataclass

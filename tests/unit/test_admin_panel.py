@@ -491,3 +491,68 @@ async def test_admin_role_change_revokes_live_sessions(monkeypatch) -> None:
 
     assert response.role == "member"
     assert denied == [user.id]
+
+
+def test_ingestion_input_backwards_compatible_defaults() -> None:
+    from apps.worker.activities.ingestion_types import IngestionInput
+
+    legacy = IngestionInput(document_id="doc-1", tenant_id="tenant-1")
+    assert legacy.document_id == "doc-1"
+    assert legacy.tenant_id == "tenant-1"
+    assert legacy.object_key == ""
+    assert legacy.filename == ""
+
+
+async def test_admin_reindex_document_passes_ingestion_input(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from apps.worker.activities.ingestion_types import IngestionInput
+
+    doc_id = uuid.uuid4()
+    doc = SimpleNamespace(
+        id=doc_id,
+        tenant_id="tenant-reindex",
+        object_key="tenant-reindex/test.pdf",
+        filename="test.pdf",
+        status=DocumentStatus.done,
+    )
+
+    class DocSession:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args: object) -> None:
+            return None
+
+        async def execute(self, statement: object):
+            class _Result:
+                def scalar_one_or_none(self):
+                    return doc
+
+            return _Result()
+
+    started: list[dict[str, object]] = []
+
+    class FakeTemporal:
+        async def start_workflow(
+            self, workflow: object, payload: object, id: str, task_queue: str
+        ) -> None:
+            started.append(
+                {"workflow": workflow, "payload": payload, "id": id, "task_queue": task_queue}
+            )
+
+    request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(temporal=FakeTemporal())))
+
+    monkeypatch.setattr(admin_router, "admin_session", lambda: DocSession())
+
+    result = await admin_router.admin_reindex_document(doc_id, _SECRET_PRINCIPAL, request)  # type: ignore[arg-type]
+    assert result["status"] == "started"
+    assert len(started) == 1
+    call = started[0]
+    payload = call["payload"]
+    assert isinstance(payload, IngestionInput)
+    assert payload.document_id == str(doc_id)
+    assert payload.tenant_id == "tenant-reindex"
+    assert payload.object_key == "tenant-reindex/test.pdf"
+    assert payload.filename == "test.pdf"
+    assert str(call["id"]).startswith(f"reindex-tenant-reindex-{doc_id}-")

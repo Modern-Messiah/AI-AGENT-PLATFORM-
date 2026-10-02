@@ -3,7 +3,7 @@
 # Run backend tests (pytest).
 [group('quality')]
 test:
-    uv run pytest -q
+    uv run python -m pytest -q
 
 # Run frontend tests (node:test + vitest).
 [group('quality')]
@@ -13,7 +13,7 @@ test-ui:
 # Run live e2e smoke tests against an ALREADY RUNNING local stack.
 [group('quality')]
 test-e2e base='http://127.0.0.1:8000':
-    RUN_E2E_SMOKE=1 E2E_API_BASE_URL={{ base }} uv run pytest -q -m e2e tests/e2e
+    RUN_E2E_SMOKE=1 E2E_API_BASE_URL={{ base }} uv run python -m pytest -q -m e2e tests/e2e
 
 # Lint backend: ruff check + format check + mypy (blocking gates as in CI).
 [group('quality')]

@@ -14,7 +14,7 @@ from packages.rag import (
 from packages.rag.parser import ParsedSegment
 from packages.storage import Chunk, Document, object_store
 from packages.storage.db import tenant_session
-from sqlalchemy import delete, update
+from sqlalchemy import delete, select, update
 
 from apps.worker.activities.heartbeat import heartbeat_safe
 from apps.worker.activities.ingestion_types import ChunkBatch, IngestionInput, ParsedDoc
@@ -22,6 +22,21 @@ from apps.worker.activities.url_visuals import append_url_visual_segments
 
 
 async def parse_original_document(input: IngestionInput) -> ParsedDoc:
+    if not input.object_key or not input.filename:
+        async with tenant_session(input.tenant_id) as session:
+            doc = (
+                await session.execute(
+                    select(Document).where(
+                        Document.id == uuid.UUID(input.document_id),
+                        Document.tenant_id == input.tenant_id,
+                    )
+                )
+            ).scalar_one_or_none()
+            if doc is not None:
+                if not input.object_key:
+                    input.object_key = doc.object_key
+                if not input.filename:
+                    input.filename = doc.filename
     data = await asyncio.to_thread(object_store.get, input.object_key)
     segments = await parse_to_segments(data, input.filename)
     url_visuals = await append_url_visual_segments(input, segments)
