@@ -144,6 +144,9 @@ class _FakeSession:
         self.statements.append(statement)
         return self.results.pop(0)
 
+    async def flush(self) -> None:
+        return None
+
     async def delete(self, row) -> None:
         self.deleted.append(row)
 
@@ -326,7 +329,7 @@ async def test_agent_research_without_accessible_documents_short_circuits(
     async def fake_limits(tenant_id: str, query: str, endpoint: str) -> str:
         return query
 
-    async def fake_validate(query: str) -> str:
+    def fake_validate(query: str) -> str:
         return query
 
     logged: list[object] = []
@@ -433,5 +436,131 @@ async def test_session_of_another_user_is_invisible(monkeypatch) -> None:
 
     with pytest.raises(Exception) as exc:
         await sessions_router.get_messages(sess.id, _other_user())
+
+    assert exc.value.status_code == 404
+
+
+# ── share toggle (PATCH /documents/{id}/share) ───────────────────────────────
+
+
+async def test_owner_can_share_and_unshare_document(monkeypatch) -> None:
+    owner = _user()
+    doc = _doc(owner.user_id)
+    invalidated: list[str] = []
+
+    def fake_invalidate(tenant_id: str, reason: str):
+        invalidated.append(reason)
+
+        async def _noop_coro() -> None:
+            return None
+
+        return _noop_coro()
+
+    session = _FakeSession([_Result([doc])])
+    _patch_tenant_session(monkeypatch, documents_router, session)
+    monkeypatch.setattr(documents_router, "invalidate_semantic_cache", fake_invalidate)
+
+    response = await documents_router.set_document_shared(
+        doc.id, documents_router.DocumentShareRequest(shared=True), owner
+    )
+
+    assert response.is_shared is True
+    assert doc.is_shared is True
+    assert invalidated == [f"document-share:{doc.id}"]
+
+
+async def test_member_cannot_share_foreign_document(monkeypatch) -> None:
+    doc = _doc(_other_user().user_id, shared=True)  # visible, not manageable
+    session = _FakeSession([_Result([doc])])
+    _patch_tenant_session(monkeypatch, documents_router, session)
+
+    with pytest.raises(Exception) as exc:
+        await documents_router.set_document_shared(
+            doc.id, documents_router.DocumentShareRequest(shared=False), _user()
+        )
+
+    assert exc.value.status_code == 403
+
+
+async def test_unshare_blocked_while_in_shared_notebook(monkeypatch) -> None:
+    owner = _user()
+    doc = _doc(owner.user_id, shared=True)
+    # First execute resolves the document, second — shared notebook titles.
+    session = _FakeSession([_Result([doc]), _Result(["Общий сборник"])])
+    _patch_tenant_session(monkeypatch, documents_router, session)
+
+    with pytest.raises(Exception) as exc:
+        await documents_router.set_document_shared(
+            doc.id, documents_router.DocumentShareRequest(shared=False), owner
+        )
+
+    assert exc.value.status_code == 409
+    assert "Общий сборник" in exc.value.detail
+
+
+# ── knowledge base export (GET /documents/export) ────────────────────────────
+
+
+class _ExportDoc:
+    """Minimal document row for the export path."""
+
+    def __init__(self, name: str, owner, shared: bool = False, key: str | None = None) -> None:
+        self.id = uuid.uuid4()
+        self.tenant_id = "tenant-a"
+        self.owner_user_id = owner
+        self.is_shared = shared
+        self.filename = name
+        self.object_key = key or f"tenant-a/{name}"
+        self.size_bytes = 16
+        self.status = DocumentStatus.done
+        self.source_type = "file"
+        self.source_url = None
+        self.created_at = None
+
+
+async def test_export_contains_only_accessible_documents(monkeypatch) -> None:
+    import io
+    import zipfile as zf
+
+    user = _user()
+    # The fake session returns rows verbatim (it cannot run SQL), so the
+    # fixture contains only what the accessible-condition would select;
+    # the statement itself is asserted below to carry the owner filter.
+    mine = _ExportDoc("mine.txt", user.user_id)
+    shared = _ExportDoc("shared.txt", _other_user().user_id, shared=True)
+    session = _FakeSession([_Result([mine, shared])])
+    _patch_tenant_session(monkeypatch, documents_router, session)
+    monkeypatch.setattr(
+        documents_router.object_store,
+        "get",
+        lambda key: f"bytes-of-{key}".encode(),
+    )
+
+    response = await documents_router.export_documents(user)
+
+    body = b"".join([chunk async for chunk in response.body_iterator])
+    archive = zf.ZipFile(io.BytesIO(body))
+    # Ownership filter must be part of the select (foreign private rows
+    # are excluded server-side by accessible_condition).
+    assert "owner_user_id" in str(session.statements[0])
+    assert "is_shared" in str(session.statements[0])
+    names = archive.namelist()
+    assert "mine.txt" in names
+    assert "shared.txt" in names
+    assert "manifest.json" in names
+    manifest = json.loads(archive.read("manifest.json"))
+    assert manifest["document_count"] == 2
+    by_name = {d["filename"]: d for d in manifest["documents"]}
+    assert by_name["mine.txt"]["is_mine"] is True
+    assert by_name["shared.txt"]["is_shared"] is True
+    assert archive.read("mine.txt") == b"bytes-of-tenant-a/mine.txt"
+
+
+async def test_export_without_documents_returns_404(monkeypatch) -> None:
+    session = _FakeSession([_Result([])])
+    _patch_tenant_session(monkeypatch, documents_router, session)
+
+    with pytest.raises(Exception) as exc:
+        await documents_router.export_documents(_user())
 
     assert exc.value.status_code == 404

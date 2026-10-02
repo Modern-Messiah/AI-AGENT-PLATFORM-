@@ -1,18 +1,30 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import uuid
+import zipfile
+from collections.abc import AsyncIterator
 from datetime import UTC, datetime
+from tempfile import SpooledTemporaryFile
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from packages.auth import Actor, require_actor
 from packages.core import settings
-from packages.storage import Chunk, Document, DocumentAsset, DocumentStatus, object_store
+from packages.storage import (
+    Chunk,
+    Document,
+    DocumentAsset,
+    DocumentStatus,
+    Notebook,
+    NotebookDocument,
+    object_store,
+)
 from packages.storage.db import tenant_session
 from sqlalchemy import select, update
-from starlette.responses import Response
+from starlette.responses import Response, StreamingResponse
 from temporalio.client import Client
 
 from apps.api.deps import ActorDep, TenantID, content_length_exceeds, read_with_limit
@@ -22,6 +34,7 @@ from apps.api.schemas import (
     DocumentChunkPreview,
     DocumentReindexResponse,
     DocumentResponse,
+    DocumentShareRequest,
     UrlCheckRequest,
     UrlCheckResponse,
 )
@@ -31,7 +44,7 @@ from apps.api.serializers import (
     document_response,
     metadata_page,
 )
-from apps.api.services.access import can_access, can_manage, scope_condition
+from apps.api.services.access import accessible_condition, can_access, can_manage, scope_condition
 from apps.api.services.cache import invalidate_semantic_cache
 from apps.api.services.filenames import safe_upload_filename
 from apps.api.services.url_source_limits import enforce_url_ingest_limit
@@ -106,6 +119,126 @@ async def list_documents(
             stmt = stmt.where(condition)
         rows = (await s.execute(stmt)).scalars().all()
     return [document_response(doc) for doc in rows]
+
+
+@router.get("/documents/export")
+async def export_documents(actor: ActorDep) -> Response:
+    """Download the acting user's knowledge base as a single ZIP.
+
+    Exports every document the actor may access (own + shared — the same
+    corpus the agent searches; the whole tenant for unbound keys): original
+    object bytes plus a manifest.json with metadata and ownership. Must be
+    declared before /documents/{document_id} or "export" would match the
+    path parameter.
+    """
+    tenant_id = actor.tenant_id
+    async with tenant_session(tenant_id) as s:
+        stmt = (
+            select(Document)
+            .where(Document.tenant_id == tenant_id)
+            .order_by(Document.created_at.desc())
+        )
+        if (condition := accessible_condition(Document, actor)) is not None:
+            stmt = stmt.where(condition)
+        rows = (await s.execute(stmt)).scalars().all()
+    if not rows:
+        raise HTTPException(status_code=404, detail="no documents to export")
+
+    def build_archive(buffer: SpooledTemporaryFile[bytes]) -> int:
+        def unique_name(name: str, used: set[str]) -> str:
+            if name not in used:
+                used.add(name)
+                return name
+            stem, dot, ext = name.rpartition(".")
+            base = stem if dot else name
+            ext_part = f".{ext}" if dot else ""
+            index = 1
+            while (candidate := f"{base} ({index}){ext_part}") in used:
+                index += 1
+            used.add(candidate)
+            return candidate
+
+        manifest: list[dict[str, object]] = []
+        used_names: set[str] = set()
+        with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+            for doc in rows:
+                try:
+                    data = object_store.get(doc.object_key)
+                except Exception as exc:
+                    log.warning(
+                        "export: object missing | tenant=%s document=%s error=%s",
+                        tenant_id,
+                        doc.id,
+                        exc,
+                    )
+                    manifest.append(
+                        {
+                            "id": str(doc.id),
+                            "filename": doc.filename,
+                            "exported": False,
+                            "error": "object not found in storage",
+                        }
+                    )
+                    continue
+                archive_name = unique_name(doc.filename or f"{doc.id}.bin", used_names)
+                archive.writestr(archive_name, data)
+                manifest.append(
+                    {
+                        "id": str(doc.id),
+                        "filename": doc.filename,
+                        "archive_name": archive_name,
+                        "exported": True,
+                        "status": str(getattr(doc.status, "value", doc.status)),
+                        "size_bytes": doc.size_bytes,
+                        "source_type": getattr(doc, "source_type", "file") or "file",
+                        "source_url": getattr(doc, "source_url", None),
+                        "is_mine": bool(actor.user_id and doc.owner_user_id == actor.user_id),
+                        "is_shared": bool(doc.is_shared),
+                        "created_at": doc.created_at.isoformat() if doc.created_at else None,
+                    }
+                )
+            archive.writestr(
+                "manifest.json",
+                json.dumps(
+                    {
+                        "tenant_id": tenant_id,
+                        "exported_at": datetime.now(UTC).isoformat(),
+                        "document_count": len(manifest),
+                        "documents": manifest,
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                ),
+            )
+        return len(manifest)
+
+    # MinIO SDK and zipfile are synchronous — keep both off the event loop.
+    # SpooledTemporaryFile rolls to disk past 64 MB, so huge bases do not
+    # sit in RAM. Starlette does not own the handle: the streaming
+    # generator below closes it in finally.
+    buffer: SpooledTemporaryFile[bytes] = SpooledTemporaryFile(max_size=64 * 1024 * 1024)  # noqa: SIM115
+    count = await asyncio.to_thread(build_archive, buffer)
+    if count == 0:
+        buffer.close()
+        raise HTTPException(status_code=404, detail="no documents to export")
+    buffer.seek(0)
+
+    stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M")
+
+    async def _stream() -> AsyncIterator[bytes]:
+        try:
+            while chunk := await asyncio.to_thread(buffer.read, 1024 * 1024):
+                yield chunk
+        finally:
+            buffer.close()
+
+    return StreamingResponse(
+        _stream(),
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="knowledge-base-{tenant_id}-{stamp}.zip"',
+        },
+    )
 
 
 @router.post("/documents", response_model=DocumentResponse, status_code=202)
@@ -639,6 +772,67 @@ async def reindex_document(
         raise HTTPException(status_code=503, detail="ingestion service unavailable") from e
 
     return DocumentReindexResponse(document=response, changed=True, workflow_started=True)
+
+
+@router.patch("/documents/{document_id}/share", response_model=DocumentResponse)
+async def set_document_shared(
+    document_id: uuid.UUID,
+    body: DocumentShareRequest,
+    actor: ActorDep,
+) -> DocumentResponse:
+    """Flip a document between private and tenant-shared after upload.
+
+    Owner, admin or unbound-key only. Un-sharing is refused while the
+    document belongs to a shared notebook: stored notebook insights are
+    visible to everyone who can open it, so the shared-notebook invariant
+    (shared notebooks contain only shared documents) must hold.
+    """
+    tenant_id = actor.tenant_id
+    async with tenant_session(tenant_id) as s:
+        doc = (
+            await s.execute(
+                select(Document).where(Document.id == document_id, Document.tenant_id == tenant_id)
+            )
+        ).scalar_one_or_none()
+        if doc is None or not can_access(actor, doc):
+            raise HTTPException(status_code=404, detail="document not found")
+        if not can_manage(actor, doc):
+            raise HTTPException(
+                status_code=403,
+                detail="member keys cannot change sharing of documents they do not own",
+            )
+        if not body.shared:
+            shared_titles = list(
+                (
+                    await s.execute(
+                        select(Notebook.title)
+                        .join(NotebookDocument, NotebookDocument.notebook_id == Notebook.id)
+                        .where(
+                            NotebookDocument.document_id == document_id,
+                            NotebookDocument.tenant_id == tenant_id,
+                            Notebook.is_shared.is_(True),
+                        )
+                        .limit(3)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            if shared_titles:
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        "document is part of shared notebook(s) — remove it there first: "
+                        + ", ".join(shared_titles)
+                    ),
+                )
+        doc.is_shared = body.shared
+        await s.flush()
+        response = document_response(doc)
+    # Sharing changes who may retrieve the document — cached answers
+    # ("not found" refusals included) must not outlive the flip.
+    await invalidate_semantic_cache(tenant_id, f"document-share:{document_id}")
+    return response
 
 
 @router.delete("/documents/{document_id}", status_code=204)

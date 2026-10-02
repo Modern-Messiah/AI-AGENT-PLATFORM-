@@ -92,6 +92,22 @@ async def update_visual_progress(input: IngestionInput) -> None:
 
 
 async def prepare_visual_manifest(input: IngestionInput) -> VisualManifest:
+    if not input.object_key or not input.filename:
+        async with tenant_session(input.tenant_id) as session:
+            doc = (
+                await session.execute(
+                    select(Document).where(
+                        Document.id == uuid.UUID(input.document_id),
+                        Document.tenant_id == input.tenant_id,
+                    )
+                )
+            ).scalar_one_or_none()
+            if doc is not None:
+                if not input.object_key:
+                    input.object_key = doc.object_key
+                if not input.filename:
+                    input.filename = doc.filename
+
     if not is_visual_filename(input.filename):
         return VisualManifest(is_visual=False)
 

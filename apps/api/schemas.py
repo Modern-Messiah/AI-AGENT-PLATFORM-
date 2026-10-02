@@ -85,6 +85,10 @@ class DocumentReindexResponse(BaseModel):
     workflow_started: bool = True
 
 
+class DocumentShareRequest(BaseModel):
+    shared: bool = Field(description="true = visible to the whole tenant")
+
+
 class UrlCheckRequest(BaseModel):
     url: str = Field(min_length=1, max_length=4096)
 

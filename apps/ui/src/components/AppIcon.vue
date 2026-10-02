@@ -33,6 +33,9 @@
   <svg :width="size" :height="size" viewBox="0 0 20 20" fill="none" v-else-if="name === 'upload'">
     <path d="M10 13V4M6 8l4-4 4 4M4 16h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
   </svg>
+  <svg :width="size" :height="size" viewBox="0 0 20 20" fill="none" v-else-if="name === 'download'">
+    <path d="M10 3v10M6 9l4 4 4-4M4 17h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
   <svg :width="size" :height="size" viewBox="0 0 13 13" fill="none" v-else-if="name === 'plus'">
     <path d="M6.5 1v11M1 6.5h11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
   </svg>
