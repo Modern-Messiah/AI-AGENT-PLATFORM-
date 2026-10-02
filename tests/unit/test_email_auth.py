@@ -318,3 +318,54 @@ async def test_require_actor_accepts_session_cookie(monkeypatch: pytest.MonkeyPa
 
     assert actor.tenant_id == "main"
     assert actor.role == "member"
+
+
+# ── change_password ──────────────────────────────────────────────────────────
+
+
+async def test_change_password_with_valid_current_password(users) -> None:
+    from apps.api.schemas import PasswordChangeRequest
+    from packages.auth import Actor
+
+    user_id = uuid.uuid4()
+    users[MEMBER_EMAIL] = User(
+        id=user_id,
+        tenant_id="main",
+        email=MEMBER_EMAIL,
+        password_hash=hash_password("old-password-123"),
+        role="member",
+        name="Bob",
+    )
+    actor = Actor(tenant_id="main", role="member", user_id=user_id)
+
+    await login_router.change_password(
+        PasswordChangeRequest(new_password="brand-new-password", current_password="old-password-123"),
+        actor=actor,
+    )
+
+    updated = users[MEMBER_EMAIL]
+    assert verify_password("brand-new-password", updated.password_hash)
+
+
+async def test_change_password_with_invalid_current_password(users) -> None:
+    from apps.api.schemas import PasswordChangeRequest
+    from packages.auth import Actor
+
+    user_id = uuid.uuid4()
+    users[MEMBER_EMAIL] = User(
+        id=user_id,
+        tenant_id="main",
+        email=MEMBER_EMAIL,
+        password_hash=hash_password("old-password-123"),
+        role="member",
+        name="Bob",
+    )
+    actor = Actor(tenant_id="main", role="member", user_id=user_id)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await login_router.change_password(
+            PasswordChangeRequest(new_password="brand-new-password", current_password="wrong-password"),
+            actor=actor,
+        )
+    assert exc_info.value.status_code == 400
+    assert "invalid current password" in exc_info.value.detail

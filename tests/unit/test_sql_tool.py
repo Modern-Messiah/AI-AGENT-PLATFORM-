@@ -225,3 +225,71 @@ def test_union_injection_blocked() -> None:
     stripped = _strip_literals(sql)
     # _FORBIDDEN_TABLES catches api_keys in the UNION branch
     assert _FORBIDDEN_TABLES.search(stripped)
+
+
+# ── _build_scoped_query CTE isolation tests ──────────────────────────────────
+
+
+def test_build_scoped_query_unbound_key() -> None:
+    from packages.agents.deps import AgentDeps
+    from packages.agents.tools.sql_query import _build_scoped_query
+
+    deps = AgentDeps(tenant_id="acme", document_ids=None, user_id=None)
+    query = "SELECT * FROM documents WHERE tenant_id = '{tenant_id}'"
+    res = _build_scoped_query(query, deps, query)
+    assert "WITH" not in res
+    assert "tenant_id = 'acme'" in res
+
+
+def test_build_scoped_query_with_user_and_docs() -> None:
+    import uuid
+
+    from packages.agents.deps import AgentDeps
+    from packages.agents.tools.sql_query import _build_scoped_query
+
+    doc_id = uuid.uuid4()
+    user_id = uuid.uuid4()
+    deps = AgentDeps(tenant_id="acme", document_ids=[doc_id], user_id=user_id)
+    query = "SELECT content FROM chunks WHERE tenant_id = '{tenant_id}'"
+    res = _build_scoped_query(query, deps, query)
+
+    assert "WITH" in res
+    assert f"'{doc_id}'::uuid" in res
+    assert f"'{user_id}'::uuid" in res
+    assert "documents AS (SELECT * FROM public.documents" in res
+    assert "chunks AS (SELECT * FROM public.chunks" in res
+    assert "chat_sessions AS (SELECT * FROM public.chat_sessions" in res
+    assert "chat_messages AS (" in res
+
+
+def test_build_scoped_query_empty_docs() -> None:
+    import uuid
+
+    from packages.agents.deps import AgentDeps
+    from packages.agents.tools.sql_query import _build_scoped_query
+
+    user_id = uuid.uuid4()
+    deps = AgentDeps(tenant_id="acme", document_ids=[], user_id=user_id)
+    query = "SELECT content FROM chunks WHERE tenant_id = '{tenant_id}'"
+    res = _build_scoped_query(query, deps, query)
+
+    assert "documents AS (SELECT * FROM public.documents WHERE false)" in res
+    assert "chunks AS (SELECT * FROM public.chunks WHERE false)" in res
+
+
+def test_build_scoped_query_merges_with_existing_with() -> None:
+    import uuid
+
+    from packages.agents.deps import AgentDeps
+    from packages.agents.tools.sql_query import _build_scoped_query
+
+    doc_id = uuid.uuid4()
+    deps = AgentDeps(tenant_id="acme", document_ids=[doc_id], user_id=None)
+    query = "WITH my_cte AS (SELECT 1) SELECT * FROM my_cte, documents WHERE tenant_id = '{tenant_id}'"
+    res = _build_scoped_query(query, deps, query)
+
+    # Should only have one WITH keyword at the start
+    assert res.count("WITH") == 1
+    assert "my_cte AS (SELECT 1)" in res
+    assert "documents AS (SELECT * FROM public.documents" in res
+

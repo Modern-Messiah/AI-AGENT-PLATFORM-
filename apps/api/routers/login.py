@@ -415,6 +415,12 @@ async def change_password(
         user = (await s.execute(select(User).where(User.id == actor.user_id))).scalar_one_or_none()
         if user is None:
             raise HTTPException(status_code=404, detail="user not found")
+        if (
+            user.password_hash is not None
+            and body.current_password is not None
+            and not verify_password(body.current_password, user.password_hash)
+        ):
+            raise HTTPException(status_code=400, detail="invalid current password")
         user.password_hash = hash_password(body.new_password)
         s.add(user)
     return None

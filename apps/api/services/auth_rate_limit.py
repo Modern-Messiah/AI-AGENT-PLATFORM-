@@ -9,6 +9,7 @@ the platform-wide availability choice.
 
 from __future__ import annotations
 
+import ipaddress
 import logging
 
 from fastapi import HTTPException, Request
@@ -25,11 +26,48 @@ AUTH_LIMIT_PER_MINUTE = 15
 ADMIN_LIMIT_PER_MINUTE = 60
 
 
+def _is_trusted_proxy(peer_ip: str, trusted_list: list[str]) -> bool:
+    try:
+        peer = ipaddress.ip_address(peer_ip)
+    except ValueError:
+        return False
+    for item in trusted_list:
+        item = item.strip()
+        if not item:
+            continue
+        try:
+            if "/" in item:
+                if peer in ipaddress.ip_network(item, strict=False):
+                    return True
+            elif peer == ipaddress.ip_address(item):
+                return True
+        except ValueError:
+            continue
+    return False
+
+
 def _client_ip(request: Request) -> str:
-    # request.client.host only: X-Forwarded-For is client-spoofable and
-    # must not be trusted for rate-limit keys without a trusted-proxy list.
+    # Direct peer IP
     client = request.client
-    return client.host if client else "unknown"
+    direct_ip = client.host if client else "unknown"
+    if not settings.trusted_proxies:
+        return direct_ip
+
+    trusted = [p.strip() for p in settings.trusted_proxies.split(",") if p.strip()]
+    if not _is_trusted_proxy(direct_ip, trusted):
+        return direct_ip
+
+    xff = request.headers.get("X-Forwarded-For")
+    if not xff:
+        return direct_ip
+
+    # Walk from right to left through proxies until the first untrusted IP
+    parts = [p.strip() for p in xff.split(",") if p.strip()]
+    for ip_str in reversed(parts):
+        if not _is_trusted_proxy(ip_str, trusted):
+            return ip_str
+
+    return parts[0] if parts else direct_ip
 
 
 async def _check(key: str, limit: int) -> None:

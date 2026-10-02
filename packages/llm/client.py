@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import threading
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import cast
@@ -14,6 +15,22 @@ from pydantic_ai.providers.openai import OpenAIProvider
 
 from packages.core import settings
 from packages.llm.keyring import resolve_api_key
+
+_client_cache: dict[tuple[str, str, int], AsyncOpenAI] = {}
+_client_cache_lock = threading.Lock()
+
+
+def get_async_openai_client(base_url: str, api_key: str | None) -> AsyncOpenAI:
+    """Return a cached AsyncOpenAI client to reuse HTTP connection pools."""
+    key = (base_url, api_key or "not-set", id(AsyncOpenAI))
+    client = _client_cache.get(key)
+    if client is None:
+        with _client_cache_lock:
+            client = _client_cache.get(key)
+            if client is None:
+                client = AsyncOpenAI(base_url=base_url, api_key=api_key or "not-set")
+                _client_cache[key] = client
+    return client
 
 _PROVIDER_ENV_KEYS: dict[str, str] = {
     "moonshot": "moonshot",
@@ -198,7 +215,7 @@ def build_model(model_name: str | None = None) -> OpenAIModel:
     """
     provider_key, model_id, base_url, api_key = _resolve_model(model_name)
 
-    client = AsyncOpenAI(base_url=base_url, api_key=api_key or "not-set")
+    client = get_async_openai_client(base_url, api_key)
     provider = OpenAIProvider(openai_client=client)
 
     extra_body = _provider_extra_body(provider_key, model_id)
@@ -223,7 +240,7 @@ async def stream_chat_text(
 ) -> AsyncIterator[ChatStreamEvent]:
     """Stream plain text from an OpenAI-compatible provider without agent tools."""
     provider_key, model_id, base_url, api_key = _resolve_model(model_name)
-    client = AsyncOpenAI(base_url=base_url, api_key=api_key or "not-set")
+    client = get_async_openai_client(base_url, api_key)
 
     extra: dict[str, object] = {}
     extra_body = _provider_extra_body(provider_key, model_id)
@@ -271,7 +288,7 @@ async def complete_chat_json(
 ) -> str:
     """Return one JSON response from an OpenAI-compatible chat provider."""
     provider_key, model_id, base_url, api_key = _resolve_model(model_name)
-    client = AsyncOpenAI(base_url=base_url, api_key=api_key or "not-set")
+    client = get_async_openai_client(base_url, api_key)
 
     extra: dict[str, object] = {}
     extra_body = _provider_extra_body(provider_key, model_id)
@@ -307,7 +324,7 @@ async def complete_vision_text(
 ) -> str:
     """Describe one image using the configured OpenAI-compatible vision model."""
     provider_key, model_id, base_url, api_key = _resolve_model(model_name or settings.vision_model)
-    client = AsyncOpenAI(base_url=base_url, api_key=api_key or "not-set")
+    client = get_async_openai_client(base_url, api_key)
     encoded = base64.b64encode(image_bytes).decode("ascii")
 
     extra: dict[str, object] = {}

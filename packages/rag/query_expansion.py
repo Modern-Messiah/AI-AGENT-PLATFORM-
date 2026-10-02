@@ -138,6 +138,7 @@ async def retrieve_chunks_with_expansion(
     Single-document scopes skip the escalation: the user explicitly chose
     the document and the distance cutoff is already disabled there.
     """
+    final_k = k or settings.retrieval_top_k
     # Two-stage retrieval: stage 1 over-fetches a wide candidate pool
     # (RERANK_CANDIDATE_K, e.g. 60) so the stage-2 reranker has material
     # to choose from; the final k is applied after reranking.
@@ -152,10 +153,12 @@ async def retrieve_chunks_with_expansion(
         document_id=document_id,
         document_ids=document_ids,
     )
-    if document_id is not None or not settings.query_expansion_enabled:
-        return primary
+    if document_id is not None:
+        return primary[:final_k]
+    if not settings.query_expansion_enabled:
+        return await _maybe_llm_rerank(query, primary, document_id=document_id, final_k=final_k)
     if primary and max(chunk.score for chunk in primary) >= settings.query_expansion_trigger_score:
-        return primary
+        return await _maybe_llm_rerank(query, primary, document_id=document_id, final_k=final_k)
 
     if not corpus_langs:
         async with tenant_session(tenant_id) as db:
@@ -172,7 +175,7 @@ async def retrieve_chunks_with_expansion(
             ]
     variants = await expand_query(query, corpus_langs=corpus_langs)
     if len(variants) == 1:
-        return primary
+        return await _maybe_llm_rerank(query, primary, document_id=document_id, final_k=final_k)
 
     variant_results: list[list[RetrievedChunk]] = [primary]
     for variant in variants[1:]:
@@ -189,10 +192,19 @@ async def retrieve_chunks_with_expansion(
 
     merged = merge_variant_results(variant_results, limit=2 * (fetch_k or settings.retrieval_top_k))
     reranked = rerank_chunks(query, merged)
+    return await _maybe_llm_rerank(query, reranked, document_id=document_id, final_k=final_k)
+
+
+async def _maybe_llm_rerank(
+    query: str,
+    chunks: list[RetrievedChunk],
+    *,
+    document_id: str | uuid.UUID | None,
+    final_k: int,
+) -> list[RetrievedChunk]:
     if document_id is not None or not settings.llm_rerank_enabled:
-        return reranked
-    llm_reranked = await rerank_chunks_with_llm(query, reranked)
+        return chunks[:final_k]
+    llm_reranked = await rerank_chunks_with_llm(query, chunks)
     if llm_reranked is None:
-        return reranked
-    final_k = k or settings.retrieval_top_k
+        return chunks[:final_k]
     return llm_reranked[:final_k]

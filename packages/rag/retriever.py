@@ -371,6 +371,8 @@ async def retrieve_chunks(
     document_id: str | uuid.UUID | None = None,
     document_ids: Sequence[str | uuid.UUID] | None = None,
 ) -> list[RetrievedChunk]:
+    if document_ids is not None and not document_ids:
+        return []
     k = candidate_limit_for_scope(
         default_limit=k or settings.retrieval_top_k,
         scoped_limit=settings.scoped_rag_candidate_k,
@@ -454,6 +456,6 @@ async def retrieve_chunks(
         for chunk_id in merged_ids
     ]
     ranked = rerank_chunks(query, chunks)
-    if document_uuids:
+    if document_id is not None or (document_ids is not None and len(document_ids) == 1):
         return ranked
     return filter_unsupported_query_chunks(query, ranked)

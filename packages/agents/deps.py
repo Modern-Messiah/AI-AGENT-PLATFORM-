@@ -9,3 +9,4 @@ class AgentDeps:
     # Personal knowledge-base scope: documents the acting user may access.
     # None = no restriction (unbound tenant API key).
     document_ids: list[uuid.UUID] | None = None
+    user_id: uuid.UUID | None = None
