@@ -123,6 +123,10 @@ class Settings(BaseSettings):
     # instrumentation. Empty token = disabled, nothing changes.
     logfire_token: str = ""
 
+    # Comma-separated trusted reverse proxy IPs / CIDRs (e.g. "127.0.0.1,172.16.0.0/12,10.0.0.0/8").
+    # When set, rate limiters safely resolve client IP via X-Forwarded-For.
+    trusted_proxies: str = ""
+
     # ── Google OAuth login + JWT sessions ────────────────────────────────────
     # "Sign in with Google" for the user/admin cabinets. All four values must
     # be set for the login flow to be enabled; when anything is missing the

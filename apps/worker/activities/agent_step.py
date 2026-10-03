@@ -49,11 +49,17 @@ async def run_agent_step(payload: AgentRunInput) -> AgentRunOutput:
 
     # ── LLM call ─────────────────────────────────────────────────────────────
     agent = _get_agent(payload.model)
+    acting_user_id = uuid.UUID(payload.user_id) if payload.user_id else None
+    doc_ids: list[uuid.UUID] | None
+    if acting_user_id is not None or payload.document_ids:
+        doc_ids = [uuid.UUID(doc_id) for doc_id in payload.document_ids]
+    else:
+        doc_ids = None
+
     deps = AgentDeps(
         tenant_id=payload.tenant_id,
-        # Empty list = unbound tenant key (whole-tenant corpus); keep it None
-        # so the retriever does not treat [] as "no document filter".
-        document_ids=[uuid.UUID(doc_id) for doc_id in payload.document_ids] or None,
+        user_id=acting_user_id,
+        document_ids=doc_ids,
     )
 
     model_name = payload.model or settings.strong_model

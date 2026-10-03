@@ -89,3 +89,45 @@ def test_merge_variant_results_respects_limit() -> None:
         limit=2,
     )
     assert len(merged) == 2
+
+
+async def test_retrieve_chunks_with_expansion_applies_llm_rerank_and_slices_k(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from packages.rag.query_expansion import retrieve_chunks_with_expansion
+
+    monkeypatch.setattr(settings, "query_expansion_enabled", True)
+    monkeypatch.setattr(settings, "llm_rerank_enabled", True)
+    monkeypatch.setattr(settings, "rerank_candidate_k", 20)
+
+    # 15 chunks with high score >= 0.55 so query expansion is skipped
+    fake_chunks = [_chunk(f"c_{i}", 0.8 - i * 0.01) for i in range(15)]
+
+    async def fake_retrieve(*args, **kwargs):
+        return list(fake_chunks)
+
+    rerank_called = []
+
+    async def fake_llm_rerank(query, chunks):
+        rerank_called.append(len(chunks))
+        # reverse order as a test
+        return list(reversed(chunks))
+
+    monkeypatch.setattr("packages.rag.query_expansion.retrieve_chunks", fake_retrieve)
+    monkeypatch.setattr("packages.rag.query_expansion.rerank_chunks_with_llm", fake_llm_rerank)
+
+    results = await retrieve_chunks_with_expansion("test query", "acme", k=5)
+    assert len(rerank_called) == 1
+    assert rerank_called[0] == 15
+    # Result must be sliced to k=5, NOT returning all 15 chunks!
+    assert len(results) == 5
+    assert results[0].chunk_id == "c_14"
+
+
+async def test_retrieve_chunks_empty_document_ids_returns_empty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from packages.rag.retriever import retrieve_chunks
+
+    res = await retrieve_chunks("query", "acme", document_ids=[])
+    assert res == []

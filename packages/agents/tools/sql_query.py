@@ -68,6 +68,64 @@ def _collapse_parens(sql: str) -> str:
     return sql
 
 
+def _build_scoped_query(query: str, deps: AgentDeps, stripped: str) -> str:
+    safe_query = query.replace("{tenant_id}", deps.tenant_id)
+    if deps.user_id is not None:
+        safe_query = safe_query.replace("{user_id}", str(deps.user_id))
+
+    # Enforce a row cap if the query has no LIMIT clause.
+    if not re.search(r"\bLIMIT\b", stripped, re.IGNORECASE):
+        safe_query = safe_query.rstrip().rstrip(";") + f" LIMIT {_MAX_ROWS}"
+
+    # Per-user & personal knowledge base scoping:
+    # If document_ids or user_id is restricted, shadow the tables via CTEs
+    # so the agent cannot read other users' private documents, chunks, or chat sessions.
+    scope_ctes: list[str] = []
+    if deps.document_ids is not None:
+        if deps.document_ids:
+            doc_ids_str = ", ".join(f"'{d}'::uuid" for d in deps.document_ids)
+            scope_ctes.append(
+                f"documents AS (SELECT * FROM public.documents WHERE tenant_id = '{deps.tenant_id}' AND id IN ({doc_ids_str}))"
+            )
+            scope_ctes.append(
+                f"chunks AS (SELECT * FROM public.chunks WHERE tenant_id = '{deps.tenant_id}' AND document_id IN ({doc_ids_str}))"
+            )
+        else:
+            scope_ctes.append("documents AS (SELECT * FROM public.documents WHERE false)")
+            scope_ctes.append("chunks AS (SELECT * FROM public.chunks WHERE false)")
+
+    if deps.user_id is not None:
+        user_id_str = f"'{deps.user_id}'::uuid"
+        scope_ctes.append(
+            f"chat_sessions AS (SELECT * FROM public.chat_sessions WHERE tenant_id = '{deps.tenant_id}' AND user_id = {user_id_str})"
+        )
+        scope_ctes.append(
+            "chat_messages AS ("
+            "SELECT cm.* FROM public.chat_messages cm "
+            "JOIN public.chat_sessions cs ON cs.id = cm.session_id "
+            f"WHERE cm.tenant_id = '{deps.tenant_id}' AND cs.user_id = {user_id_str})"
+        )
+    elif deps.document_ids is not None:
+        scope_ctes.append("chat_sessions AS (SELECT * FROM public.chat_sessions WHERE false)")
+        scope_ctes.append("chat_messages AS (SELECT * FROM public.chat_messages WHERE false)")
+
+    if scope_ctes:
+        cte_block = ",\n".join(scope_ctes)
+        stripped_query = safe_query.strip()
+        if re.match(r"^WITH\s+", stripped_query, re.IGNORECASE):
+            safe_query = re.sub(
+                r"^WITH\s+",
+                f"WITH {cte_block},\n",
+                stripped_query,
+                count=1,
+                flags=re.IGNORECASE,
+            )
+        else:
+            safe_query = f"WITH {cte_block}\n{stripped_query}"
+
+    return safe_query
+
+
 def register_sql_tool(agent: Agent[AgentDeps, object]) -> None:
     @agent.tool
     async def sql_query(ctx: RunContext[AgentDeps], query: str) -> list[dict[str, object]]:
@@ -77,7 +135,7 @@ def register_sql_tool(agent: Agent[AgentDeps, object]) -> None:
         Only SELECT statements are allowed. Results are capped at 500 rows.
 
         Write {tenant_id} as a literal placeholder — it is replaced safely
-        with the current tenant's id.
+        with the current tenant's id. Write {user_id} for the current user's id.
 
         Schema:
           documents(id, tenant_id, filename, mime_type, object_key,
@@ -146,11 +204,7 @@ def register_sql_tool(agent: Agent[AgentDeps, object]) -> None:
                 }
             ]
 
-        safe_query = query.replace("{tenant_id}", ctx.deps.tenant_id)
-
-        # Enforce a row cap if the query has no LIMIT clause.
-        if not re.search(r"\bLIMIT\b", stripped, re.IGNORECASE):
-            safe_query = safe_query.rstrip().rstrip(";") + f" LIMIT {_MAX_ROWS}"
+        safe_query = _build_scoped_query(query, ctx.deps, stripped)
 
         try:
             async with tenant_session(ctx.deps.tenant_id) as session:

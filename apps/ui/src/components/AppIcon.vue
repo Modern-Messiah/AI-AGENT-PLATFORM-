@@ -64,6 +64,12 @@
   <svg :width="size" :height="size" viewBox="0 0 16 16" fill="none" v-else-if="name === 'chevron-down'">
     <path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
   </svg>
+  <svg :width="size" :height="size" viewBox="0 0 16 16" fill="none" v-else-if="name === 'chevron-left'">
+    <path d="M10 4L6 8l4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+  <svg :width="size" :height="size" viewBox="0 0 16 16" fill="none" v-else-if="name === 'chevron-right'">
+    <path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
   <svg :width="size" :height="size" viewBox="0 0 16 16" fill="none" v-else-if="name === 'book'">
     <path d="M2.5 3.5A2 2 0 0 1 4.5 1.5h8A1.5 1.5 0 0 1 14 3v10.5a1.5 1.5 0 0 1-1.5 1.5h-8A2 2 0 0 1 2.5 13V3.5z" stroke="currentColor" stroke-width="1.3"/>
     <path d="M2.5 12.5A2 2 0 0 1 4.5 10.5H14" stroke="currentColor" stroke-width="1.3"/>

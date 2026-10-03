@@ -1,7 +1,14 @@
 <template>
   <div class="sidebar" :class="{ collapsed, 'mobile-open': mobileOpen }">
     <div class="sidebar-logo">
-      <div class="logo-mark">A</div>
+      <div
+        class="logo-mark"
+        :class="{ clickable: collapsed }"
+        :title="collapsed ? t('app.expandPanel') : undefined"
+        @click="collapsed && $emit('toggle')"
+      >
+        A
+      </div>
       <div class="logo-copy">
         <div class="logo-text">AgentPlatform</div>
         <div class="logo-sub">v1.0.0 · local</div>
@@ -13,11 +20,13 @@
         :title="collapsed ? t('app.expandPanel') : t('app.collapsePanel')"
         @click="$emit('toggle')"
       >
-        <span class="sidebar-toggle-mark">{{ collapsed ? '›' : '‹' }}</span>
+        <span class="sidebar-toggle-mark">
+          <AppIcon :name="collapsed ? 'chevron-right' : 'chevron-left'" :size="12" />
+        </span>
       </button>
     </div>
 
-    <div class="sidebar-section">{{ t('app.navigation') }}</div>
+    <div class="sidebar-section nav-section">{{ t('app.navigation') }}</div>
     <RouterLink v-for="item in nav" :key="item.path"
       :to="item.path"
       class="nav-item"
@@ -28,7 +37,7 @@
       <span class="nav-label">{{ item.label }}</span>
     </RouterLink>
 
-    <div class="sidebar-section">{{ t('app.configuration') }}</div>
+    <div class="sidebar-section config-section">{{ t('app.configuration') }}</div>
     <div class="nav-item" :title="t('app.settings')" @click="$emit('openSettings')">
       <AppIcon name="settings" class="nav-icon" />
       <span class="nav-label">{{ t('app.settings') }}</span>
@@ -38,10 +47,13 @@
       <div
         v-if="session.isAuthenticated"
         :class="['tenant-pill', 'session-pill', { clickable: collapsed }]"
-        :title="collapsed ? t('app.expandPanel') : (session.user?.email || session.displayName)"
+        :title="sessionTooltip"
         @click="collapsed && $emit('toggle')"
       >
-        <div class="tenant-dot session"></div>
+        <div class="user-avatar-wrap">
+          <div class="user-avatar">{{ userInitial }}</div>
+          <div class="tenant-dot session"></div>
+        </div>
         <div class="tenant-info">
           <div class="tenant-name">{{ session.displayName }}</div>
           <div class="tenant-key">
@@ -62,10 +74,14 @@
       <div
         v-else
         class="tenant-pill"
+        :class="{ clickable: collapsed }"
         @click="$emit('openSettings')"
         :title="settings.isKeyManagedByEnv ? t('app.envKeyTitle') : t('app.changeKeyTitle')"
       >
-        <div :class="['tenant-dot', dotClass]"></div>
+        <div class="user-avatar-wrap key-mode">
+          <AppIcon name="settings" :size="14" class="key-mode-icon" />
+          <div :class="['tenant-dot', dotClass]"></div>
+        </div>
         <div class="tenant-info">
           <div class="tenant-name">{{ statusLabel }}</div>
           <div class="tenant-key">{{ settings.keyMasked }}</div>
@@ -83,7 +99,7 @@ import { useSessionStore } from '@/stores/session'
 import { useI18n } from '@/composables/useI18n'
 import AppIcon from './AppIcon.vue'
 
-defineProps({
+const props = defineProps({
   collapsed: { type: Boolean, default: false },
   mobileOpen: { type: Boolean, default: false },
 })
@@ -93,6 +109,18 @@ const route = useRoute()
 const settings = useSettingsStore()
 const session = useSessionStore()
 const { t } = useI18n()
+
+const userInitial = computed(() => {
+  const name = session.displayName || session.user?.email || 'A'
+  return name.trim().charAt(0).toUpperCase()
+})
+
+const sessionTooltip = computed(() => {
+  const role = session.isAdmin ? t('app.roleAdmin') : t('app.roleMember')
+  const tenant = session.user?.tenant_id ? ` · ${session.user.tenant_id}` : ''
+  const base = `${session.displayName || ''} (${role}${tenant})`
+  return props.collapsed ? `${base} — ${t('app.expandPanel')}` : (session.user?.email || session.displayName)
+})
 
 const dotClass = computed(() => {
   if (!settings.isConnected)    return 'off'
@@ -134,8 +162,62 @@ function isNavActive(path) {
 .session-pill {
   cursor: default;
 }
-.tenant-dot.session {
+.tenant-pill.clickable {
+  cursor: pointer;
+}
+.user-avatar-wrap {
+  position: relative;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.user-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, color-mix(in oklch, var(--accent) 35%, var(--s3)), var(--s2));
+  border: 1px solid color-mix(in oklch, var(--border2) 80%, transparent);
+  color: var(--text);
+  font-weight: 600;
+  font-size: 12px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+  transition: transform 0.12s var(--ease-spring), border-color 0.12s var(--ease-spring);
+}
+.clickable:hover .user-avatar {
+  transform: scale(1.05);
+  border-color: var(--border2);
+}
+.user-avatar-wrap .tenant-dot.session {
+  position: absolute;
+  bottom: -1px;
+  right: -1px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
   background: var(--green);
+  box-shadow: 0 0 0 2px var(--s2), 0 0 6px var(--green);
+}
+.user-avatar-wrap.key-mode {
+  position: relative;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted2);
+}
+.user-avatar-wrap.key-mode .tenant-dot {
+  position: absolute;
+  bottom: -1px;
+  right: -1px;
 }
 .logout-btn {
   margin-left: auto;

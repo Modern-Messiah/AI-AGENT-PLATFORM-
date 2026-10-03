@@ -323,20 +323,24 @@ html, body, #app {
   display: flex; flex-direction: column;
   padding: 0 0 16px 0;
   transition: width 0.22s var(--ease-spring);
+  overflow: hidden;
 }
 .sidebar.collapsed { width: 60px; }
 .sidebar-logo {
   position: relative;
-  padding: 20px 18px 16px;
+  padding: 16px 14px 14px;
   display: flex; align-items: center; gap: 10px;
   border-bottom: 1px solid color-mix(in oklch, var(--border) 60%, transparent);
   margin-bottom: 8px;
+  transition: padding 0.2s var(--ease-spring);
 }
 .sidebar.collapsed .sidebar-logo {
-  gap: 0;
+  flex-direction: column;
+  align-items: center;
   justify-content: center;
-  padding-right: 12px;
-  padding-left: 12px;
+  gap: 8px;
+  padding: 12px 8px 10px;
+  margin-bottom: 6px;
 }
 .logo-mark {
   width: 28px; height: 28px;
@@ -345,6 +349,17 @@ html, body, #app {
   display: flex; align-items: center; justify-content: center;
   font-size: 13px; font-weight: 600; color: var(--on-accent); flex-shrink: 0;
   box-shadow: 0 2px 6px color-mix(in oklch, var(--accent) 30%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  transition: transform 0.12s var(--ease-spring), filter 0.12s var(--ease-spring);
+}
+.logo-mark.clickable {
+  cursor: pointer;
+}
+.logo-mark.clickable:hover {
+  filter: brightness(1.1);
+  transform: scale(1.05);
+}
+.logo-mark.clickable:active {
+  transform: scale(0.95);
 }
 .logo-copy { min-width: 0; overflow: hidden; transition: opacity 0.15s var(--ease-spring), transform 0.15s var(--ease-spring); }
 .logo-text { font-size: 13px; font-weight: 600; color: var(--text); letter-spacing: -0.015em; }
@@ -366,16 +381,14 @@ html, body, #app {
 .sidebar-toggle:hover { background: var(--s3); border-color: var(--border2); color: var(--text); }
 .sidebar-toggle:active { transform: scale(0.92); }
 .sidebar-toggle:focus-visible { outline: 2px solid color-mix(in oklch, var(--accent) 55%, transparent); outline-offset: 2px; }
-.sidebar-toggle-mark { font-size: 18px; line-height: 1; transform: translateY(-1px); }
+.sidebar-toggle-mark { font-size: 12px; line-height: 1; display: inline-flex; align-items: center; justify-content: center; }
 .sidebar.collapsed .sidebar-toggle {
-  position: absolute;
-  right: -13px;
-  top: 22px;
-  /* Above the topbar (z-index 10): the ear must stay fully visible on the
-     panel edge instead of being clipped where it overlaps the topbar. */
-  z-index: 20;
-  background: var(--s1);
-  box-shadow: 0 0 0 1px var(--border), 0 8px 18px var(--shadow-soft);
+  position: static;
+  margin: 0;
+  width: 24px;
+  height: 24px;
+  box-shadow: none;
+  background: var(--s2);
 }
 
 .nav-item {
@@ -402,9 +415,14 @@ html, body, #app {
 .nav-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; transition: opacity 0.15s var(--ease-spring), transform 0.15s var(--ease-spring); }
 
 .sidebar-section { padding: 10px 18px 4px; font-size: 10.5px; font-weight: 600; color: var(--muted); letter-spacing: 0.06em; text-transform: uppercase; margin-top: 6px; }
-.sidebar.collapsed .sidebar-section {
-  height: 14px;
-  padding: 7px 0 0;
+.sidebar.collapsed .sidebar-section.nav-section {
+  display: none;
+}
+.sidebar.collapsed .sidebar-section.config-section {
+  height: 1px;
+  padding: 0;
+  margin: 6px 12px;
+  background: color-mix(in oklch, var(--border) 60%, transparent);
   overflow: hidden;
   color: transparent;
   font-size: 0;
@@ -412,41 +430,38 @@ html, body, #app {
 .sidebar.collapsed .nav-item {
   justify-content: center;
   gap: 0;
-  padding-right: 0;
-  padding-left: 0;
-  margin-right: 8px;
-  margin-left: 8px;
+  padding: 8px 0;
+  width: 44px;
+  height: 36px;
+  margin: 3px 8px;
 }
 .sidebar.collapsed .logo-copy,
 .sidebar.collapsed .nav-label,
 .sidebar.collapsed .tenant-info {
-  width: 0;
-  opacity: 0;
-  pointer-events: none;
-  transform: translateX(-4px);
+  display: none;
 }
 
 .sidebar-bottom { margin-top: auto; border-top: 1px solid color-mix(in oklch, var(--border) 60%, transparent); padding-top: 12px; }
-.sidebar.collapsed .sidebar-bottom { padding-top: 10px; }
+.sidebar.collapsed .sidebar-bottom { padding-top: 8px; }
 .tenant-pill {
   margin: 0 8px 8px;
   padding: 8px 12px;
   background: color-mix(in oklch, var(--s2) 80%, transparent);
   border: 1px solid color-mix(in oklch, var(--border) 60%, transparent);
   border-radius: 9px;
-  display: flex; align-items: center; gap: 8px;
+  display: flex; align-items: center; gap: 10px;
   cursor: pointer;
   transition: background 0.15s var(--ease-spring), border-color 0.15s var(--ease-spring), transform 0.08s var(--ease-spring-snappy);
 }
 .sidebar.collapsed .tenant-pill {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  margin: 0 8px 6px;
   gap: 0;
   justify-content: center;
-  padding-right: 0;
-  padding-left: 0;
-  cursor: pointer;
+  align-items: center;
 }
-/* The logout control does not fit the 60px rail together with the status
-   dot — hide it collapsed; the pill itself expands the sidebar on click. */
 .sidebar.collapsed .logout-btn { display: none; }
 .tenant-pill:hover { background: var(--s3); border-color: var(--border2); }
 .tenant-pill:active { transform: scale(0.97); }
