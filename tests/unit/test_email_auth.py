@@ -339,7 +339,9 @@ async def test_change_password_with_valid_current_password(users) -> None:
     actor = Actor(tenant_id="main", role="member", user_id=user_id)
 
     await login_router.change_password(
-        PasswordChangeRequest(new_password="brand-new-password", current_password="old-password-123"),
+        PasswordChangeRequest(
+            new_password="brand-new-password", current_password="old-password-123"
+        ),
         actor=actor,
     )
 
@@ -364,7 +366,9 @@ async def test_change_password_with_invalid_current_password(users) -> None:
 
     with pytest.raises(HTTPException) as exc_info:
         await login_router.change_password(
-            PasswordChangeRequest(new_password="brand-new-password", current_password="wrong-password"),
+            PasswordChangeRequest(
+                new_password="brand-new-password", current_password="wrong-password"
+            ),
             actor=actor,
         )
     assert exc_info.value.status_code == 400

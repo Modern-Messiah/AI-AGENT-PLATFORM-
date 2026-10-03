@@ -150,6 +150,7 @@ async def test_power_tools_require_admin() -> None:
 
 async def test_admin_delete_document(monkeypatch) -> None:
     from datetime import UTC, datetime
+
     from packages.storage import Document, DocumentStatus
     from packages.storage.object_store import object_store
 

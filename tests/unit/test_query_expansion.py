@@ -131,4 +131,3 @@ async def test_retrieve_chunks_empty_document_ids_returns_empty(
 
     res = await retrieve_chunks("query", "acme", document_ids=[])
     assert res == []
-

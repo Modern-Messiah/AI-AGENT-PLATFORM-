@@ -285,11 +285,12 @@ def test_build_scoped_query_merges_with_existing_with() -> None:
 
     doc_id = uuid.uuid4()
     deps = AgentDeps(tenant_id="acme", document_ids=[doc_id], user_id=None)
-    query = "WITH my_cte AS (SELECT 1) SELECT * FROM my_cte, documents WHERE tenant_id = '{tenant_id}'"
+    query = (
+        "WITH my_cte AS (SELECT 1) SELECT * FROM my_cte, documents WHERE tenant_id = '{tenant_id}'"
+    )
     res = _build_scoped_query(query, deps, query)
 
     # Should only have one WITH keyword at the start
     assert res.count("WITH") == 1
     assert "my_cte AS (SELECT 1)" in res
     assert "documents AS (SELECT * FROM public.documents" in res
-

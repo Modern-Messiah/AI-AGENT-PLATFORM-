@@ -32,6 +32,7 @@ def get_async_openai_client(base_url: str, api_key: str | None) -> AsyncOpenAI:
                 _client_cache[key] = client
     return client
 
+
 _PROVIDER_ENV_KEYS: dict[str, str] = {
     "moonshot": "moonshot",
     "deepseek": "deepseek",
