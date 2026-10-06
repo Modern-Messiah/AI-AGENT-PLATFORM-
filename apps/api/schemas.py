@@ -455,6 +455,7 @@ class EmailLoginResponse(BaseModel):
 
 class PasswordChangeRequest(BaseModel):
     new_password: str = Field(min_length=8, max_length=256)
+    current_password: str | None = Field(default=None, max_length=256)
 
 
 class LlmKeyInfo(BaseModel):

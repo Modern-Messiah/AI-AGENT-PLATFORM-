@@ -146,3 +146,82 @@ async def test_power_tools_require_admin() -> None:
     with pytest.raises(HTTPException) as exc_info:
         await require_admin_principal(x_admin_secret="wrong")
     assert exc_info.value.status_code == 403
+
+
+async def test_admin_delete_document(monkeypatch) -> None:
+    from datetime import UTC, datetime
+
+    from packages.storage import Document, DocumentStatus
+    from packages.storage.object_store import object_store
+
+    doc_id = uuid.uuid4()
+    doc = Document(
+        id=doc_id,
+        tenant_id="tenant-123",
+        filename="test.pdf",
+        mime_type="application/pdf",
+        object_key="docs/test.pdf",
+        status=DocumentStatus.done,
+        created_at=datetime.now(UTC),
+    )
+
+    deleted_in_tenant: list[Document] = []
+
+    class FakeAdminSession:
+        async def __aenter__(self) -> FakeAdminSession:
+            return self
+
+        async def __aexit__(self, *a: object) -> None:
+            return None
+
+        async def execute(self, statement: object) -> object:
+            class R:
+                def scalar_one_or_none(self) -> Document:
+                    return doc
+
+                def scalars(self) -> object:
+                    class S:
+                        def all(self) -> list[object]:
+                            return []
+
+                    return S()
+
+            return R()
+
+    class FakeTenantSession:
+        def __init__(self, tenant_id: str) -> None:
+            self.tenant_id = tenant_id
+
+        async def __aenter__(self) -> FakeTenantSession:
+            return self
+
+        async def __aexit__(self, *a: object) -> None:
+            return None
+
+        async def execute(self, statement: object) -> object:
+            class R:
+                def scalar_one_or_none(self) -> Document:
+                    return doc
+
+                def scalars(self) -> object:
+                    class S:
+                        def all(self) -> list[object]:
+                            return []
+
+                    return S()
+
+            return R()
+
+        async def delete(self, obj: Document) -> None:
+            deleted_in_tenant.append(obj)
+
+    monkeypatch.setattr(admin_router, "admin_session", lambda: FakeAdminSession())
+    monkeypatch.setattr(admin_router, "tenant_session", lambda tid: FakeTenantSession(tid))
+
+    deleted_keys: list[str] = []
+    monkeypatch.setattr(object_store, "delete", lambda key: deleted_keys.append(key))
+
+    res = await admin_router.admin_delete_document(doc_id, SECRET_PRINCIPAL)
+    assert res is None
+    assert doc in deleted_in_tenant
+    assert "docs/test.pdf" in deleted_keys

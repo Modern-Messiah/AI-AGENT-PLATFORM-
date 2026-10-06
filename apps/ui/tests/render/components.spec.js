@@ -5,21 +5,28 @@ import { createPinia, setActivePinia } from 'pinia'
 import ConfirmModal from '../../src/components/ConfirmModal.vue'
 import StatusBadge from '../../src/components/StatusBadge.vue'
 import AppIcon from '../../src/components/AppIcon.vue'
+import AppSidebar from '../../src/components/AppSidebar.vue'
 import ChatMessages from '../../src/components/chat/ChatMessages.vue'
 import ChatToolbar from '../../src/components/chat/ChatToolbar.vue'
 import ChatScopeModal from '../../src/components/chat/ChatScopeModal.vue'
 import SettingsModal from '../../src/components/SettingsModal.vue'
 import { translate } from '../../src/i18n/index.js'
 import { useChatStore } from '../../src/stores/chat.js'
+import { useSessionStore } from '../../src/stores/session.js'
+import { createRouter, createMemoryHistory } from 'vue-router'
 
 config.global.stubs = { RouterLink: true, Teleport: true }
 config.global.mocks = { $t: (key, params) => translate('ru', key, params) }
 
+const testRouter = createRouter({
+  history: createMemoryHistory(),
+  routes: [{ path: '/chat', component: { template: '<div />' } }],
+})
 
 function withSetup(component, props = {}) {
   const pinia = createPinia()
   setActivePinia(pinia)
-  return mount(component, { props, global: { plugins: [pinia] } })
+  return mount(component, { props, global: { plugins: [pinia, testRouter] } })
 }
 
 
@@ -226,5 +233,55 @@ test('SettingsModal renders close button in header and emits close on click or E
 
   wrapper.unmount()
 })
+
+
+test('AppIcon renders chevron-left and chevron-right icons', () => {
+  expect(withSetup(AppIcon, { name: 'chevron-left' }).find('svg').exists()).toBe(true)
+  expect(withSetup(AppIcon, { name: 'chevron-right' }).find('svg').exists()).toBe(true)
+})
+
+
+test('AppSidebar renders expanded state and emits toggle on button click', async () => {
+  const wrapper = withSetup(AppSidebar, { collapsed: false })
+  expect(wrapper.classes()).not.toContain('collapsed')
+  expect(wrapper.text()).toContain('AgentPlatform')
+
+  const toggleBtn = wrapper.find('.sidebar-toggle')
+  expect(toggleBtn.exists()).toBe(true)
+  await toggleBtn.trigger('click')
+  expect(wrapper.emitted('toggle')).toHaveLength(1)
+})
+
+
+test('AppSidebar renders collapsed state with centered toggle and avatar', async () => {
+  const wrapper = withSetup(AppSidebar, { collapsed: true })
+  const session = useSessionStore()
+  const exp = Math.floor(Date.now() / 1000) + 3600
+  const payload = btoa(JSON.stringify({
+    type: 'session',
+    exp,
+    name: 'denivops',
+    email: 'denivops@example.com',
+    tid: 'main',
+    role: 'admin',
+  }))
+  session.setToken(`eyJhbGciOiJIUzI1NiJ9.${payload}.signature`)
+  await wrapper.vm.$nextTick()
+
+  expect(wrapper.classes()).toContain('collapsed')
+  const logoMark = wrapper.find('.logo-mark')
+  expect(logoMark.classes()).toContain('clickable')
+  await logoMark.trigger('click')
+  expect(wrapper.emitted('toggle')).toHaveLength(1)
+
+  const avatar = wrapper.find('.user-avatar')
+  expect(avatar.exists()).toBe(true)
+  expect(avatar.text()).toBe('D')
+
+  const toggleBtn = wrapper.find('.sidebar-toggle')
+  await toggleBtn.trigger('click')
+  expect(wrapper.emitted('toggle')).toHaveLength(2)
+})
+
 
 

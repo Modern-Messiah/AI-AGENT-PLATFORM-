@@ -32,9 +32,10 @@ from packages.storage import (
     DocumentStatus,
     LlmApiKey,
     Notebook,
+    NotebookDocument,
     User,
 )
-from packages.storage.db import admin_session
+from packages.storage.db import admin_session, tenant_session
 from sqlalchemy import TextClause, func, or_, select, text
 from sqlalchemy import delete as sa_delete
 from sqlalchemy import update as sa_update
@@ -853,12 +854,53 @@ async def admin_delete_document(document_id: uuid.UUID, _principal: AdminDep) ->
             .all()
         )
         preview_keys = [row.preview_object_key for row in asset_rows]
-        await db.delete(doc)
+
+    # Deletion must occur inside tenant_session(tenant_id) so PostgreSQL RLS
+    # policies (which apply FOR ALL commands, requiring tenant_id match) allow
+    # deleting the document, its chunks, and associated records.
+    async with tenant_session(tenant_id) as db:
+        linked_notebook_ids = list(
+            (
+                await db.execute(
+                    select(NotebookDocument.notebook_id).where(
+                        NotebookDocument.document_id == document_id,
+                        NotebookDocument.tenant_id == tenant_id,
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        if linked_notebook_ids:
+            await db.execute(
+                sa_update(Notebook)
+                .where(Notebook.id.in_(linked_notebook_ids), Notebook.tenant_id == tenant_id)
+                .values(
+                    summary=None,
+                    suggested_questions=[],
+                    key_topics=[],
+                    insights_updated_at=None,
+                )
+            )
+        doc_in_tenant = (
+            await db.execute(
+                select(Document).where(Document.id == document_id, Document.tenant_id == tenant_id)
+            )
+        ).scalar_one_or_none()
+        if doc_in_tenant is not None:
+            await db.delete(doc_in_tenant)
+
     from packages.storage.object_store import object_store
 
     for key in [object_key, *preview_keys]:
         with contextlib.suppress(Exception):
             await asyncio.to_thread(object_store.delete, key)
+
+    from apps.api.services.cache import invalidate_semantic_cache
+
+    with contextlib.suppress(Exception):
+        await invalidate_semantic_cache(tenant_id, f"admin-document-delete:{document_id}")
+
     log.info("admin deleted document | id=%s tenant=%s", document_id, tenant_id)
     return None
 

@@ -869,6 +869,29 @@ async def delete_document(
             .scalars()
             .all()
         )
+        linked_notebook_ids = list(
+            (
+                await s.execute(
+                    select(NotebookDocument.notebook_id).where(
+                        NotebookDocument.document_id == document_id,
+                        NotebookDocument.tenant_id == tenant_id,
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        if linked_notebook_ids:
+            await s.execute(
+                update(Notebook)
+                .where(Notebook.id.in_(linked_notebook_ids), Notebook.tenant_id == tenant_id)
+                .values(
+                    summary=None,
+                    suggested_questions=[],
+                    key_topics=[],
+                    insights_updated_at=None,
+                )
+            )
         await s.delete(doc)  # CASCADE deletes chunks via FK ondelete="CASCADE"
 
     for key in [object_key, url_image_sidecar_key(object_key), *preview_object_keys]:

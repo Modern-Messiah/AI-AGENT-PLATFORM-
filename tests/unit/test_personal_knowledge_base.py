@@ -190,7 +190,9 @@ async def test_get_document_hides_foreign_private_document(monkeypatch) -> None:
 async def test_delete_document_owner_member_allowed(monkeypatch) -> None:
     owner = _user()
     doc = _doc(owner.user_id)
-    session = _FakeSession([_Result([doc]), _Result([])])  # document row, then asset keys
+    session = _FakeSession(
+        [_Result([doc]), _Result([]), _Result([])]
+    )  # document row, asset keys, notebook links
     _patch_tenant_session(monkeypatch, documents_router, session)
     monkeypatch.setattr(
         documents_router,

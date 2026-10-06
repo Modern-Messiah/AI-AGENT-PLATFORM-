@@ -98,3 +98,14 @@ async def test_complete_vision_text_sends_image_to_kimi(monkeypatch) -> None:
     assert message["content"][1]["type"] == "image_url"
     assert message["content"][1]["image_url"]["url"].startswith("data:image/webp;base64,")
     assert captured["extra_body"] == {"thinking": {"type": "disabled"}}
+
+
+def test_get_async_openai_client_reuses_instances() -> None:
+    from packages.llm.client import get_async_openai_client
+
+    c1 = get_async_openai_client("https://api.openai.com/v1", "test-key-1")
+    c2 = get_async_openai_client("https://api.openai.com/v1", "test-key-1")
+    c3 = get_async_openai_client("https://api.deepseek.com", "test-key-2")
+
+    assert c1 is c2
+    assert c1 is not c3

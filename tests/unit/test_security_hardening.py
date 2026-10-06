@@ -214,6 +214,30 @@ async def test_auth_rate_limit_fails_closed_when_configured(monkeypatch) -> None
     assert exc_info.value.status_code == 503
 
 
+def test_client_ip_trusted_proxy_resolution(monkeypatch) -> None:
+    from apps.api.services.auth_rate_limit import _client_ip
+
+    monkeypatch.setattr(settings, "trusted_proxies", "127.0.0.1,172.20.0.0/16")
+
+    # Direct request from untrusted IP -> uses direct IP
+    req_direct = SimpleNamespace(client=SimpleNamespace(host="198.51.100.1"), headers={})
+    assert _client_ip(req_direct) == "198.51.100.1"
+
+    # Request from trusted proxy (Caddy in Docker: 172.20.0.2) with X-Forwarded-For
+    req_proxied = SimpleNamespace(
+        client=SimpleNamespace(host="172.20.0.2"),
+        headers={"X-Forwarded-For": "203.0.113.195, 172.20.0.2"},
+    )
+    assert _client_ip(req_proxied) == "203.0.113.195"
+
+    # Spoofed X-Forwarded-For header: "attacker_spoofed_ip, real_client_ip"
+    req_spoofed = SimpleNamespace(
+        client=SimpleNamespace(host="172.20.0.2"),
+        headers={"X-Forwarded-For": "1.2.3.4, 203.0.113.195, 172.20.0.2"},
+    )
+    assert _client_ip(req_spoofed) == "203.0.113.195"
+
+
 # ── 3. constant-time secret — behaviour pin ─────────────────────────────────
 
 
